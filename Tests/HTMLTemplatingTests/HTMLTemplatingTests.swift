@@ -20,7 +20,7 @@ private func withFragmentDir<T>(
             encoding: .utf8
         )
     }
-    return try body(HTMLEnvironment(fragmentsDir: dir.path))
+    return try body(HTMLEnvironment.live(path: dir.path))
 }
 
 // MARK: - esc / escAttr
@@ -48,7 +48,7 @@ struct EscAttrTests {
 
 @Suite("render — substitution")
 struct RenderSubstitutionTests {
-    private let env = HTMLEnvironment(fragmentsDir: "/nonexistent")
+    private let env = HTMLEnvironment.mockFailure(error: URLError(.fileDoesNotExist))
 
     @Test func stringVariable() throws {
         let out = try render("Hello {{name}}!", ["name": .string("World")]).runReader(env).get()
@@ -140,7 +140,7 @@ struct RenderEachTests {
     }
 
     @Test func missingFragmentReturnsFailure() {
-        let env = HTMLEnvironment(fragmentsDir: "/nonexistent")
+        let env = HTMLEnvironment.mockFailure(error: URLError(.fileDoesNotExist))
         let ctx: Context = ["items": .list([["name": .string("A")]])]
         let result = render("{{#each items missing}}", ctx).runReader(env)
         guard case .failure = result else {
@@ -216,7 +216,7 @@ struct RenderIfTests {
     }
 
     @Test func missingFragmentReturnsFailure() {
-        let env = HTMLEnvironment(fragmentsDir: "/nonexistent")
+        let env = HTMLEnvironment.mockFailure(error: URLError(.fileDoesNotExist))
         let result = render("{{#if flag missing}}", ["flag": .bool(true)]).runReader(env)
         guard case .failure = result else {
             Issue.record("Expected .failure for missing fragment")
@@ -244,7 +244,7 @@ struct RenderIncludeTests {
     }
 
     @Test func missingFragmentReturnsFailure() {
-        let env = HTMLEnvironment(fragmentsDir: "/nonexistent")
+        let env = HTMLEnvironment.mockFailure(error: URLError(.fileDoesNotExist))
         let result = render("{{#include missing}}", [:]).runReader(env)
         if case .failure(let e) = result, case .readError(let name, _) = e {
             #expect(name == "missing")

@@ -12,10 +12,18 @@ public struct HTMLEnvironment {
         self.readFile = readFile
     }
 
-    public init(fragmentsDir: String) {
-        self.init(fragmentsDir: fragmentsDir) { path in
-            Result { try String(contentsOfFile: path, encoding: .utf8) }
+    public static func live(path: String) -> Self {
+        Self(fragmentsDir: path) { filePath in
+            Result { try String(contentsOfFile: filePath, encoding: .utf8) }
         }
+    }
+
+    public static func mockSuccess(contents: String) -> Self {
+        Self(fragmentsDir: "") { _ in .success(contents) }
+    }
+
+    public static func mockFailure(error: Error) -> Self {
+        Self(fragmentsDir: "") { _ in .failure(error) }
     }
 }
 

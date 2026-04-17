@@ -44,11 +44,17 @@ public struct HTMLEnvironment {
     // Injectable IO: given a full file path, returns its contents or an error.
     public let readFile: (String) -> Result<String, Error>
 
-    // Full init — supply your own readFile for testing or non-filesystem sources.
+    // Designated init — supply your own readFile for custom IO.
     public init(fragmentsDir: String, readFile: @escaping (String) -> Result<String, Error>)
 
-    // Convenience: uses String(contentsOfFile:encoding:) as the readFile implementation.
-    public init(fragmentsDir: String)
+    // Reads fragment files from disk using String(contentsOfFile:encoding:).
+    public static func live(path: String) -> Self
+
+    // Always succeeds with the given string, regardless of the requested fragment.
+    public static func mockSuccess(contents: String) -> Self
+
+    // Always fails with the given error, regardless of the requested fragment.
+    public static func mockFailure(error: Error) -> Self
 }
 ```
 
@@ -79,7 +85,7 @@ func render(_ template: String, _ context: Context) -> Reader<HTMLEnvironment, R
 The entry point. Returns a `Reader` that must be run with an `HTMLEnvironment` to produce a `Result<String, TemplateError>`.
 
 ```swift
-let env = HTMLEnvironment(fragmentsDir: "/path/to/fragments")
+let env = HTMLEnvironment.live(path: "/path/to/fragments")
 
 let result = render("Hello, {{name}}!", ["name": .string("World")])
     .runReader(env)
@@ -217,19 +223,13 @@ let pageReader: Reader<HTMLEnvironment, Result<String, TemplateError>> =
     ])
 
 // Production: load from disk using String(contentsOfFile:encoding:).
-let prodHTML = pageReader.runReader(HTMLEnvironment(fragmentsDir: "/app/templates"))
+let prodHTML = pageReader.runReader(.live(path: "/app/templates"))
 
-// Testing: inject in-memory fragments — no filesystem, no temp files.
-let stubs = ["layout": "<html>{{content}}</html>"]
-let testEnv = HTMLEnvironment(fragmentsDir: "") { path in
-    let name = URL(fileURLWithPath: path)
-        .deletingPathExtension()   // drop .template
-        .deletingPathExtension()   // drop .html
-        .lastPathComponent
-    return stubs[name].map(Result.success)
-        ?? .failure(URLError(.fileDoesNotExist))
-}
-let testHTML = pageReader.runReader(testEnv)
+// Testing: every fragment load succeeds with a fixed string.
+let testHTML = pageReader.runReader(.mockSuccess(contents: "<html>{{content}}</html>"))
+
+// Testing: every fragment load fails — verifies error propagation.
+let failHTML = pageReader.runReader(.mockFailure(error: URLError(.fileDoesNotExist)))
 ```
 
 The IO is fully contained in `readFile` — `render` never touches the filesystem directly. `fragmentsDir` is always available if the custom `readFile` implementation needs it for path construction.
@@ -590,7 +590,7 @@ _ = startServer(port: 8080).runReader(handler)
 `NetworkServer` and `HTMLTemplating` compose naturally — run the `Reader` from `render` inside a route handler:
 
 ```swift
-let env = HTMLEnvironment(fragmentsDir: "/app/templates")
+let env = HTMLEnvironment.live(path: "/app/templates")
 
 let routes: [RouteMatcher] = [
     route(.GET, "/") { _ in
