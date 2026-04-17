@@ -199,27 +199,24 @@ escAttr(#"say "hello""#)
 
 `esc` escapes `&`, `<`, `>`. `escAttr` additionally escapes `"` for use inside HTML attributes.
 
-### Bundle-based loader
+### Template loader
 
-`loadTemplate` resolves a named template from the bundle via `env.findResource`, then reads it via `env.readFile`. It returns a `Reader` like `render`, so both IO operations are injectable.
-
-```swift
-// Production: bundle resolves both templates and fragments.
-let env = HTMLEnvironment.live(bundle: .main)
-
-switch loadTemplate("index").runReader(env) {
-case .success(let source):
-    let html = try render(source, ctx).runReader(env).get()
-case .failure(.notFound(let name)):
-    print("Template '\(name)' not found in bundle")
-case .failure(.readError(let name, let error)):
-    print("Failed to read '\(name)': \(error)")
-}
-```
+`loadTemplate` reads a named `.template` file via the environment and returns a `Reader` just like `render`. Compose them with `flatMap` so the environment is injected once:
 
 ```swift
-// Testing: no bundle, no filesystem.
-let result = loadTemplate("index").runReader(.mockSuccess(contents: "<p>{{body}}</p>"))
+let ctx: Context = ["title": .string("Home"), "body": .string("<p>Hello</p>")]
+
+// >>- is the ReaderTResult bind: threads the Result error automatically.
+let page = loadTemplate("index") >>- { source in render(source, ctx) }
+
+// Direct filesystem:
+let html = page.runReader(.live(path: "/app/templates"))
+
+// Bundle:
+let html = page.runReader(.live(bundle: .main))
+
+// Testing — no filesystem, no bundle:
+let html = page.runReader(.mockSuccess(contents: "<p>{{body}}</p>"))
 ```
 
 ### Composing with Reader
