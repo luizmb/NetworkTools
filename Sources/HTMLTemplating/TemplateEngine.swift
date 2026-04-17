@@ -4,45 +4,54 @@ import FP
 // MARK: - Environment
 
 public struct HTMLEnvironment {
-    public let fragmentsDir: String
-    public let findResource: (String) -> URL?
-    public let readFile: (String) -> Result<String, Error>
+    /// Resolves a filename (including extension) to a URL, or `nil` if not found.
+    public let find: (String) -> URL?
+    /// Reads the contents of a URL, returning an error on failure.
+    public let readFile: (URL) -> Result<String, Error>
 
     public init(
-        fragmentsDir: String,
-        findResource: @escaping (String) -> URL?,
-        readFile: @escaping (String) -> Result<String, Error>
+        find: @escaping (String) -> URL?,
+        readFile: @escaping (URL) -> Result<String, Error>
     ) {
-        self.fragmentsDir = fragmentsDir
-        self.findResource = findResource
+        self.find = find
         self.readFile = readFile
     }
 
-    public static func live(path: String, bundle: Bundle = .main) -> Self {
-        Self(
-            fragmentsDir: path,
-            findResource: { name in
-                bundle.url(forResource: name, withExtension: "html",
-                           subdirectory: "Resources/templates")
-            },
-            readFile: { filePath in
-                Result { try String(contentsOfFile: filePath, encoding: .utf8) }
-            }
+    /// Direct filesystem: `find` appends the filename to `path`,
+    /// `readFile` reads via `String(contentsOf:encoding:)`.
+    public static func live(path: String) -> Self {
+        let base = URL(fileURLWithPath: path)
+        return Self(
+            find: { filename in base.appendingPathComponent(filename) },
+            readFile: { url in Result { try String(contentsOf: url, encoding: .utf8) } }
         )
     }
 
+    /// Bundle-based: `find` decomposes the filename into name + extension and calls
+    /// `Bundle.url(forResource:withExtension:)`. `readFile` reads via `String(contentsOf:encoding:)`.
+    public static func live(bundle: Bundle) -> Self {
+        Self(
+            find: { filename in
+                let url = URL(fileURLWithPath: filename)
+                return bundle.url(forResource: url.deletingPathExtension().lastPathComponent,
+                                  withExtension: url.pathExtension)
+            },
+            readFile: { url in Result { try String(contentsOf: url, encoding: .utf8) } }
+        )
+    }
+
+    /// Testing: `find` returns a synthetic URL, `readFile` always succeeds with `contents`.
     public static func mockSuccess(contents: String) -> Self {
         Self(
-            fragmentsDir: "",
-            findResource: { name in URL(fileURLWithPath: "/mock/\(name).html") },
+            find: { filename in URL(fileURLWithPath: "/mock/\(filename)") },
             readFile: { _ in .success(contents) }
         )
     }
 
+    /// Testing: `find` returns a synthetic URL, `readFile` always fails with `error`.
     public static func mockFailure(error: Error) -> Self {
         Self(
-            fragmentsDir: "",
-            findResource: { name in URL(fileURLWithPath: "/mock/\(name).html") },
+            find: { filename in URL(fileURLWithPath: "/mock/\(filename)") },
             readFile: { _ in .failure(error) }
         )
     }
@@ -69,21 +78,17 @@ public enum TemplateError: Error {
 
 /// Renders `template`, resolving `{{key}}`, `{{#each key fragment}}`,
 /// `{{#if key fragment}}` and `{{#include fragment}}` directives.
-/// Fragment files are loaded as `<env.fragmentsDir>/<name>.html.template`.
 public func render(_ template: String, _ context: Context) -> Reader<HTMLEnvironment, Result<String, TemplateError>> {
     Reader { env in renderImpl(template, context, env: env) }
 }
 
 // MARK: - Bundle-based loader
 
-/// Loads a template source from the bundle via `env.findResource`, then reads
-/// it via `env.readFile`. Both operations are injectable through `HTMLEnvironment`.
+/// Resolves `name` via `env.findResource`, then reads its contents via `env.readFile`.
 public func loadTemplate(_ name: String) -> Reader<HTMLEnvironment, Result<String, TemplateError>> {
     Reader { env in
-        guard let url = env.findResource(name) else {
-            return .failure(.notFound(name))
-        }
-        return env.readFile(url.path).mapError { .readError(name, $0) }
+        guard let url = env.find("\(name).html") else { return .failure(.notFound(name)) }
+        return env.readFile(url).mapError { .readError(name, $0) }
     }
 }
 
@@ -102,8 +107,8 @@ public func escAttr(_ s: String) -> String {
 // MARK: - Private implementation
 
 private func loadFragment(_ name: String, env: HTMLEnvironment) -> Result<String, TemplateError> {
-    let path = "\(env.fragmentsDir)/\(name).html.template"
-    return env.readFile(path).mapError { .readError(name, $0) }
+    guard let url = env.find("\(name).html.template") else { return .failure(.notFound(name)) }
+    return env.readFile(url).mapError { .readError(name, $0) }
 }
 
 private func renderImpl(_ template: String, _ context: Context, env: HTMLEnvironment) -> Result<String, TemplateError> {

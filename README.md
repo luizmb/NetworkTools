@@ -39,32 +39,32 @@ A lightweight template engine that resolves `{{variables}}`, loops, conditionals
 
 ```swift
 public struct HTMLEnvironment {
-    // Base directory where fragment files live.
-    public let fragmentsDir: String
-    // Resolves a template name to a URL (used by loadTemplate).
-    public let findResource: (String) -> URL?
-    // Injectable IO: given a full file path, returns its contents or an error.
-    public let readFile: (String) -> Result<String, Error>
+    // Resolves a filename (with extension) to a URL, or nil if not found.
+    // Called by the engine as find("row.html.template") for fragments
+    // and find("index.html") for top-level templates.
+    public let find: (String) -> URL?
+    // Reads a URL's contents, returning an error on failure.
+    public let readFile: (URL) -> Result<String, Error>
 
-    // Designated init — supply all three for fully custom behaviour.
-    public init(
-        fragmentsDir: String,
-        findResource: @escaping (String) -> URL?,
-        readFile: @escaping (String) -> Result<String, Error>
-    )
+    // Designated init — supply both for fully custom behaviour.
+    public init(find: @escaping (String) -> URL?, readFile: @escaping (URL) -> Result<String, Error>)
 
-    // Production: uses Bundle.url(forResource:) + String(contentsOfFile:encoding:).
-    public static func live(path: String, bundle: Bundle = .main) -> Self
+    // Direct filesystem: appends the filename to path, reads via String(contentsOf:encoding:).
+    public static func live(path: String) -> Self
 
-    // Testing: findResource returns a synthetic URL, readFile always succeeds with contents.
+    // Bundle-based: decomposes the filename into name+extension and calls
+    // Bundle.url(forResource:withExtension:), reads via String(contentsOf:encoding:).
+    public static func live(bundle: Bundle) -> Self
+
+    // Testing: find returns a synthetic URL, readFile always succeeds with the given string.
     public static func mockSuccess(contents: String) -> Self
 
-    // Testing: findResource returns a synthetic URL, readFile always fails with error.
+    // Testing: find returns a synthetic URL, readFile always fails with the given error.
     public static func mockFailure(error: Error) -> Self
 }
 ```
 
-The engine constructs `"\(fragmentsDir)/\(name).html.template"` and passes it to `readFile` for fragment loading. `loadTemplate` uses `findResource` to locate a top-level template in the bundle, then reads it via `readFile`. Both IO operations are injectable through the same environment.
+All IO flows through the environment. Neither `render` nor `loadTemplate` performs IO directly.
 
 ```swift
 // A template context: keys map to strings, booleans, or lists of sub-contexts.
@@ -91,7 +91,7 @@ func render(_ template: String, _ context: Context) -> Reader<HTMLEnvironment, R
 The entry point. Returns a `Reader` that must be run with an `HTMLEnvironment` to produce a `Result<String, TemplateError>`.
 
 ```swift
-let env = HTMLEnvironment.live(path: "/path/to/fragments")
+let env = HTMLEnvironment.live(path: "/path/to/templates")
 
 let result = render("Hello, {{name}}!", ["name": .string("World")])
     .runReader(env)
@@ -204,8 +204,8 @@ escAttr(#"say "hello""#)
 `loadTemplate` resolves a named template from the bundle via `env.findResource`, then reads it via `env.readFile`. It returns a `Reader` like `render`, so both IO operations are injectable.
 
 ```swift
-// Production: looks for Resources/templates/<name>.html in the bundle.
-let env = HTMLEnvironment.live(path: "/app/fragments")
+// Production: bundle resolves both templates and fragments.
+let env = HTMLEnvironment.live(bundle: .main)
 
 switch loadTemplate("index").runReader(env) {
 case .success(let source):
@@ -233,8 +233,10 @@ let pageReader: Reader<HTMLEnvironment, Result<String, TemplateError>> =
         "content": .string(bodyHTML),
     ])
 
-// Production: load from disk using String(contentsOfFile:encoding:).
+// Production: filesystem-based.
 let prodHTML = pageReader.runReader(.live(path: "/app/templates"))
+// Or bundle-based:
+// let prodHTML = pageReader.runReader(.live(bundle: .main))
 
 // Testing: every fragment load succeeds with a fixed string.
 let testHTML = pageReader.runReader(.mockSuccess(contents: "<html>{{content}}</html>"))
@@ -243,7 +245,7 @@ let testHTML = pageReader.runReader(.mockSuccess(contents: "<html>{{content}}</h
 let failHTML = pageReader.runReader(.mockFailure(error: URLError(.fileDoesNotExist)))
 ```
 
-The IO is fully contained in `readFile` — `render` never touches the filesystem directly. `fragmentsDir` is always available if the custom `readFile` implementation needs it for path construction.
+All IO is fully contained in the environment — `render` never touches the filesystem directly.
 
 ---
 

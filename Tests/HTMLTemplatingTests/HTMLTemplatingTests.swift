@@ -313,11 +313,7 @@ struct RenderCompositionTests {
 @Suite("loadTemplate")
 struct LoadTemplateTests {
     @Test func notFoundReturnsFailure() {
-        let env = HTMLEnvironment(
-            fragmentsDir: "",
-            findResource: { _ in nil },
-            readFile: { _ in .success("") }
-        )
+        let env = HTMLEnvironment(find: { _ in nil }, readFile: { _ in .success("") })
         let result = loadTemplate("nonexistent").runReader(env)
         guard case .failure(let e) = result, case .notFound = e else {
             Issue.record("Expected .failure(.notFound), got \(result)")
