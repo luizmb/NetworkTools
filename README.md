@@ -38,9 +38,15 @@ A lightweight template engine that resolves `{{variables}}`, loops, conditionals
 ### Core types
 
 ```swift
-// The Reader environment: tells the engine where fragment files live.
+// The Reader environment: provides fragment loading as an injectable function.
 public struct HTMLEnvironment {
-    public let fragmentsDir: String
+    public let loadFragment: (String) -> Result<String, TemplateError>
+
+    // Construct with an arbitrary loader — useful for testing or in-memory fragments.
+    public init(loadFragment: @escaping (String) -> Result<String, TemplateError>)
+
+    // Convenience: reads <fragmentsDir>/<name>.html.template from the filesystem.
+    public init(fragmentsDir: String)
 }
 
 // A template context: keys map to strings, booleans, or lists of sub-contexts.
@@ -195,7 +201,7 @@ case .failure(.readError(let name, let error)):
 
 ### Composing with Reader
 
-Because `render` returns a `Reader`, you can combine multiple renders without threading the environment manually:
+Because `render` returns a `Reader`, you can swap the environment entirely without touching the template logic:
 
 ```swift
 let pageReader: Reader<HTMLEnvironment, Result<String, TemplateError>> =
@@ -204,10 +210,19 @@ let pageReader: Reader<HTMLEnvironment, Result<String, TemplateError>> =
         "content": .string(bodyHTML),
     ])
 
-// Swap the environment entirely for testing:
+// Production: load from disk.
 let prodHTML = pageReader.runReader(HTMLEnvironment(fragmentsDir: "/app/templates"))
-let testHTML = pageReader.runReader(HTMLEnvironment(fragmentsDir: "/tmp/test-templates"))
+
+// Testing: inject in-memory fragments — no filesystem, no temp files.
+let testEnv = HTMLEnvironment { name in
+    let stubs = ["layout": "<html>{{content}}</html>"]
+    return stubs[name].map(Result.success)
+        ?? .failure(.notFound(name))
+}
+let testHTML = pageReader.runReader(testEnv)
 ```
+
+The filesystem IO is fully contained inside the `HTMLEnvironment` — the `render` function is a pure transformation that never performs IO directly.
 
 ---
 
