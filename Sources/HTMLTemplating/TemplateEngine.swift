@@ -78,7 +78,7 @@ public enum TemplateError: Error {
 /// Renders `template`, resolving `{{key}}`, `{{#each key fragment}}`,
 /// `{{#if key fragment}}` and `{{#include fragment}}` directives.
 public func render(_ template: String, _ context: Context) -> Reader<HTMLEnvironment, Result<String, TemplateError>> {
-    Reader { env in renderImpl(template, context, env: env) }
+    renderImpl(template, context)
 }
 
 // MARK: - Bundle-based loader
@@ -105,76 +105,83 @@ public func escAttr(_ s: String) -> String {
 
 // MARK: - Private implementation
 
-private func loadFragment(_ name: String, env: HTMLEnvironment) -> Result<String, TemplateError> {
-    guard let url = env.find("\(name).template") else { return .failure(.notFound(name)) }
-    return env.readFile(url).mapError { .readError(name, $0) }
+private func loadFragment(_ name: String) -> Reader<HTMLEnvironment, Result<String, TemplateError>> {
+    Reader { env in
+        guard let url = env.find("\(name).template") else { return .failure(.notFound(name)) }
+        return env.readFile(url).mapError { .readError(name, $0) }
+    }
 }
 
-private func renderImpl(_ template: String, _ context: Context, env: HTMLEnvironment) -> Result<String, TemplateError> {
-    var output    = ""
-    var remaining = template[...]
+private func renderImpl(_ template: String, _ context: Context) -> Reader<HTMLEnvironment, Result<String, TemplateError>> {
+    Reader { env in
+        var output    = ""
+        var remaining = template[...]
 
-    while let openRange = remaining.range(of: "{{") {
-        output    += remaining[..<openRange.lowerBound]
-        remaining  = remaining[openRange.upperBound...]
+        while let openRange = remaining.range(of: "{{") {
+            output    += remaining[..<openRange.lowerBound]
+            remaining  = remaining[openRange.upperBound...]
 
-        guard let closeRange = remaining.range(of: "}}") else {
-            output += "{{"
-            continue
-        }
+            guard let closeRange = remaining.range(of: "}}") else {
+                output += "{{"
+                continue
+            }
 
-        let token = String(remaining[..<closeRange.lowerBound])
-            .trimmingCharacters(in: .whitespaces)
-        remaining = remaining[closeRange.upperBound...]
+            let token = String(remaining[..<closeRange.lowerBound])
+                .trimmingCharacters(in: .whitespaces)
+            remaining = remaining[closeRange.upperBound...]
 
-        if token.hasPrefix("#each ") {
-            let parts = words(token.dropFirst(6), limit: 2)
-            guard parts.count == 2,
-                  case .list(let items) = context[parts[0]]
-            else { continue }
+            if token.hasPrefix("#each ") {
+                let parts = words(token.dropFirst(6), limit: 2)
+                guard parts.count == 2,
+                      case .list(let items) = context[parts[0]]
+                else { continue }
 
-            switch loadFragment(parts[1], env: env)
-                .flatMap({ frag in
-                    items.reduce(.success("")) { acc, item in
-                        acc.flatMap { prev in
-                            renderImpl(frag, item, env: env).map { prev + $0 }
+                switch loadFragment(parts[1])
+                    .runReader(env)
+                    .flatMap({ frag in
+                        items.reduce(.success("")) { acc, item in
+                            acc.flatMap { prev in
+                                renderImpl(frag, item).runReader(env).map { prev + $0 }
+                            }
                         }
-                    }
-                }) {
-            case .success(let s): output += s
-            case .failure(let e): return .failure(e)
-            }
+                    }) {
+                case .success(let s): output += s
+                case .failure(let e): return .failure(e)
+                }
 
-        } else if token.hasPrefix("#if ") {
-            let parts = words(token.dropFirst(4), limit: 2)
-            guard parts.count == 2, truthy(context[parts[0]]) else { continue }
+            } else if token.hasPrefix("#if ") {
+                let parts = words(token.dropFirst(4), limit: 2)
+                guard parts.count == 2, truthy(context[parts[0]]) else { continue }
 
-            switch loadFragment(parts[1], env: env)
-                .flatMap({ frag in renderImpl(frag, context, env: env) }) {
-            case .success(let s): output += s
-            case .failure(let e): return .failure(e)
-            }
+                switch loadFragment(parts[1])
+                    .runReader(env)
+                    .flatMap({ frag in renderImpl(frag, context).runReader(env) }) {
+                case .success(let s): output += s
+                case .failure(let e): return .failure(e)
+                }
 
-        } else if token.hasPrefix("#include ") {
-            let name = String(token.dropFirst(9)).trimmingCharacters(in: .whitespaces)
+            } else if token.hasPrefix("#include ") {
+                let name = String(token.dropFirst(9)).trimmingCharacters(in: .whitespaces)
 
-            switch loadFragment(name, env: env)
-                .flatMap({ frag in renderImpl(frag, context, env: env) }) {
-            case .success(let s): output += s
-            case .failure(let e): return .failure(e)
-            }
+                switch loadFragment(name)
+                    .runReader(env)
+                    .flatMap({ frag in renderImpl(frag, context).runReader(env) }) {
+                case .success(let s): output += s
+                case .failure(let e): return .failure(e)
+                }
 
-        } else {
-            switch context[token] {
-            case .string(let s): output += s
-            case .bool(let b):   output += b ? "true" : "false"
-            case .list, nil:     break
+            } else {
+                switch context[token] {
+                case .string(let s): output += s
+                case .bool(let b):   output += b ? "true" : "false"
+                case .list, nil:     break
+                }
             }
         }
-    }
 
-    output += remaining
-    return .success(output)
+        output += remaining
+        return .success(output)
+    }
 }
 
 private func truthy(_ value: TemplateValue?) -> Bool {
