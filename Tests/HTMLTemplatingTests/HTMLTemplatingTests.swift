@@ -15,7 +15,7 @@ private func withFragmentDir<T>(
     defer { try? FileManager.default.removeItem(at: dir) }
     for (name, content) in fragments {
         try content.write(
-            to: dir.appendingPathComponent("\(name).html.template"),
+            to: dir.appendingPathComponent("\(name).template"),
             atomically: true,
             encoding: .utf8
         )

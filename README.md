@@ -39,9 +39,9 @@ A lightweight template engine that resolves `{{variables}}`, loops, conditionals
 
 ```swift
 public struct HTMLEnvironment {
-    // Resolves a filename (with extension) to a URL, or nil if not found.
-    // Called by the engine as find("row.html.template") for fragments
-    // and find("index.html") for top-level templates.
+    // Resolves a filename to a URL, or nil if not found.
+    // All files use the .template extension: find("row.template") for fragments,
+    // find("index.template") for top-level templates.
     public let find: (String) -> URL?
     // Reads a URL's contents, returning an error on failure.
     public let readFile: (URL) -> Result<String, Error>
@@ -52,8 +52,8 @@ public struct HTMLEnvironment {
     // Direct filesystem: appends the filename to path, reads via String(contentsOf:encoding:).
     public static func live(path: String) -> Self
 
-    // Bundle-based: decomposes the filename into name+extension and calls
-    // Bundle.url(forResource:withExtension:), reads via String(contentsOf:encoding:).
+    // Bundle-based: calls Bundle.url(forResource:withExtension:"template"),
+    // reads via String(contentsOf:encoding:).
     public static func live(bundle: Bundle) -> Self
 
     // Testing: find returns a synthetic URL, readFile always succeeds with the given string.

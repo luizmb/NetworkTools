@@ -32,9 +32,8 @@ public struct HTMLEnvironment {
     public static func live(bundle: Bundle) -> Self {
         Self(
             find: { filename in
-                let url = URL(fileURLWithPath: filename)
-                return bundle.url(forResource: url.deletingPathExtension().lastPathComponent,
-                                  withExtension: url.pathExtension)
+                bundle.url(forResource: URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent,
+                           withExtension: "template")
             },
             readFile: { url in Result { try String(contentsOf: url, encoding: .utf8) } }
         )
@@ -87,7 +86,7 @@ public func render(_ template: String, _ context: Context) -> Reader<HTMLEnviron
 /// Resolves `name` via `env.findResource`, then reads its contents via `env.readFile`.
 public func loadTemplate(_ name: String) -> Reader<HTMLEnvironment, Result<String, TemplateError>> {
     Reader { env in
-        guard let url = env.find("\(name).html") else { return .failure(.notFound(name)) }
+        guard let url = env.find("\(name).template") else { return .failure(.notFound(name)) }
         return env.readFile(url).mapError { .readError(name, $0) }
     }
 }
@@ -107,7 +106,7 @@ public func escAttr(_ s: String) -> String {
 // MARK: - Private implementation
 
 private func loadFragment(_ name: String, env: HTMLEnvironment) -> Result<String, TemplateError> {
-    guard let url = env.find("\(name).html.template") else { return .failure(.notFound(name)) }
+    guard let url = env.find("\(name).template") else { return .failure(.notFound(name)) }
     return env.readFile(url).mapError { .readError(name, $0) }
 }
 
