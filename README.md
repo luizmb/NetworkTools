@@ -38,17 +38,23 @@ A lightweight template engine that resolves `{{variables}}`, loops, conditionals
 ### Core types
 
 ```swift
-// The Reader environment: provides fragment loading as an injectable function.
 public struct HTMLEnvironment {
-    public let loadFragment: (String) -> Result<String, TemplateError>
+    // Base directory where fragment files live.
+    public let fragmentsDir: String
+    // Injectable IO: given a full file path, returns its contents or an error.
+    public let readFile: (String) -> Result<String, Error>
 
-    // Construct with an arbitrary loader — useful for testing or in-memory fragments.
-    public init(loadFragment: @escaping (String) -> Result<String, TemplateError>)
+    // Full init — supply your own readFile for testing or non-filesystem sources.
+    public init(fragmentsDir: String, readFile: @escaping (String) -> Result<String, Error>)
 
-    // Convenience: reads <fragmentsDir>/<name>.html.template from the filesystem.
+    // Convenience: uses String(contentsOfFile:encoding:) as the readFile implementation.
     public init(fragmentsDir: String)
 }
+```
 
+The engine constructs `"\(fragmentsDir)/\(name).html.template"` and passes it to `readFile`. Injecting `readFile` makes the IO mockable without touching the path logic.
+
+```swift
 // A template context: keys map to strings, booleans, or lists of sub-contexts.
 public typealias Context = [String: TemplateValue]
 
@@ -210,19 +216,23 @@ let pageReader: Reader<HTMLEnvironment, Result<String, TemplateError>> =
         "content": .string(bodyHTML),
     ])
 
-// Production: load from disk.
+// Production: load from disk using String(contentsOfFile:encoding:).
 let prodHTML = pageReader.runReader(HTMLEnvironment(fragmentsDir: "/app/templates"))
 
 // Testing: inject in-memory fragments — no filesystem, no temp files.
-let testEnv = HTMLEnvironment { name in
-    let stubs = ["layout": "<html>{{content}}</html>"]
+let stubs = ["layout": "<html>{{content}}</html>"]
+let testEnv = HTMLEnvironment(fragmentsDir: "") { path in
+    let name = URL(fileURLWithPath: path)
+        .deletingPathExtension()   // drop .template
+        .deletingPathExtension()   // drop .html
+        .lastPathComponent
     return stubs[name].map(Result.success)
-        ?? .failure(.notFound(name))
+        ?? .failure(URLError(.fileDoesNotExist))
 }
 let testHTML = pageReader.runReader(testEnv)
 ```
 
-The filesystem IO is fully contained inside the `HTMLEnvironment` — the `render` function is a pure transformation that never performs IO directly.
+The IO is fully contained in `readFile` — `render` never touches the filesystem directly. `fragmentsDir` is always available if the custom `readFile` implementation needs it for path construction.
 
 ---
 

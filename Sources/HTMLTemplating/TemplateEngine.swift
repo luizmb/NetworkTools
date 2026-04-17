@@ -4,17 +4,17 @@ import FP
 // MARK: - Environment
 
 public struct HTMLEnvironment {
-    public let loadFragment: (String) -> Result<String, TemplateError>
+    public let fragmentsDir: String
+    public let readFile: (String) -> Result<String, Error>
 
-    public init(loadFragment: @escaping (String) -> Result<String, TemplateError>) {
-        self.loadFragment = loadFragment
+    public init(fragmentsDir: String, readFile: @escaping (String) -> Result<String, Error>) {
+        self.fragmentsDir = fragmentsDir
+        self.readFile = readFile
     }
 
     public init(fragmentsDir: String) {
-        self.init { name in
-            let path = "\(fragmentsDir)/\(name).html.template"
-            return Result { try String(contentsOfFile: path, encoding: .utf8) }
-                .mapError { .readError(name, $0) }
+        self.init(fragmentsDir: fragmentsDir) { path in
+            Result { try String(contentsOfFile: path, encoding: .utf8) }
         }
     }
 }
@@ -70,6 +70,11 @@ public func loadTemplate(_ name: String, in bundle: Bundle) -> Result<String, Te
 
 // MARK: - Private implementation
 
+private func loadFragment(_ name: String, env: HTMLEnvironment) -> Result<String, TemplateError> {
+    let path = "\(env.fragmentsDir)/\(name).html.template"
+    return env.readFile(path).mapError { .readError(name, $0) }
+}
+
 private func renderImpl(_ template: String, _ context: Context, env: HTMLEnvironment) -> Result<String, TemplateError> {
     var output    = ""
     var remaining = template[...]
@@ -93,7 +98,7 @@ private func renderImpl(_ template: String, _ context: Context, env: HTMLEnviron
                   case .list(let items) = context[parts[0]]
             else { continue }
 
-            switch env.loadFragment(parts[1])
+            switch loadFragment(parts[1], env: env)
                 .flatMap({ frag in
                     items.reduce(.success("")) { acc, item in
                         acc.flatMap { prev in
@@ -109,7 +114,7 @@ private func renderImpl(_ template: String, _ context: Context, env: HTMLEnviron
             let parts = words(token.dropFirst(4), limit: 2)
             guard parts.count == 2, truthy(context[parts[0]]) else { continue }
 
-            switch env.loadFragment(parts[1])
+            switch loadFragment(parts[1], env: env)
                 .flatMap({ frag in renderImpl(frag, context, env: env) }) {
             case .success(let s): output += s
             case .failure(let e): return .failure(e)
@@ -118,7 +123,7 @@ private func renderImpl(_ template: String, _ context: Context, env: HTMLEnviron
         } else if token.hasPrefix("#include ") {
             let name = String(token.dropFirst(9)).trimmingCharacters(in: .whitespaces)
 
-            switch env.loadFragment(name)
+            switch loadFragment(name, env: env)
                 .flatMap({ frag in renderImpl(frag, context, env: env) }) {
             case .success(let s): output += s
             case .failure(let e): return .failure(e)
