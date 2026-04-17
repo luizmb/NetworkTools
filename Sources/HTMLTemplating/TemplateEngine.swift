@@ -5,25 +5,46 @@ import FP
 
 public struct HTMLEnvironment {
     public let fragmentsDir: String
+    public let findResource: (String) -> URL?
     public let readFile: (String) -> Result<String, Error>
 
-    public init(fragmentsDir: String, readFile: @escaping (String) -> Result<String, Error>) {
+    public init(
+        fragmentsDir: String,
+        findResource: @escaping (String) -> URL?,
+        readFile: @escaping (String) -> Result<String, Error>
+    ) {
         self.fragmentsDir = fragmentsDir
+        self.findResource = findResource
         self.readFile = readFile
     }
 
-    public static func live(path: String) -> Self {
-        Self(fragmentsDir: path) { filePath in
-            Result { try String(contentsOfFile: filePath, encoding: .utf8) }
-        }
+    public static func live(path: String, bundle: Bundle = .main) -> Self {
+        Self(
+            fragmentsDir: path,
+            findResource: { name in
+                bundle.url(forResource: name, withExtension: "html",
+                           subdirectory: "Resources/templates")
+            },
+            readFile: { filePath in
+                Result { try String(contentsOfFile: filePath, encoding: .utf8) }
+            }
+        )
     }
 
     public static func mockSuccess(contents: String) -> Self {
-        Self(fragmentsDir: "") { _ in .success(contents) }
+        Self(
+            fragmentsDir: "",
+            findResource: { name in URL(fileURLWithPath: "/mock/\(name).html") },
+            readFile: { _ in .success(contents) }
+        )
     }
 
     public static func mockFailure(error: Error) -> Self {
-        Self(fragmentsDir: "") { _ in .failure(error) }
+        Self(
+            fragmentsDir: "",
+            findResource: { name in URL(fileURLWithPath: "/mock/\(name).html") },
+            readFile: { _ in .failure(error) }
+        )
     }
 }
 
@@ -53,6 +74,19 @@ public func render(_ template: String, _ context: Context) -> Reader<HTMLEnviron
     Reader { env in renderImpl(template, context, env: env) }
 }
 
+// MARK: - Bundle-based loader
+
+/// Loads a template source from the bundle via `env.findResource`, then reads
+/// it via `env.readFile`. Both operations are injectable through `HTMLEnvironment`.
+public func loadTemplate(_ name: String) -> Reader<HTMLEnvironment, Result<String, TemplateError>> {
+    Reader { env in
+        guard let url = env.findResource(name) else {
+            return .failure(.notFound(name))
+        }
+        return env.readFile(url.path).mapError { .readError(name, $0) }
+    }
+}
+
 // MARK: - HTML escaping
 
 public func esc(_ s: String) -> String {
@@ -63,17 +97,6 @@ public func esc(_ s: String) -> String {
 
 public func escAttr(_ s: String) -> String {
     esc(s).replacingOccurrences(of: "\"", with: "&quot;")
-}
-
-// MARK: - Bundle-based loader
-
-public func loadTemplate(_ name: String, in bundle: Bundle) -> Result<String, TemplateError> {
-    guard let url = bundle.url(forResource: name, withExtension: "html",
-                               subdirectory: "Resources/templates") else {
-        return .failure(.notFound(name))
-    }
-    return Result { try String(contentsOf: url, encoding: .utf8) }
-        .mapError { .readError(name, $0) }
 }
 
 // MARK: - Private implementation

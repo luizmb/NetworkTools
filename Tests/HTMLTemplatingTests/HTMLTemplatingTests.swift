@@ -313,9 +313,31 @@ struct RenderCompositionTests {
 @Suite("loadTemplate")
 struct LoadTemplateTests {
     @Test func notFoundReturnsFailure() {
-        let result = loadTemplate("nonexistent", in: .main)
+        let env = HTMLEnvironment(
+            fragmentsDir: "",
+            findResource: { _ in nil },
+            readFile: { _ in .success("") }
+        )
+        let result = loadTemplate("nonexistent").runReader(env)
         guard case .failure(let e) = result, case .notFound = e else {
             Issue.record("Expected .failure(.notFound), got \(result)")
+            return
+        }
+    }
+
+    @Test func foundReturnsContents() {
+        let result = loadTemplate("page").runReader(.mockSuccess(contents: "<h1>Hi</h1>"))
+        guard case .success(let html) = result else {
+            Issue.record("Expected .success, got \(result)")
+            return
+        }
+        #expect(html == "<h1>Hi</h1>")
+    }
+
+    @Test func readErrorPropagates() {
+        let result = loadTemplate("page").runReader(.mockFailure(error: URLError(.fileDoesNotExist)))
+        guard case .failure(let e) = result, case .readError = e else {
+            Issue.record("Expected .failure(.readError), got \(result)")
             return
         }
     }

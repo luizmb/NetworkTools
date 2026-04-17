@@ -41,24 +41,30 @@ A lightweight template engine that resolves `{{variables}}`, loops, conditionals
 public struct HTMLEnvironment {
     // Base directory where fragment files live.
     public let fragmentsDir: String
+    // Resolves a template name to a URL (used by loadTemplate).
+    public let findResource: (String) -> URL?
     // Injectable IO: given a full file path, returns its contents or an error.
     public let readFile: (String) -> Result<String, Error>
 
-    // Designated init — supply your own readFile for custom IO.
-    public init(fragmentsDir: String, readFile: @escaping (String) -> Result<String, Error>)
+    // Designated init — supply all three for fully custom behaviour.
+    public init(
+        fragmentsDir: String,
+        findResource: @escaping (String) -> URL?,
+        readFile: @escaping (String) -> Result<String, Error>
+    )
 
-    // Reads fragment files from disk using String(contentsOfFile:encoding:).
-    public static func live(path: String) -> Self
+    // Production: uses Bundle.url(forResource:) + String(contentsOfFile:encoding:).
+    public static func live(path: String, bundle: Bundle = .main) -> Self
 
-    // Always succeeds with the given string, regardless of the requested fragment.
+    // Testing: findResource returns a synthetic URL, readFile always succeeds with contents.
     public static func mockSuccess(contents: String) -> Self
 
-    // Always fails with the given error, regardless of the requested fragment.
+    // Testing: findResource returns a synthetic URL, readFile always fails with error.
     public static func mockFailure(error: Error) -> Self
 }
 ```
 
-The engine constructs `"\(fragmentsDir)/\(name).html.template"` and passes it to `readFile`. Injecting `readFile` makes the IO mockable without touching the path logic.
+The engine constructs `"\(fragmentsDir)/\(name).html.template"` and passes it to `readFile` for fragment loading. `loadTemplate` uses `findResource` to locate a top-level template in the bundle, then reads it via `readFile`. Both IO operations are injectable through the same environment.
 
 ```swift
 // A template context: keys map to strings, booleans, or lists of sub-contexts.
@@ -195,13 +201,13 @@ escAttr(#"say "hello""#)
 
 ### Bundle-based loader
 
-For templates bundled inside an app target:
+`loadTemplate` resolves a named template from the bundle via `env.findResource`, then reads it via `env.readFile`. It returns a `Reader` like `render`, so both IO operations are injectable.
 
 ```swift
-// Looks for Resources/templates/<name>.html in the given bundle.
-let result: Result<String, TemplateError> = loadTemplate("index", in: .main)
+// Production: looks for Resources/templates/<name>.html in the bundle.
+let env = HTMLEnvironment.live(path: "/app/fragments")
 
-switch result {
+switch loadTemplate("index").runReader(env) {
 case .success(let source):
     let html = try render(source, ctx).runReader(env).get()
 case .failure(.notFound(let name)):
@@ -209,6 +215,11 @@ case .failure(.notFound(let name)):
 case .failure(.readError(let name, let error)):
     print("Failed to read '\(name)': \(error)")
 }
+```
+
+```swift
+// Testing: no bundle, no filesystem.
+let result = loadTemplate("index").runReader(.mockSuccess(contents: "<p>{{body}}</p>"))
 ```
 
 ### Composing with Reader
