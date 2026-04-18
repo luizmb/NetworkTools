@@ -15,7 +15,7 @@ let package = Package(
         .library(name: "NetworkServer",   targets: ["NetworkServer"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/luizmb/FP.git", branch: "main"),
+        .package(url: "https://github.com/luizmb/FP.git", exact: "1.1.2"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
     ],
     targets: [

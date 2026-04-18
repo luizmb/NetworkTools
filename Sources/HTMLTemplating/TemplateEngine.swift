@@ -27,6 +27,7 @@ public struct HTMLEnvironment {
         )
     }
 
+    #if !os(Linux)
     /// Bundle-based: `find` decomposes the filename into name + extension and calls
     /// `Bundle.url(forResource:withExtension:)`. `readFile` reads via `String(contentsOf:encoding:)`.
     public static func live(bundle: Bundle) -> Self {
@@ -38,6 +39,7 @@ public struct HTMLEnvironment {
             readFile: { url in Result { try String(contentsOf: url, encoding: .utf8) } }
         )
     }
+    #endif
 
     /// Testing: `find` returns a synthetic URL, `readFile` always succeeds with `contents`.
     public static func mockSuccess(contents: String) -> Self {
