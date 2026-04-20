@@ -8,7 +8,7 @@ public struct Router<Env: Sendable>: @unchecked Sendable {
 
     public mutating func register<U: Decodable & Sendable, Q: Decodable & Sendable, B: Decodable & Sendable>(
         route: Route<U, Q>,
-        decoder: RequestDecoder<U, Q, B>,
+        decoder: RequestDecoder<B>,
         handler: Handler<U, Q, B, Env>
     ) {
         entries.append { request in

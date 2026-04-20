@@ -4,14 +4,14 @@ import Foundation
 
 /// Decodes the request body into `Body` after a route has matched.
 /// Failure returns HTTP 400; success produces a fully typed `TypedRequest`.
-public struct RequestDecoder<URLParams, QueryParams, Body: Decodable>: @unchecked Sendable {
+public struct RequestDecoder<Body: Decodable>: @unchecked Sendable {
     private let bodyDecoder: DecoderResult<Body>
 
     public init(_ bodyDecoder: DecoderResult<Body>) {
         self.bodyDecoder = bodyDecoder
     }
 
-    func decode(_ matched: MatchedRoute<URLParams, QueryParams>) -> Result<TypedRequest<URLParams, QueryParams, Body>, ResponseError> {
+    func decode<URLParams, QueryParams>(_ matched: MatchedRoute<URLParams, QueryParams>) -> Result<TypedRequest<URLParams, QueryParams, Body>, ResponseError> {
         let bodyData = matched.raw.body.isEmpty ? Data("{}".utf8) : matched.raw.body
         return bodyDecoder
             .run(bodyData)
