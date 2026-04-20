@@ -256,13 +256,13 @@ A composable HTTP client. The core type `RequestPublisher<A>` is a `FunctionWrap
 
 ```swift
 // The primary type: a reusable function from URLRequest to a typed response publisher.
-public struct RequestPublisher<A>: FunctionWrapper<URLRequest, AnyPublisher<A, HTTPError>>
+public struct RequestPublisher<A>: FunctionWrapper
 
 // Alias for the raw response pair before status/decoding.
 public typealias Requester = RequestPublisher<(Data, HTTPURLResponse)>
 
 // A reusable decoding function: Data -> Result<D, DecodingError>.
-public struct DecoderResult<D>: FunctionWrapper<Data, Result<D, DecodingError>>
+public struct DecoderResult<D>: FunctionWrapper
 
 public enum HTTPError: Error {
     case network(Error)         // URLSession-level failure
@@ -661,7 +661,7 @@ let router: Router<Void> =
 
 ```swift
 let empty = Router<Void>()
-// handle(_:) on empty always returns .failure(.notFound)
+// handle.runReader(env) on empty always returns .failure(.notFound)
 ```
 
 ### Handler variants
