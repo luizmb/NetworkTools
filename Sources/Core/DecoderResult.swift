@@ -5,7 +5,7 @@ import FP
 ///
 /// Represents a reusable decoding function as a first-class value,
 /// supporting the full Functor / Applicative / Monad hierarchy.
-public struct DecoderResult<D>: FunctionWrapper<Data, Result<D, DecodingError>> {
+public struct DecoderResult<D>: FunctionWrapper {
     public let run: (Data) -> Result<D, DecodingError>
 
     public init(_ fn: @escaping (Data) -> Result<D, DecodingError>) {

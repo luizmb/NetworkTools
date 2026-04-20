@@ -7,7 +7,7 @@ import FP
 ///
 /// Combines the Reader monad (threading the same `URLRequest` through a chain)
 /// with the Publisher monad (async response streaming with typed errors).
-public struct RequestPublisher<A>: FunctionWrapper<URLRequest, AnyPublisher<A, HTTPError>> {
+public struct RequestPublisher<A>: FunctionWrapper {
     public let run: (URLRequest) -> AnyPublisher<A, HTTPError>
 
     public init(_ fn: @escaping (URLRequest) -> AnyPublisher<A, HTTPError>) {
