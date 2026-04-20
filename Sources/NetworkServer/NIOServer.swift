@@ -14,6 +14,7 @@ import NIOPosix
 public func startServer<Env: Sendable>(host: String = "127.0.0.1", port: Int, router: Router<Env>) -> Reader<Env, Result<Void, Error>> {
     Reader { env in
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        let requestHandler = SendableHandler(call: router.handle.runReader(env))
 
         let result = Result<Void, Error> {
             let bootstrap = ServerBootstrap(group: group)
@@ -21,7 +22,7 @@ public func startServer<Env: Sendable>(host: String = "127.0.0.1", port: Int, ro
                 .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
                 .childChannelInitializer { channel in
                     channel.pipeline.configureHTTPServerPipeline().flatMap {
-                        channel.pipeline.addHandler(HTTPChannelHandler(router: router, env: env))
+                        channel.pipeline.addHandler(HTTPChannelHandler(requestHandler.call))
                     }
                 }
                 .childChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)

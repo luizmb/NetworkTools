@@ -35,24 +35,5 @@ public func => <U: Decodable & Sendable, Q: Decodable & Sendable, B: Decodable &
     _ typedRoute: TypedRoute<U, Q, B>,
     _ handler: Handler<U, Q, B, Env>
 ) -> Router<Env> {
-    Router { request in
-        switch typedRoute.route.match(request) {
-        case .failure(let error):
-            return .failure(error)
-        case .success(let matched):
-            let bodyData = matched.raw.body.isEmpty ? Data("{}".utf8) : matched.raw.body
-            switch typedRoute.bodyDecoder.run(bodyData) {
-            case .failure(let error):
-                return .failure(.badRequest(error.localizedDescription))
-            case .success(let body):
-                let typedReq = TypedRequest(
-                    urlParams: matched.urlParams,
-                    queryParams: matched.queryParams,
-                    body: body,
-                    raw: matched.raw
-                )
-                return .success(handler.run(typedReq))
-            }
-        }
-    }
+    Router(typedRoute.route.matchReader() >=> decodeBody(typedRoute.bodyDecoder) >=> handler.run)
 }

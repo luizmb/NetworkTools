@@ -288,25 +288,26 @@ struct RouterTests {
     }
 
     @Test func notFoundForEmptyRouter() async {
-        #expect(await Router<Void>().handle(req(.GET, "/anything")).runReader(()).run().response.status == .notFound)
+        #expect(await Router<Void>().handle.runReader(())(req(.GET, "/anything")).run().response.status == .notFound)
     }
 
     @Test func matchesRegisteredRoute() async {
         let router: Router<Void> = Route<Empty, Empty>(.GET, "/ping") => .handle { _ in ResponseEncoder<String>.html.response("pong") }
-        #expect(await router.handle(req(.GET, "/ping")).runReader(()).run().response.status == .ok)
+        #expect(await router.handle.runReader(())(req(.GET, "/ping")).run().response.status == .ok)
     }
 
     @Test func returnsNotFoundForUnregisteredPath() async {
         let router: Router<Void> = Route<Empty, Empty>(.GET, "/ping") => .handle { _ in ResponseEncoder<String>.html.response("pong") }
-        #expect(await router.handle(req(.GET, "/other")).runReader(()).run().response.status == .notFound)
+        #expect(await router.handle.runReader(())(req(.GET, "/other")).run().response.status == .notFound)
     }
 
     @Test func matchesFirstMatchingRoute() async {
         let router: Router<Void> =
             Route<Empty, Empty>(.GET, "/a") => .handle { _ in ResponseEncoder<String>.html.response("A") }
             <> Route<Empty, Empty>(.GET, "/b") => .handle { _ in ResponseEncoder<String>.html.response("B") }
-        #expect(String(data: (await router.handle(req(.GET, "/a")).runReader(()).run()).response.body, encoding: .utf8) == "A")
-        #expect(String(data: (await router.handle(req(.GET, "/b")).runReader(()).run()).response.body, encoding: .utf8) == "B")
+        let run = router.handle.runReader(())
+        #expect(String(data: (await run(req(.GET, "/a")).run()).response.body, encoding: .utf8) == "A")
+        #expect(String(data: (await run(req(.GET, "/b")).run()).response.body, encoding: .utf8) == "B")
     }
 
     @Test func decodesURLParams() async {
@@ -318,7 +319,7 @@ struct RouterTests {
             box.value = typedReq.urlParams.id
             return ResponseEncoder<String>.html.response("ok")
         }
-        _ = await router.handle(req(.GET, "/users/42")).runReader(()).run()
+        _ = await router.handle.runReader(())(req(.GET, "/users/42")).run()
         #expect(box.value == "42")
     }
 
@@ -329,7 +330,7 @@ struct RouterTests {
             Route<Empty, Empty>(.POST, "/echo")
             => DecoderResult<Body>.json.runReader(JSONDecoder())
             => .handle { typedReq in jsonEncoder(for: Resp.self).response(Resp(echo: typedReq.body.name)) }
-        let response = await router.handle(req(.POST, "/echo", body: Data(#"{"name":"hello"}"#.utf8))).runReader(()).run().response
+        let response = await router.handle.runReader(())(req(.POST, "/echo", body: Data(#"{"name":"hello"}"#.utf8))).run().response
         let decoded  = try? JSONDecoder().decode(Resp.self, from: response.body)
         #expect(decoded?.echo == "hello")
     }
@@ -339,7 +340,9 @@ struct RouterTests {
             Route<Empty, Empty>(.GET, "/async") => .handle { _ in
                 DeferredTask { ResponseEncoder<String>.html.response("async") }
             }
-        #expect(String(data: (await router.handle(req(.GET, "/async")).runReader(()).run()).response.body, encoding: .utf8) == "async")
+        #expect(
+            String(data: (await router.handle.runReader(())(req(.GET, "/async")).run()).response.body, encoding: .utf8) == "async"
+        )
     }
 
     #if canImport(Combine)
@@ -348,7 +351,9 @@ struct RouterTests {
             Route<Empty, Empty>(.GET, "/pub") => .handle { _ in
                 Just(ResponseEncoder<String>.html.response("pub").response).eraseToAnyPublisher()
             }
-        #expect(String(data: (await router.handle(req(.GET, "/pub")).runReader(()).run()).response.body, encoding: .utf8) == "pub")
+        #expect(
+            String(data: (await router.handle.runReader(())(req(.GET, "/pub")).run()).response.body, encoding: .utf8) == "pub"
+        )
     }
     #endif
 
@@ -358,7 +363,7 @@ struct RouterTests {
             Route<Empty, Empty>(.GET, "/hello") => .handle { _ in
                 Reader { env in ResponseEncoder<String>.html.response(env.greeting) }
             }
-        let response = await router.handle(req(.GET, "/hello")).runReader(Env(greeting: "hi there")).run().response
+        let response = await router.handle.runReader(Env(greeting: "hi there"))(req(.GET, "/hello")).run().response
         #expect(String(data: response.body, encoding: .utf8) == "hi there")
     }
 }

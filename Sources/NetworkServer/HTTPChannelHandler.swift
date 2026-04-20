@@ -1,20 +1,19 @@
 import Foundation
+import FP
 @preconcurrency import NIOCore
 import NIOHTTP1
 
-final class HTTPChannelHandler<Env: Sendable>: ChannelInboundHandler, @unchecked Sendable {
+final class HTTPChannelHandler: ChannelInboundHandler, @unchecked Sendable {
     typealias InboundIn   = HTTPServerRequestPart
     typealias OutboundOut = HTTPServerResponsePart
 
-    private let router: Router<Env>
-    private let env: Env
+    private let requestHandler: (Request) -> DeferredTask<Result<Response, ResponseError>>
     private var method: HTTPMethod = .GET
     private var uri: String = "/"
     private var body: [UInt8] = []
 
-    init(router: Router<Env>, env: Env) {
-        self.router = router
-        self.env    = env
+    init(_ requestHandler: @escaping (Request) -> DeferredTask<Result<Response, ResponseError>>) {
+        self.requestHandler = requestHandler
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
@@ -28,7 +27,7 @@ final class HTTPChannelHandler<Env: Sendable>: ChannelInboundHandler, @unchecked
             body.append(contentsOf: buf.readBytes(length: buf.readableBytes) ?? [])
         case .end:
             let request   = Request(method: method, uri: uri, body: Data(body))
-            let task      = router.handle(request).runReader(env)
+            let task      = requestHandler(request)
             let eventLoop = context.eventLoop
             Task { [weak self] in
                 guard let self else { return }

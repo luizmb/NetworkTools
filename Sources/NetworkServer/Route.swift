@@ -24,7 +24,7 @@ public struct Route<URLParams: Decodable, QueryParams: Decodable>: Sendable {
         self.pattern = pattern
     }
 
-    func match(_ raw: Request) -> Result<MatchedRoute<URLParams, QueryParams>, ResponseError> {
+    public func match(_ raw: Request) -> Result<MatchedRoute<URLParams, QueryParams>, ResponseError> {
         guard raw.method == method,
               let pathParams = matchPath(raw.path, against: pattern),
               case .success(let urlParams) = URLParamsDecoder.decode(URLParams.self, from: pathParams)

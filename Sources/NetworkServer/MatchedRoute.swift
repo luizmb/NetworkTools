@@ -1,5 +1,5 @@
-struct MatchedRoute<URLParams, QueryParams> {
-    let urlParams: URLParams
-    let queryParams: QueryParams
-    let raw: Request
+public struct MatchedRoute<URLParams, QueryParams> {
+    public let urlParams: URLParams
+    public let queryParams: QueryParams
+    public let raw: Request
 }
