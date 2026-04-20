@@ -77,15 +77,15 @@ struct RequestTests {
     @Test func decodeBody_success() throws {
         struct Item: Codable, Equatable { let name: String }
         let body = Data(#"{"name":"test"}"#.utf8)
-        #expect(try Request(method: .POST, uri: "/", body: body).decodeBody(as: Item.self).get() == Item(name: "test"))
+        #expect(try Request(method: .POST, uri: "/", body: body).decodeBody(as: Item.self).runReader(JSONDecoder()).get() == Item(name: "test"))
     }
 
     @Test func decodeBody_failure() {
-        #expect(Request(method: .POST, uri: "/", body: Data("bad".utf8)).decodeBody(as: Int.self).isFailure)
+        #expect(Request(method: .POST, uri: "/", body: Data("bad".utf8)).decodeBody(as: Int.self).runReader(JSONDecoder()).isFailure)
     }
 
     @Test func decodeBody_emptyBodyFails() {
-        #expect(Request(method: .POST, uri: "/", body: Data()).decodeBody(as: [String: String].self).isFailure)
+        #expect(Request(method: .POST, uri: "/", body: Data()).decodeBody(as: [String: String].self).runReader(JSONDecoder()).isFailure)
     }
 }
 
@@ -280,7 +280,7 @@ struct RequestDecoderTests {
     @Test func decodesBody() {
         struct Body: Decodable, Equatable { let name: String }
         let raw = Request(method: .POST, uri: "/", body: Data(#"{"name":"test"}"#.utf8))
-        let decoder = RequestDecoder<Empty, Empty, Body>()
+        let decoder = RequestDecoder<Empty, Empty, Body>.json.runReader(JSONDecoder())
         guard case .success(let typedReq) = decoder.decode(matched(raw: raw)) else {
             Issue.record("Expected .success"); return
         }
@@ -290,7 +290,7 @@ struct RequestDecoderTests {
     @Test func returnsErrorOnBadBody() {
         struct Body: Decodable { let name: String }
         let raw = Request(method: .POST, uri: "/", body: Data("not-json".utf8))
-        let decoder = RequestDecoder<Empty, Empty, Body>()
+        let decoder = RequestDecoder<Empty, Empty, Body>.json.runReader(JSONDecoder())
         guard case .failure(let e) = decoder.decode(matched(raw: raw)) else {
             Issue.record("Expected .failure"); return
         }
@@ -377,7 +377,7 @@ struct RouterTests {
         var router = Router<Void>()
         router.register(
             route: Route<Empty, Empty>(.POST, "/echo"),
-            decoder: RequestDecoder<Empty, Empty, Body>(),
+            decoder: RequestDecoder<Empty, Empty, Body>.json.runReader(JSONDecoder()),
             handler: .handle { typedReq in jsonEncoder(for: Resp.self).response(Resp(echo: typedReq.body.name)) }
         )
         let response = await router.handle(req(.POST, "/echo", body: Data(#"{"name":"hello"}"#.utf8))).runReader(()).run().response
@@ -471,7 +471,7 @@ struct NIOServerTests {
         )
         router.register(
             route: Route<Empty, Empty>(.POST, "/echo"),
-            decoder: RequestDecoder<Empty, Empty, EchoBody>(),
+            decoder: RequestDecoder<Empty, Empty, EchoBody>.json.runReader(JSONDecoder()),
             handler: .handle { req in jsonEncoder(for: EchoResp.self).response(EchoResp(message: req.body.message)) }
         )
         let frozenRouter = router

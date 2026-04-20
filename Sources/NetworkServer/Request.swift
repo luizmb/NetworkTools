@@ -1,3 +1,5 @@
+import Core
+import FP
 import Foundation
 import NIOHTTP1
 
@@ -39,14 +41,7 @@ public struct Request: Sendable {
     }
 
     /// Decodes the request body as JSON into the given `Decodable` type.
-    public func decodeBody<T: Decodable>(as _: T.Type = T.self) -> Result<T, DecodingError> {
-        Result { try JSONDecoder().decode(T.self, from: body) }
-            .mapError {
-                $0 as? DecodingError
-                    ?? DecodingError.dataCorrupted(.init(
-                        codingPath: [],
-                        debugDescription: "Unknown decoding error: \($0)"
-                    ))
-            }
+    public func decodeBody<T: Decodable>(as _: T.Type = T.self) -> Reader<JSONDecoder, Result<T, DecodingError>> {
+        Reader { decoder in DecoderResult<T>.json.runReader(decoder).run(body) }
     }
 }
