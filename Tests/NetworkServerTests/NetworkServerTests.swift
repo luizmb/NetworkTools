@@ -313,7 +313,8 @@ struct RouterTests {
         struct UserParams: Decodable { let id: String }
         final class Box: @unchecked Sendable { var value: String? }
         let box = Box()
-        let router: Router<Void> = Route<UserParams, Empty>(.GET, "/users/:id") => .handle { (typedReq: TypedRequest<UserParams, Empty, Empty>) -> Result<Response, ResponseError> in
+        let router: Router<Void> = Route<UserParams, Empty>(.GET, "/users/:id") => .handle {
+            (typedReq: TypedRequest<UserParams, Empty, Empty>) -> Result<Response, ResponseError> in
             box.value = typedReq.urlParams.id
             return ResponseEncoder<String>.html.response("ok")
         }
@@ -334,20 +335,29 @@ struct RouterTests {
     }
 
     @Test func asyncHandlerViaDeferredTask() async {
-        let router: Router<Void> = Route<Empty, Empty>(.GET, "/async") => .handle { _ in DeferredTask { ResponseEncoder<String>.html.response("async") } }
+        let router: Router<Void> =
+            Route<Empty, Empty>(.GET, "/async") => .handle { _ in
+                DeferredTask { ResponseEncoder<String>.html.response("async") }
+            }
         #expect(String(data: (await router.handle(req(.GET, "/async")).runReader(()).run()).response.body, encoding: .utf8) == "async")
     }
 
     #if canImport(Combine)
     @Test func asyncHandlerViaCombinePublisher() async {
-        let router: Router<Void> = Route<Empty, Empty>(.GET, "/pub") => .handle { _ in Just(ResponseEncoder<String>.html.response("pub").response).eraseToAnyPublisher() }
+        let router: Router<Void> =
+            Route<Empty, Empty>(.GET, "/pub") => .handle { _ in
+                Just(ResponseEncoder<String>.html.response("pub").response).eraseToAnyPublisher()
+            }
         #expect(String(data: (await router.handle(req(.GET, "/pub")).runReader(()).run()).response.body, encoding: .utf8) == "pub")
     }
     #endif
 
     @Test func handlerReceivesEnvironment() async {
         struct Env: Sendable { let greeting: String }
-        let router: Router<Env> = Route<Empty, Empty>(.GET, "/hello") => .handle { _ in Reader { env in ResponseEncoder<String>.html.response(env.greeting) } }
+        let router: Router<Env> =
+            Route<Empty, Empty>(.GET, "/hello") => .handle { _ in
+                Reader { env in ResponseEncoder<String>.html.response(env.greeting) }
+            }
         let response = await router.handle(req(.GET, "/hello")).runReader(Env(greeting: "hi there")).run().response
         #expect(String(data: response.body, encoding: .utf8) == "hi there")
     }
