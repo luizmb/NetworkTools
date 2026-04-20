@@ -9,7 +9,7 @@ import NIOHTTP1
 ///   Failure after a successful URL match returns HTTP 400.
 ///
 /// Use `Empty` for any parameter group that requires no decoding.
-/// Body decoding is handled separately by `RequestDecoder`.
+/// Body decoding is attached via the `=>` operator when building the router.
 ///
 /// ```swift
 /// Route<Empty, Empty>(.GET, "/ping")
@@ -24,11 +24,11 @@ public struct Route<URLParams: Decodable, QueryParams: Decodable>: Sendable {
         self.pattern = pattern
     }
 
-    func match(_ raw: Request) -> Result<MatchedRoute<URLParams, QueryParams>, ResponseError>? {
+    func match(_ raw: Request) -> Result<MatchedRoute<URLParams, QueryParams>, ResponseError> {
         guard raw.method == method,
               let pathParams = matchPath(raw.path, against: pattern),
               case .success(let urlParams) = URLParamsDecoder.decode(URLParams.self, from: pathParams)
-        else { return nil }
+        else { return .failure(.notFound) }
 
         switch QueryParamsDecoder.decode(QueryParams.self, from: raw.queryParams) {
         case .success(let queryParams):

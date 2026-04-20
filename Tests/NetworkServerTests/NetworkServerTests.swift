@@ -234,15 +234,19 @@ struct RouteTests {
     }
 
     @Test func matchesMethodAndPath() {
-        #expect(Route<Empty, Empty>(.GET, "/ping").match(req(.GET, "/ping")) != nil)
+        #expect(Route<Empty, Empty>(.GET, "/ping").match(req(.GET, "/ping")).isSuccess)
     }
 
     @Test func rejectsWrongMethod() {
-        #expect(Route<Empty, Empty>(.GET, "/ping").match(req(.POST, "/ping")) == nil)
+        let result = Route<Empty, Empty>(.GET, "/ping").match(req(.POST, "/ping"))
+        guard case .failure(let e) = result else { Issue.record("Expected .failure"); return }
+        #expect(e.status == .notFound)
     }
 
     @Test func rejectsWrongPath() {
-        #expect(Route<Empty, Empty>(.GET, "/ping").match(req(.GET, "/pong")) == nil)
+        let result = Route<Empty, Empty>(.GET, "/ping").match(req(.GET, "/pong"))
+        guard case .failure(let e) = result else { Issue.record("Expected .failure"); return }
+        #expect(e.status == .notFound)
     }
 
     @Test func decodesURLParams() {
@@ -254,9 +258,11 @@ struct RouteTests {
         #expect(mr.urlParams.id == "42")
     }
 
-    @Test func returnsNilOnURLParamTypeMismatch() {
+    @Test func returnsNotFoundOnURLParamTypeMismatch() {
         struct UserParams: Decodable { let id: Int }
-        #expect(Route<UserParams, Empty>(.GET, "/users/:id").match(req(.GET, "/users/abc")) == nil)
+        let result = Route<UserParams, Empty>(.GET, "/users/:id").match(req(.GET, "/users/abc"))
+        guard case .failure(let e) = result else { Issue.record("Expected .failure"); return }
+        #expect(e.status == .notFound)
     }
 
     @Test func returnsErrorOnMissingRequiredQueryParam() {
@@ -269,7 +275,7 @@ struct RouteTests {
 
     @Test func decodesOptionalQueryParam() {
         struct Q: Decodable { let page: Int? }
-        #expect(Route<Empty, Q>(.GET, "/items").match(req(.GET, "/items")) != nil)
+        #expect(Route<Empty, Q>(.GET, "/items").match(req(.GET, "/items")).isSuccess)
     }
 }
 
@@ -286,33 +292,19 @@ struct RouterTests {
     }
 
     @Test func matchesRegisteredRoute() async {
-        var router = Router<Void>()
-        router.register(
-            route: Route<Empty, Empty>(.GET, "/ping"),
-            handler: .handle { _ in ResponseEncoder<String>.html.response("pong") }
-        )
+        let router: Router<Void> = Route<Empty, Empty>(.GET, "/ping") => .handle { _ in ResponseEncoder<String>.html.response("pong") }
         #expect(await router.handle(req(.GET, "/ping")).runReader(()).run().response.status == .ok)
     }
 
     @Test func returnsNotFoundForUnregisteredPath() async {
-        var router = Router<Void>()
-        router.register(
-            route: Route<Empty, Empty>(.GET, "/ping"),
-            handler: .handle { _ in ResponseEncoder<String>.html.response("pong") }
-        )
+        let router: Router<Void> = Route<Empty, Empty>(.GET, "/ping") => .handle { _ in ResponseEncoder<String>.html.response("pong") }
         #expect(await router.handle(req(.GET, "/other")).runReader(()).run().response.status == .notFound)
     }
 
     @Test func matchesFirstMatchingRoute() async {
-        var router = Router<Void>()
-        router.register(
-            route: Route<Empty, Empty>(.GET, "/a"),
-            handler: .handle { _ in ResponseEncoder<String>.html.response("A") }
-        )
-        router.register(
-            route: Route<Empty, Empty>(.GET, "/b"),
-            handler: .handle { _ in ResponseEncoder<String>.html.response("B") }
-        )
+        let router: Router<Void> =
+            Route<Empty, Empty>(.GET, "/a") => .handle { _ in ResponseEncoder<String>.html.response("A") }
+            <> Route<Empty, Empty>(.GET, "/b") => .handle { _ in ResponseEncoder<String>.html.response("B") }
         #expect(String(data: (await router.handle(req(.GET, "/a")).runReader(()).run()).response.body, encoding: .utf8) == "A")
         #expect(String(data: (await router.handle(req(.GET, "/b")).runReader(()).run()).response.body, encoding: .utf8) == "B")
     }
@@ -321,14 +313,10 @@ struct RouterTests {
         struct UserParams: Decodable { let id: String }
         final class Box: @unchecked Sendable { var value: String? }
         let box = Box()
-        var router = Router<Void>()
-        router.register(
-            route: Route<UserParams, Empty>(.GET, "/users/:id"),
-            handler: .handle { (typedReq: TypedRequest<UserParams, Empty, Empty>) -> Result<Response, ResponseError> in
-                box.value = typedReq.urlParams.id
-                return ResponseEncoder<String>.html.response("ok")
-            }
-        )
+        let router: Router<Void> = Route<UserParams, Empty>(.GET, "/users/:id") => .handle { (typedReq: TypedRequest<UserParams, Empty, Empty>) -> Result<Response, ResponseError> in
+            box.value = typedReq.urlParams.id
+            return ResponseEncoder<String>.html.response("ok")
+        }
         _ = await router.handle(req(.GET, "/users/42")).runReader(()).run()
         #expect(box.value == "42")
     }
@@ -336,44 +324,30 @@ struct RouterTests {
     @Test func decodesBodyViaDecoder() async {
         struct Body: Decodable { let name: String }
         struct Resp: Codable { let echo: String }
-        var router = Router<Void>()
-        router.register(
-            route: Route<Empty, Empty>(.POST, "/echo"),
-            bodyDecoder: DecoderResult<Body>.json.runReader(JSONDecoder()),
-            handler: .handle { typedReq in jsonEncoder(for: Resp.self).response(Resp(echo: typedReq.body.name)) }
-        )
+        let router: Router<Void> =
+            Route<Empty, Empty>(.POST, "/echo")
+            => DecoderResult<Body>.json.runReader(JSONDecoder())
+            => .handle { typedReq in jsonEncoder(for: Resp.self).response(Resp(echo: typedReq.body.name)) }
         let response = await router.handle(req(.POST, "/echo", body: Data(#"{"name":"hello"}"#.utf8))).runReader(()).run().response
         let decoded  = try? JSONDecoder().decode(Resp.self, from: response.body)
         #expect(decoded?.echo == "hello")
     }
 
     @Test func asyncHandlerViaDeferredTask() async {
-        var router = Router<Void>()
-        router.register(
-            route: Route<Empty, Empty>(.GET, "/async"),
-            handler: .handle { _ in DeferredTask { ResponseEncoder<String>.html.response("async") } }
-        )
+        let router: Router<Void> = Route<Empty, Empty>(.GET, "/async") => .handle { _ in DeferredTask { ResponseEncoder<String>.html.response("async") } }
         #expect(String(data: (await router.handle(req(.GET, "/async")).runReader(()).run()).response.body, encoding: .utf8) == "async")
     }
 
     #if canImport(Combine)
     @Test func asyncHandlerViaCombinePublisher() async {
-        var router = Router<Void>()
-        router.register(
-            route: Route<Empty, Empty>(.GET, "/pub"),
-            handler: .handle { _ in Just(ResponseEncoder<String>.html.response("pub").response).eraseToAnyPublisher() }
-        )
+        let router: Router<Void> = Route<Empty, Empty>(.GET, "/pub") => .handle { _ in Just(ResponseEncoder<String>.html.response("pub").response).eraseToAnyPublisher() }
         #expect(String(data: (await router.handle(req(.GET, "/pub")).runReader(()).run()).response.body, encoding: .utf8) == "pub")
     }
     #endif
 
     @Test func handlerReceivesEnvironment() async {
         struct Env: Sendable { let greeting: String }
-        var router = Router<Env>()
-        router.register(
-            route: Route<Empty, Empty>(.GET, "/hello"),
-            handler: .handle { _ in Reader { env in ResponseEncoder<String>.html.response(env.greeting) } }
-        )
+        let router: Router<Env> = Route<Empty, Empty>(.GET, "/hello") => .handle { _ in Reader { env in ResponseEncoder<String>.html.response(env.greeting) } }
         let response = await router.handle(req(.GET, "/hello")).runReader(Env(greeting: "hi there")).run().response
         #expect(String(data: response.body, encoding: .utf8) == "hi there")
     }
@@ -396,12 +370,8 @@ struct NIOServerTests {
     @Test(.timeLimit(.minutes(1)))
     func startServer_respondsToRequest() async throws {
         let port = 18_091
-        var router = Router<Void>()
-        router.register(
-            route: Route<Empty, Empty>(.GET, "/hello"),
-            handler: .handle { req in ResponseEncoder<String>.html.response("OK:\(req.raw.path)") }
-        )
-        let frozenRouter = router
+        let frozenRouter: Router<Void> =
+            Route<Empty, Empty>(.GET, "/hello") => .handle { req in ResponseEncoder<String>.html.response("OK:\(req.raw.path)") }
         Thread.detachNewThread {
             _ = startServer(port: port, router: frozenRouter).runReader(())
         }
@@ -421,17 +391,11 @@ struct NIOServerTests {
         struct EchoBody: Decodable { let message: String }
         struct EchoResp: Codable { let message: String }
 
-        var router = Router<Void>()
-        router.register(
-            route: Route<Empty, Empty>(.GET, "/ping"),
-            handler: .handle { _ in ResponseEncoder<String>.html.response("pong") }
-        )
-        router.register(
-            route: Route<Empty, Empty>(.POST, "/echo"),
-            bodyDecoder: DecoderResult<EchoBody>.json.runReader(JSONDecoder()),
-            handler: .handle { req in jsonEncoder(for: EchoResp.self).response(EchoResp(message: req.body.message)) }
-        )
-        let frozenRouter = router
+        let frozenRouter: Router<Void> =
+            Route<Empty, Empty>(.GET, "/ping") => .handle { _ in ResponseEncoder<String>.html.response("pong") }
+            <> Route<Empty, Empty>(.POST, "/echo")
+                => DecoderResult<EchoBody>.json.runReader(JSONDecoder())
+                => .handle { req in jsonEncoder(for: EchoResp.self).response(EchoResp(message: req.body.message)) }
         Thread.detachNewThread {
             _ = startServer(port: port, router: frozenRouter).runReader(())
         }
