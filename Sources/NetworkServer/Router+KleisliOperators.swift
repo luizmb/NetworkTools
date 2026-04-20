@@ -40,6 +40,18 @@ public extension Route {
     }
 }
 
+// MARK: - Empty body → Kleisli step
+
+/// Lifts a matched route with no body into `Reader<Env, Result<…>>` for Kleisli composition.
+/// Use this when the route requires no body decoding — no `Decodable` constraint is imposed.
+public func emptyBody<U, Q, Env>() -> (MatchedRoute<U, Q>) -> Reader<Env, Result<TypedRequest<U, Q, Empty>, ResponseError>> {
+    { matched in
+        Reader { _ in
+            .success(TypedRequest(urlParams: matched.urlParams, queryParams: matched.queryParams, body: .value, raw: matched.raw))
+        }
+    }
+}
+
 // MARK: - Body-decode → Kleisli step
 
 /// Lifts a `DecoderResult<B>` into `Reader<Env, Result<…>>` for Kleisli composition via `>=>`.

@@ -430,18 +430,27 @@ let resilient: RequestPublisher<User> =
 
 ## NetworkServer
 
-An embedded HTTP server backed by SwiftNIO. Routes are declared by composing `Route`, `DecoderResult`, and `Handler` values using the `=>` operator. Routers are values — they combine with `<>`, transform their environment with `pullback`, and are injected into the server via `Reader`.
+An embedded HTTP server backed by SwiftNIO. Routes are built by Kleisli-composing (`>=>`) a series of lifting functions, then wrapping the result in `Router(…)`. Routers are values — they combine with `<>`, transform their environment with `pullback`, and are injected into the server via `Reader`.
 
 ### Mental model
 
 ```
 Route<URLParams, QueryParams>    — method + path pattern, typed param decoding
-  => DecoderResult<Body>         — optional body decoder (omit for no body)
-  => Handler<U, Q, B, Env>       — typed handler: TypedRequest → Reader<Env, DeferredTask<Result<Response, ResponseError>>>
-= Router<Env>                    — a first-class, composable server fragment
+  .matchReader()                 — lift Route into a Kleisli step
+
+>=> emptyBody()                  — no body; imposes no Decodable constraint
+ or decodeBody(decoder)          — decode body as B (requires B: Decodable)
+
+>=> handle { req in … }          — lift closure into Reader<Env, DeferredTask<Result<Response, ResponseError>>>
+
+ = (Request) -> Reader<Env, DeferredTask<Result<Response, ResponseError>>>
+
+Router(…)                        — wrap the composed chain into a first-class router value
 ```
 
 Multiple routers combine with `<>`. The semigroup tries the left router first and falls through to the right only on a 404 (unmatched route). Query-param errors (400) and body-decode errors (400) stop immediately without trying the next router.
+
+The environment is injected **once at startup** via `runReader`. Every `>=>` step and every call to `handle` is pure — no side effects, no env access — until `startServer(…).runReader(env)` is called.
 
 ### Core types
 
@@ -450,8 +459,8 @@ Multiple routers combine with `<>`. The semigroup tries the left router first an
 // Use Empty for parameter groups that require no decoding.
 public struct Route<URLParams: Decodable, QueryParams: Decodable>: Sendable
 
-// A first-class router value: tries to match a request synchronously,
-// then runs the handler asynchronously if matched.
+// A first-class router value. Its handle property is a Reader — inject the
+// environment once at startup via handle.runReader(env) to get the request handler.
 public struct Router<Env: Sendable>: Semigroup, Monoid
 
 // A fully decoded, typed request passed to every handler.
@@ -472,7 +481,7 @@ public struct ResponseError: Error {
     public let body:    Data
 }
 
-// Placeholder for any Route or Handler type parameter that carries no data.
+// Sentinel for any type parameter that carries no data.
 public struct Empty: Codable, Sendable {
     public static let value: Empty
 }
@@ -494,10 +503,11 @@ Thread.detachNewThread {
 ### Minimal example
 
 ```swift
-let router: Router<Void> =
-    Route<Empty, Empty>(.GET, "/ping") => .handle { _ in
-        ResponseEncoder<String>.html.response("pong")
-    }
+let router: Router<Void> = Router(
+    Route<Empty, Empty>(.GET, "/ping").matchReader()
+    >=> emptyBody()
+    >=> handle { _ in ResponseEncoder<String>.html.response("pong") }
+)
 
 Thread.detachNewThread {
     _ = startServer(port: 8080, router: router).runReader(())
@@ -511,10 +521,11 @@ Declare a `Decodable` struct whose property names match the `:placeholder` names
 ```swift
 struct AlbumID: Decodable { let id: String }
 
-let router: Router<Void> =
-    Route<AlbumID, Empty>(.GET, "/albums/:id") => .handle { req in
-        ResponseEncoder<String>.html.response("Album: \(req.urlParams.id)")
-    }
+let router: Router<Void> = Router(
+    Route<AlbumID, Empty>(.GET, "/albums/:id").matchReader()
+    >=> emptyBody()
+    >=> handle { req in ResponseEncoder<String>.html.response("Album: \(req.urlParams.id)") }
+)
 ```
 
 Multiple parameters work the same way — one struct field per placeholder:
@@ -525,12 +536,15 @@ struct PhotoPath: Decodable {
     let photoId: String
 }
 
-let router: Router<Void> =
-    Route<PhotoPath, Empty>(.GET, "/albums/:albumId/photos/:photoId") => .handle { req in
+let router: Router<Void> = Router(
+    Route<PhotoPath, Empty>(.GET, "/albums/:albumId/photos/:photoId").matchReader()
+    >=> emptyBody()
+    >=> handle { req in
         ResponseEncoder<String>.html.response(
             "Album \(req.urlParams.albumId), photo \(req.urlParams.photoId)"
         )
     }
+)
 ```
 
 Typed URL params participate in routing. If a `:placeholder` cannot be decoded into the declared Swift type (e.g., a field typed as `Int` when the path segment is `"beach"`), the route returns 404 and the next router is tried. This lets the same URL shape be handled by different typed routes:
@@ -539,15 +553,13 @@ Typed URL params participate in routing. If a `:placeholder` cannot be decoded i
 struct NumericID: Decodable { let id: Int }
 struct StringSlug: Decodable { let id: String }
 
-// GET /albums/123  → matched by the Int route  → "Numeric album: 123"
-// GET /albums/jazz → falls through Int route (404) → matched by the String route → "Jazz"
+// GET /albums/123  → matched by Int route  → "Numeric album: 123"
+// GET /albums/jazz → falls through (404)   → matched by String route → "Album slug: jazz"
 let router: Router<Void> =
-    Route<NumericID, Empty>(.GET, "/albums/:id") => .handle { req in
-        ResponseEncoder<String>.html.response("Numeric album: \(req.urlParams.id)")
-    }
-    <> Route<StringSlug, Empty>(.GET, "/albums/:id") => .handle { req in
-        ResponseEncoder<String>.html.response("Album slug: \(req.urlParams.id)")
-    }
+    Router(Route<NumericID, Empty>(.GET, "/albums/:id").matchReader() >=> emptyBody()
+           >=> handle { req in ResponseEncoder<String>.html.response("Numeric album: \(req.urlParams.id)") })
+    <> Router(Route<StringSlug, Empty>(.GET, "/albums/:id").matchReader() >=> emptyBody()
+              >=> handle { req in ResponseEncoder<String>.html.response("Album slug: \(req.urlParams.id)") })
 ```
 
 ### Typed query parameters
@@ -561,12 +573,15 @@ struct Pagination: Decodable {
 }
 
 // GET /items?page=2&limit=20
-let router: Router<Void> =
-    Route<Empty, Pagination>(.GET, "/items") => .handle { req in
+let router: Router<Void> = Router(
+    Route<Empty, Pagination>(.GET, "/items").matchReader()
+    >=> emptyBody()
+    >=> handle { req in
         let page  = req.queryParams.page  ?? 1
         let limit = req.queryParams.limit ?? 10
-        ResponseEncoder<String>.plainText.response("page=\(page) limit=\(limit)")
+        return ResponseEncoder<String>.plainText.response("page=\(page) limit=\(limit)")
     }
+)
 ```
 
 ### Returning JSON
@@ -582,10 +597,11 @@ struct Album: Codable {
 // Define encoders once and reuse them across handlers.
 let albumEncoder: ResponseEncoder<Album> = .json.runReader(.json.runReader(JSONEncoder()))
 
-let router: Router<Void> =
-    Route<Empty, Empty>(.GET, "/albums/1") => .handle { _ in
-        albumEncoder.response(Album(id: 1, title: "Kind of Blue"))
-    }
+let router: Router<Void> = Router(
+    Route<Empty, Empty>(.GET, "/albums/1").matchReader()
+    >=> emptyBody()
+    >=> handle { _ in albumEncoder.response(Album(id: 1, title: "Kind of Blue")) }
+)
 ```
 
 Configure the `JSONEncoder` before injecting it:
@@ -603,7 +619,7 @@ let albumEncoder: ResponseEncoder<Album> = .json.runReader(.json.runReader(prett
 
 ### Body decoding
 
-Insert a `DecoderResult<Body>` step between the route and the handler using `=>`. The decoder runs only when the route matches; a decoding failure returns 400 before the handler is called.
+Use `decodeBody(decoder)` as the middle step in the Kleisli chain. It runs the decoder only when the route matches; a decode failure returns 400 before the handler is called. Unlike `emptyBody()`, it requires `B: Decodable`.
 
 ```swift
 struct CreateAlbum: Decodable { let title: String }
@@ -612,32 +628,29 @@ struct Album:       Codable   { let id: Int; let title: String }
 let albumDecoder: DecoderResult<CreateAlbum> = .json.runReader(JSONDecoder())
 let albumEncoder: ResponseEncoder<Album>     = .json.runReader(.json.runReader(JSONEncoder()))
 
-let router: Router<Void> =
-    Route<Empty, Empty>(.POST, "/albums")
-    => albumDecoder
-    => .handle { req in
-        let album = Album(id: nextID(), title: req.body.title)
-        return albumEncoder.response(album, status: .created)
-    }
+let router: Router<Void> = Router(
+    Route<Empty, Empty>(.POST, "/albums").matchReader()
+    >=> decodeBody(albumDecoder)
+    >=> handle { req in albumEncoder.response(Album(id: nextID(), title: req.body.title), status: .created) }
+)
 ```
 
 Combine URL params, query params, and a body in one route:
 
 ```swift
-struct AlbumID:    Decodable { let id: Int }
-struct Format:     Decodable { let format: String? }
+struct AlbumID:     Decodable { let id: Int }
+struct Format:      Decodable { let format: String? }
 struct CreatePhoto: Decodable { let caption: String; let data: String }
 
-let router: Router<Void> =
-    Route<AlbumID, Format>(.POST, "/albums/:id/photos")
-    => DecoderResult<CreatePhoto>.json.runReader(JSONDecoder())
-    => .handle { req in
-        let albumId = req.urlParams.id
-        let format  = req.queryParams.format ?? "jpeg"
-        let caption = req.body.caption
-        // ... process upload ...
-        return ResponseEncoder<String>.html.response("Uploaded to album \(albumId) as \(format)")
+let router: Router<Void> = Router(
+    Route<AlbumID, Format>(.POST, "/albums/:id/photos").matchReader()
+    >=> decodeBody(DecoderResult<CreatePhoto>.json.runReader(JSONDecoder()))
+    >=> handle { req in
+        ResponseEncoder<String>.html.response(
+            "Uploaded to album \(req.urlParams.id) as \(req.queryParams.format ?? "jpeg")"
+        )
     }
+)
 ```
 
 ### Combining routers
@@ -646,55 +659,51 @@ Routers form a `Semigroup` via `<>`. The combined router tries the left side fir
 
 ```swift
 let router: Router<Void> =
-    Route<Empty, Empty>(.GET,  "/ping")   => .handle { _ in ResponseEncoder<String>.html.response("pong") }
-    <> Route<Empty, Empty>(.GET,  "/health") => .handle { _ in ResponseEncoder<String>.html.response("ok") }
-    <> Route<Empty, Empty>(.POST, "/echo")
-        => DecoderResult<[String: String]>.json.runReader(JSONDecoder())
-        => .handle { req in
-            ResponseEncoder<[String: String]>.json
-                .runReader(.json.runReader(JSONEncoder()))
-                .response(req.body)
+    Router(Route<Empty, Empty>(.GET,  "/ping").matchReader()   >=> emptyBody() >=> handle { _ in ResponseEncoder<String>.html.response("pong") })
+    <> Router(Route<Empty, Empty>(.GET,  "/health").matchReader() >=> emptyBody() >=> handle { _ in ResponseEncoder<String>.html.response("ok") })
+    <> Router(
+        Route<Empty, Empty>(.POST, "/echo").matchReader()
+        >=> decodeBody(DecoderResult<[String: String]>.json.runReader(JSONDecoder()))
+        >=> handle { req in
+            ResponseEncoder<[String: String]>.json.runReader(.json.runReader(JSONEncoder())).response(req.body)
         }
+    )
 ```
 
-`Router<Env>` is also a `Monoid` — the identity router always returns 404, which is what `Router<Env>()` gives you:
+`Router<Env>` is also a `Monoid` — `Router<Env>()` gives you the identity router that always returns 404:
 
 ```swift
 let empty = Router<Void>()
-// handle.runReader(env) on empty always returns .failure(.notFound)
+// empty.handle.runReader(env)(request) always yields .failure(.notFound)
 ```
 
-### Handler variants
+### `handle` — lifting closure variants
 
-`.handle` accepts several closure signatures. The router lifts whichever you provide into the full `Reader<Env, DeferredTask<Result<Response, ResponseError>>>` shape:
+`handle` is a free function that lifts any of several closure shapes into the Kleisli step `(TypedRequest<U,Q,B>) -> Reader<Env, DeferredTask<Result<Response, ResponseError>>>`:
 
 ```swift
-// Sync — returns Response directly (always 200 unless you set status explicitly)
-.handle { req -> Response in Response(status: .ok) }
+// Sync — returns Response
+handle { req -> Response in Response(status: .ok) }
 
 // Sync failable — returns Result<Response, ResponseError>
-.handle { req -> Result<Response, ResponseError> in
+handle { req -> Result<Response, ResponseError> in
     guard req.urlParams.id > 0 else { return .failure(.badRequest("id must be positive")) }
     return albumEncoder.response(myAlbum)
 }
 
 // Sync throwing — typed throws(ResponseError)
-.handle { req throws(ResponseError) -> Response in
+handle { req throws(ResponseError) -> Response in
     guard let album = find(req.urlParams.id) else { throw .notFound }
     return try albumEncoder.response(album).get()
 }
 
-// Async — returns DeferredTask<Response> (nothing runs until the task is awaited)
-.handle { req in
-    DeferredTask { await fetchAlbum(req.urlParams.id) }
-}
+// Async — returns DeferredTask<Response>
+handle { req in DeferredTask { await fetchAlbum(req.urlParams.id) } }
 
 // Async failable — returns DeferredTask<Result<Response, ResponseError>>
-.handle { req in
+handle { req in
     DeferredTask {
-        guard let album = await db.fetchAlbum(req.urlParams.id) else {
-            return .failure(.notFound)
-        }
+        guard let album = await db.fetchAlbum(req.urlParams.id) else { return .failure(.notFound) }
         return albumEncoder.response(album)
     }
 }
@@ -702,7 +711,7 @@ let empty = Router<Void>()
 
 ### Environment-dependent handlers
 
-When the handler needs values from the server's environment (database connections, config, auth tokens), return a `Reader` from the closure:
+When the handler needs values from the server's environment (database connections, config, auth tokens), return a `Reader` from the closure. `Env` is only constrained by what your closure returns — no protocol conformance required by `emptyBody` or `decodeBody` themselves.
 
 ```swift
 struct AppEnv: Sendable {
@@ -712,8 +721,10 @@ struct AppEnv: Sendable {
 
 struct AlbumID: Decodable { let id: Int }
 
-let router: Router<AppEnv> =
-    Route<AlbumID, Empty>(.GET, "/albums/:id") => .handle { req in
+let router: Router<AppEnv> = Router(
+    Route<AlbumID, Empty>(.GET, "/albums/:id").matchReader()
+    >=> emptyBody()
+    >=> handle { req in
         Reader { env in
             DeferredTask {
                 guard let album = await env.db.fetchAlbum(id: req.urlParams.id) else {
@@ -723,6 +734,7 @@ let router: Router<AppEnv> =
             }
         }
     }
+)
 
 // Inject the environment at startup, not at route definition time.
 startServer(port: 8080, router: router).runReader(AppEnv(db: db, config: config))
@@ -733,10 +745,11 @@ For synchronous env access:
 ```swift
 struct ConfigEnv: Sendable { let greeting: String }
 
-let router: Router<ConfigEnv> =
-    Route<Empty, Empty>(.GET, "/hello") => .handle { _ in
-        Reader { env in ResponseEncoder<String>.html.response(env.greeting) }
-    }
+let router: Router<ConfigEnv> = Router(
+    Route<Empty, Empty>(.GET, "/hello").matchReader()
+    >=> emptyBody()
+    >=> handle { _ in Reader { env in ResponseEncoder<String>.html.response(env.greeting) } }
+)
 
 startServer(port: 8080, router: router).runReader(ConfigEnv(greeting: "Hi there!"))
 ```
@@ -834,47 +847,57 @@ struct AppEnv: Sendable {
 
 // MARK: - Encoders / Decoders
 
-let albumEncoder:  ResponseEncoder<Album>   = .json.runReader(.json.runReader(JSONEncoder()))
-let albumsEncoder: ResponseEncoder<[Album]> = .json.runReader(.json.runReader(JSONEncoder()))
+let albumEncoder:  ResponseEncoder<Album>     = .json.runReader(.json.runReader(JSONEncoder()))
+let albumsEncoder: ResponseEncoder<[Album]>   = .json.runReader(.json.runReader(JSONEncoder()))
 let albumDecoder:  DecoderResult<CreateAlbum> = .json.runReader(JSONDecoder())
 
 // MARK: - Route params
 
-struct AlbumID:   Decodable { let id:    Int }
-struct YearQuery: Decodable { let year:  Int? }
+struct AlbumID:   Decodable { let id:   Int }
+struct YearQuery: Decodable { let year: Int? }
 
 // MARK: - Router
 
 let router: Router<AppEnv> =
 
     // GET /albums — list all, optionally filtered by ?year=
-    Route<Empty, YearQuery>(.GET, "/albums") => .handle { req in
-        Reader { env -> Result<Response, ResponseError> in
-            let albums = req.queryParams.year.map { y in env.albums.filter { $0.year == y } }
-                         ?? env.albums
-            return albumsEncoder.response(albums)
+    Router(
+        Route<Empty, YearQuery>(.GET, "/albums").matchReader()
+        >=> emptyBody()
+        >=> handle { req in
+            Reader { env -> Result<Response, ResponseError> in
+                let albums = req.queryParams.year.map { y in env.albums.filter { $0.year == y } }
+                             ?? env.albums
+                return albumsEncoder.response(albums)
+            }
         }
-    }
+    )
 
     // GET /albums/:id — fetch one album by integer ID
-    <> Route<AlbumID, Empty>(.GET, "/albums/:id") => .handle { req in
-        Reader { env -> Result<Response, ResponseError> in
-            guard let album = env.albums.first(where: { $0.id == req.urlParams.id }) else {
-                return .failure(.notFound)
+    <> Router(
+        Route<AlbumID, Empty>(.GET, "/albums/:id").matchReader()
+        >=> emptyBody()
+        >=> handle { req in
+            Reader { env -> Result<Response, ResponseError> in
+                guard let album = env.albums.first(where: { $0.id == req.urlParams.id }) else {
+                    return .failure(.notFound)
+                }
+                return albumEncoder.response(album)
             }
-            return albumEncoder.response(album)
         }
-    }
+    )
 
     // POST /albums — create a new album from a JSON body
-    <> Route<Empty, Empty>(.POST, "/albums")
-        => albumDecoder
-        => .handle { req in
+    <> Router(
+        Route<Empty, Empty>(.POST, "/albums").matchReader()
+        >=> decodeBody(albumDecoder)
+        >=> handle { req in
             Reader { env -> Result<Response, ResponseError> in
                 let newAlbum = Album(id: env.albums.count + 1, title: req.body.title, year: req.body.year)
                 return albumEncoder.response(newAlbum, status: .created)
             }
         }
+    )
 
 // MARK: - Start
 
@@ -893,21 +916,22 @@ struct WebEnv: Sendable {
     let db: Database
 }
 
-let router: Router<WebEnv> =
-    Route<Empty, Empty>(.GET, "/") => .handle { _ in
+let router: Router<WebEnv> = Router(
+    Route<Empty, Empty>(.GET, "/").matchReader()
+    >=> emptyBody()
+    >=> handle { _ in
         Reader { env -> Result<Response, ResponseError> in
             let ctx: Context = [
-                "title": .string("Albums"),
+                "title":  .string("Albums"),
                 "albums": .list(env.db.allAlbums().map { ["title": .string($0.title)] }),
             ]
             switch render("{{#include page}}", ctx).runReader(env.templates) {
-            case .success(let html):
-                return ResponseEncoder<String>.html.response(html)
-            case .failure(let error):
-                return .failure(.serverError(String(describing: error)))
+            case .success(let html): return ResponseEncoder<String>.html.response(html)
+            case .failure(let err):  return .failure(.serverError(String(describing: err)))
             }
         }
     }
+)
 
 startServer(port: 8080, router: router).runReader(
     WebEnv(templates: .live(path: "/app/templates"), db: myDB)
@@ -923,6 +947,6 @@ All three packages follow the same functional conventions via [`FP`](https://git
 - **`Reader`** for dependency injection (template environment, server environment, request threading). No `init` injection, no stored globals.
 - **`Result`** instead of `throws` at all public API boundaries. Errors are values.
 - **`DeferredTask`** for async work in the server (lazy, nothing runs until `.run()` is called). **`Publisher`** (Combine) for the HTTP client (composable, cancellable, backpressure-aware).
-- **`FunctionWrapper`** for any `(A) -> B` that should be composable — `Handler`, `RequestPublisher`, `DecoderResult`, `EncoderResult` all conform.
+- **`FunctionWrapper`** for any `(A) -> B` that should be composable — `RequestPublisher`, `DecoderResult`, `EncoderResult` all conform.
 - **`Semigroup` / `Monoid`** for router composition — `<>` tries left then right (only 404 falls through), identity is the empty router.
 - **No crashing operations** — no force-unwrap, no `fatalError`, no `try!`. All failure paths return `Result` or publisher errors.
