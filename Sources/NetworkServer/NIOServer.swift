@@ -4,15 +4,15 @@ import NIOCore
 import NIOPosix
 import NIOHTTP1
 
-/// Returns a `Reader` that, when run with a `Handler`, starts the HTTP server
+/// Returns a `Reader` that, when run with an `Env`, starts the HTTP server
 /// on `host:port` and blocks until the server shuts down or an error occurs.
 ///
 /// Usage:
 /// ```swift
-/// startServer(port: 8080).runReader(myHandler)
+/// startServer(port: 8080, router: myRouter).runReader(myEnv)
 /// ```
-public func startServer(host: String = "127.0.0.1", port: Int) -> Reader<Handler, Result<Void, Error>> {
-    Reader { handle in
+public func startServer<Env: Sendable>(host: String = "127.0.0.1", port: Int, router: Router<Env>) -> Reader<Env, Result<Void, Error>> {
+    Reader { env in
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
 
         let result = Result<Void, Error> {
@@ -21,7 +21,7 @@ public func startServer(host: String = "127.0.0.1", port: Int) -> Reader<Handler
                 .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
                 .childChannelInitializer { channel in
                     channel.pipeline.configureHTTPServerPipeline().flatMap {
-                        channel.pipeline.addHandler(HTTPChannelHandler(handle: handle))
+                        channel.pipeline.addHandler(HTTPChannelHandler(router: router, env: env))
                     }
                 }
                 .childChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
@@ -32,8 +32,7 @@ public func startServer(host: String = "127.0.0.1", port: Int) -> Reader<Handler
             try channel.closeFuture.wait()
         }
 
-        // Log rather than suppress: the shutdown error doesn't replace the primary result.
-        if case .failure(let shutdownError) = Result { try group.syncShutdownGracefully() } {
+        if case .failure(let shutdownError) = Result(catching: { try group.syncShutdownGracefully() }) {
             print("[NetworkServer] Event loop shutdown error: \(shutdownError)")
         }
 

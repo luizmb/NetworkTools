@@ -1,8 +1,11 @@
+import Core
 import Testing
-import Combine
 import Foundation
 import FP
 @testable import NetworkClient
+#if canImport(Combine)
+import Combine
+#endif
 
 // MARK: - Test fixtures
 
@@ -13,11 +16,17 @@ private struct Person: Codable, Equatable {
 
 private let personJSON  = Data(#"{"id":1,"name":"Alice"}"#.utf8)
 private let invalidJSON = Data("not json".utf8)
+
+private extension Result {
+    var successValue: Success? { if case .success(let v) = self { v } else { nil } }
+    var isFailure: Bool        { if case .failure = self { true } else { false } }
+}
+
+#if canImport(Combine)
 private let mockRequest = URLRequest(url: URL(string: "https://example.com")!)
 
 // MARK: - Helpers
 
-/// Collect the first emission from a synchronous publisher (Just/Fail backed).
 private func firstResult<O, E: Error>(of publisher: AnyPublisher<O, E>) -> Result<O, E>? {
     var result: Result<O, E>?
     let token = publisher.first().sink(
@@ -26,11 +35,6 @@ private func firstResult<O, E: Error>(of publisher: AnyPublisher<O, E>) -> Resul
     )
     withExtendedLifetime(token) {}
     return result
-}
-
-private extension Result {
-    var successValue: Success? { if case .success(let v) = self { v } else { nil } }
-    var isFailure: Bool        { if case .failure = self { true } else { false } }
 }
 
 // MARK: - RequestPublisher builders
@@ -46,6 +50,7 @@ private func fail<A>(_ error: HTTPError) -> RequestPublisher<A> {
 private func run<A>(_ p: RequestPublisher<A>) -> Result<A, HTTPError>? {
     firstResult(of: p(mockRequest))
 }
+#endif
 
 // MARK: - DecoderResult: Functor
 
@@ -216,6 +221,7 @@ struct JSONDecoderDecoderResultTests {
     }
 }
 
+#if canImport(Combine)
 // MARK: - RequestPublisher: Functor
 
 @Suite("RequestPublisher — Functor")
@@ -413,6 +419,8 @@ struct RequestPublisherDecodeTests {
         #expect(run(p)?.successValue == "Alice")
     }
 }
+
+#endif
 
 // MARK: - HTTPError
 

@@ -1,3 +1,4 @@
+#if canImport(Combine)
 import Combine
 import FP
 import Foundation
@@ -23,3 +24,4 @@ public func £> <A, B>(_ r: RequestPublisher<A>, _ value: B) -> RequestPublisher
 public func <£ <A, B>(_ value: B, _ r: RequestPublisher<A>) -> RequestPublisher<B> {
     r £> value
 }
+#endif

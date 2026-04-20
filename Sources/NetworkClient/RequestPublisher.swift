@@ -1,3 +1,4 @@
+#if canImport(Combine)
 import Combine
 import Foundation
 import FP
@@ -20,3 +21,4 @@ public struct RequestPublisher<A>: FunctionWrapper<URLRequest, AnyPublisher<A, H
 
 /// `RequestPublisher` specialised to the raw HTTP response pair.
 public typealias Requester = RequestPublisher<(Data, HTTPURLResponse)>
+#endif

@@ -1,3 +1,4 @@
+#if canImport(Combine)
 import Combine
 import Foundation
 import FP
@@ -23,3 +24,4 @@ public extension URLSession {
         }
     }
 }
+#endif

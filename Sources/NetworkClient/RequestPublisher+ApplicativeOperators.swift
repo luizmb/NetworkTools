@@ -1,3 +1,4 @@
+#if canImport(Combine)
 import Combine
 import FP
 import Foundation
@@ -18,3 +19,4 @@ public func *> <A, B>(_ lhs: RequestPublisher<A>, _ rhs: RequestPublisher<B>) ->
 public func <* <A, B>(_ lhs: RequestPublisher<A>, _ rhs: RequestPublisher<B>) -> RequestPublisher<A> {
     lhs.seqLeft(rhs)
 }
+#endif

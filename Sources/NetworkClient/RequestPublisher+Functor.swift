@@ -1,3 +1,4 @@
+#if canImport(Combine)
 import Combine
 import Foundation
 
@@ -25,3 +26,4 @@ public extension RequestPublisher {
         RequestPublisher { request in run(request).mapError(f).eraseToAnyPublisher() }
     }
 }
+#endif

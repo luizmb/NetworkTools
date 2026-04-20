@@ -1,63 +1,35 @@
-import Combine
+import FP
 import Foundation
-import NIOHTTP1
 
-// MARK: - Route builder
+public struct Router<Env: Sendable>: @unchecked Sendable {
+    private var entries: [(Request) -> Reader<Env, DeferredTask<Result<Response, ResponseError>>>?] = []
 
-/// Builds a `RouteMatcher` for an async handler.
-public func route(
-    _ method: HTTPMethod,
-    _ pattern: String,
-    _ handler: @escaping (Request) -> AnyPublisher<Response, Never>
-) -> RouteMatcher {
-    { request in
-        guard request.method == method,
-              let params = matchPath(request.path, against: pattern)
-        else { return nil }
-        var req = request
-        req.pathParams = params
-        return handler(req)
-    }
-}
+    public init() {}
 
-/// Convenience overload for sync handlers — wraps the result in `Just`.
-public func route(
-    _ method: HTTPMethod,
-    _ pattern: String,
-    _ handler: @escaping (Request) -> Response
-) -> RouteMatcher {
-    route(method, pattern) { req in
-        Just(handler(req)).eraseToAnyPublisher()
-    }
-}
-
-/// Returns the first matched route's publisher, or a `.notFound` response.
-public func firstMatch(_ matchers: [RouteMatcher]) -> Handler {
-    Handler { request in
-        matchers.lazy.compactMap { $0(request) }.first
-            ?? Just(.notFound).eraseToAnyPublisher()
-    }
-}
-
-// MARK: - Path matching
-
-/// Matches `path` against a `pattern` like `/albums/:id/photos/:photoId`.
-/// Returns the captured params dict on success, `nil` on mismatch.
-private func matchPath(_ path: String, against pattern: String) -> [String: String]? {
-    let pathParts    = path.split(separator: "/", omittingEmptySubsequences: true)
-    let patternParts = pattern.split(separator: "/", omittingEmptySubsequences: true)
-    guard pathParts.count == patternParts.count else { return nil }
-
-    let pairs = Array(zip(pathParts, patternParts))
-
-    // Fail fast on any literal segment mismatch.
-    guard !pairs.contains(where: { seg, tok in !tok.hasPrefix(":") && seg != tok }) else {
-        return nil
+    public mutating func register<U: Decodable & Sendable, Q: Decodable & Sendable, B: Decodable & Sendable>(
+        route: Route<U, Q>,
+        decoder: RequestDecoder<U, Q, B>,
+        handler: Handler<U, Q, B, Env>
+    ) {
+        entries.append { request in
+            switch route.match(request) {
+            case nil:
+                return nil
+            case .failure(let error):
+                return Reader { _ in DeferredTask { .failure(error) } }
+            case .success(let matched):
+                switch decoder.decode(matched) {
+                case .failure(let error):
+                    return Reader { _ in DeferredTask { .failure(error) } }
+                case .success(let typedReq):
+                    return handler.run(typedReq)
+                }
+            }
+        }
     }
 
-    // Collect named captures from parameter segments.
-    return pairs.reduce(into: [:]) { params, pair in
-        let (seg, tok) = pair
-        if tok.hasPrefix(":") { params[String(tok.dropFirst())] = String(seg) }
+    public func handle(_ request: Request) -> Reader<Env, DeferredTask<Result<Response, ResponseError>>> {
+        let matched = entries.compactMap { $0(request) }.first
+        return Reader { env in matched?.runReader(env) ?? DeferredTask { .failure(.notFound) } }
     }
 }

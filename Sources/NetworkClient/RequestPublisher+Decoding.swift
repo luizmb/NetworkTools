@@ -1,3 +1,4 @@
+#if canImport(Combine)
 import Combine
 import Foundation
 
@@ -16,3 +17,4 @@ public extension RequestPublisher where A == Data {
         }
     }
 }
+#endif

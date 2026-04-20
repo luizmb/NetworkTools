@@ -10,6 +10,7 @@ let package = Package(
         .watchOS(.v9),
     ],
     products: [
+        .library(name: "Core",            targets: ["Core"]),
         .library(name: "HTMLTemplating",  targets: ["HTMLTemplating"]),
         .library(name: "NetworkClient",   targets: ["NetworkClient"]),
         .library(name: "NetworkServer",   targets: ["NetworkServer"]),
@@ -20,6 +21,12 @@ let package = Package(
     ],
     targets: [
         .target(
+            name: "Core",
+            dependencies: [
+                .product(name: "FP", package: "FP"),
+            ]
+        ),
+        .target(
             name: "HTMLTemplating",
             dependencies: [
                 .product(name: "FP", package: "FP"),
@@ -28,12 +35,14 @@ let package = Package(
         .target(
             name: "NetworkClient",
             dependencies: [
+                "Core",
                 .product(name: "FP", package: "FP"),
             ]
         ),
         .target(
             name: "NetworkServer",
             dependencies: [
+                "Core",
                 .product(name: "FP",       package: "FP"),
                 .product(name: "NIOCore",  package: "swift-nio"),
                 .product(name: "NIOPosix", package: "swift-nio"),
@@ -47,6 +56,7 @@ let package = Package(
         .testTarget(
             name: "NetworkClientTests",
             dependencies: [
+                "Core",
                 "NetworkClient",
                 .product(name: "FP", package: "FP"),
             ]
@@ -54,7 +64,9 @@ let package = Package(
         .testTarget(
             name: "NetworkServerTests",
             dependencies: [
+                "Core",
                 "NetworkServer",
+                .product(name: "FP",       package: "FP"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
             ]
         ),

@@ -1,23 +1,23 @@
-import Combine
 import Foundation
-import NIOCore
+@preconcurrency import NIOCore
 import NIOHTTP1
 
-public final class HTTPChannelHandler: ChannelInboundHandler, @unchecked Sendable {
-    public typealias InboundIn   = HTTPServerRequestPart
-    public typealias OutboundOut = HTTPServerResponsePart
+final class HTTPChannelHandler<Env: Sendable>: ChannelInboundHandler, @unchecked Sendable {
+    typealias InboundIn   = HTTPServerRequestPart
+    typealias OutboundOut = HTTPServerResponsePart
 
-    private let handle: Handler
+    private let router: Router<Env>
+    private let env:    Env
     private var method: HTTPMethod = .GET
     private var uri:    String     = "/"
     private var body:   [UInt8]    = []
-    private var pendingResponse: AnyCancellable?
 
-    public init(handle: Handler) {
-        self.handle = handle
+    init(router: Router<Env>, env: Env) {
+        self.router = router
+        self.env    = env
     }
 
-    public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let part = unwrapInboundIn(data)
         switch part {
         case .head(let head):
@@ -27,15 +27,20 @@ public final class HTTPChannelHandler: ChannelInboundHandler, @unchecked Sendabl
         case .body(var buf):
             body.append(contentsOf: buf.readBytes(length: buf.readableBytes) ?? [])
         case .end:
-            let request = Request(method: method, uri: uri, body: Data(body))
-            pendingResponse = handle(request)
-                .sink { [weak self] response in
-                    guard let self else { return }
-                    context.eventLoop.execute {
-                        self.writeResponse(response, context: context)
-                        self.pendingResponse = nil
-                    }
+            let request   = Request(method: method, uri: uri, body: Data(body))
+            let task      = router.handle(request).runReader(env)
+            let eventLoop = context.eventLoop
+            Task { [weak self] in
+                guard let self else { return }
+                let response = switch await task.run() {
+                    case .success(let r): r
+                    case .failure(let e): Response(e)
                 }
+                eventLoop.execute { [weak self] in
+                    guard let self else { return }
+                    writeResponse(response, context: context)
+                }
+            }
         }
     }
 
@@ -53,7 +58,7 @@ public final class HTTPChannelHandler: ChannelInboundHandler, @unchecked Sendabl
         context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
     }
 
-    public func errorCaught(context: ChannelHandlerContext, error: Error) {
+    func errorCaught(context: ChannelHandlerContext, error: Error) {
         context.close(promise: nil)
     }
 }

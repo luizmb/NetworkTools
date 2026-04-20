@@ -1,21 +1,35 @@
+import Core
+import FP
 import Testing
-import Combine
 import Foundation
+#if canImport(Combine)
+import Combine
+#endif
 import NIOHTTP1
 @testable import NetworkServer
 
-// MARK: - Helpers
+private typealias Empty = NetworkServer.Empty
 
-private func firstValue<O>(of publisher: AnyPublisher<O, Never>) -> O? {
-    var result: O?
-    let token = publisher.first().sink { result = $0 }
-    withExtendedLifetime(token) {}
-    return result
-}
+// MARK: - Helpers
 
 private extension Result {
     var isSuccess: Bool { if case .success = self { true } else { false } }
     var isFailure: Bool { !isSuccess }
+}
+
+private extension Result where Success == Response, Failure == ResponseError {
+    var response: Response {
+        switch self {
+        case .success(let r): r
+        case .failure(let e): Response(e)
+        }
+    }
+}
+
+private func jsonEncoder<T: Encodable>(for type: T.Type = T.self, _ configure: (JSONEncoder) -> Void = { _ in }) -> ResponseEncoder<T> {
+    let e = JSONEncoder()
+    configure(e)
+    return ResponseEncoder<T>.json.runReader(.json.runReader(e))
 }
 
 // MARK: - Request
@@ -85,209 +99,324 @@ struct ResponseTests {
         #expect(r.headers.isEmpty)
         #expect(r.body.isEmpty)
     }
+}
 
-    @Test func html_body() {
-        let r = Response.html("<h1>Hi</h1>")
+// MARK: - ResponseError
+
+@Suite("ResponseError")
+struct ResponseErrorTests {
+    @Test func notFound() {
+        #expect(ResponseError.notFound.status == .notFound)
+    }
+
+    @Test func badRequest_body() {
+        let e = ResponseError.badRequest("missing field")
+        #expect(e.status == .badRequest)
+        #expect(String(data: e.body, encoding: .utf8) == "missing field")
+    }
+
+    @Test func serverError_body() {
+        let e = ResponseError.serverError("oops")
+        #expect(e.status == .internalServerError)
+        #expect(String(data: e.body, encoding: .utf8) == "oops")
+    }
+
+    @Test func encodedJson() throws {
+        struct Payload: Codable { let code: Int }
+        let e = ResponseError(Payload(code: 42), encoder: jsonEncoder(), status: .unprocessableEntity)
+        #expect(e.status == .unprocessableEntity)
+        #expect(e.headers.contains { $0 == ("Content-Type", "application/json") })
+        #expect(try JSONDecoder().decode(Payload.self, from: e.body).code == 42)
+    }
+
+    @Test func encodedHtml() {
+        let e = ResponseError("<b>bad</b>", encoder: ResponseEncoder<String>.html, status: .badRequest)
+        #expect(e.status == .badRequest)
+        #expect(String(data: e.body, encoding: .utf8) == "<b>bad</b>")
+    }
+}
+
+// MARK: - ResponseEncoder
+
+@Suite("ResponseEncoder")
+struct ResponseEncoderTests {
+    @Test func html_encodesUTF8() throws {
+        let r = try ResponseEncoder<String>.html.response("<h1>Hi</h1>").get()
         #expect(r.status == .ok)
         #expect(r.headers.contains { $0 == ("Content-Type", "text/html; charset=utf-8") })
         #expect(String(data: r.body, encoding: .utf8) == "<h1>Hi</h1>")
     }
 
-    @Test func html_customStatus() {
-        #expect(Response.html("x", status: .notFound).status == .notFound)
+    @Test func html_customStatus() throws {
+        #expect(try ResponseEncoder<String>.html.response("x", status: .notFound).get().status == .notFound)
     }
 
     @Test func json_encodesValue() throws {
         struct Point: Codable { let x: Int; let y: Int }
-        let r = Response.json(Point(x: 1, y: 2))
+        let r = try jsonEncoder(for: Point.self).response(Point(x: 1, y: 2)).get()
         #expect(r.status == .ok)
         #expect(r.headers.contains { $0 == ("Content-Type", "application/json") })
         let decoded = try JSONDecoder().decode(Point.self, from: r.body)
         #expect(decoded.x == 1 && decoded.y == 2)
     }
 
-    @Test func json_customStatus() {
-        #expect(Response.json(["k": "v"], status: .created).status == .created)
+    @Test func json_customStatus() throws {
+        struct S: Encodable { let k: String }
+        #expect(try jsonEncoder(for: S.self).response(S(k: "v"), status: .created).get().status == .created)
     }
 
-    @Test func json_sortedKeys() {
-        let r = Response.json(["b": 2, "a": 1])
+    @Test func json_sortedKeys() throws {
+        let r = try jsonEncoder(for: [String: Int].self) { $0.outputFormatting = .sortedKeys }.response(["b": 2, "a": 1]).get()
         let raw = String(data: r.body, encoding: .utf8) ?? ""
         #expect(raw.range(of: "\"a\"")!.lowerBound < raw.range(of: "\"b\"")!.lowerBound)
     }
 
-    @Test func image_jpeg() {
+    @Test func raw_isIdentity() throws {
+        let data = Data([0x01, 0x02, 0x03])
+        #expect(try ResponseEncoder<Data>.raw.response(data).get().body == data)
+    }
+
+    @Test func image_jpeg() throws {
         let data = Data([0xFF, 0xD8])
-        let r = Response.image(data)
+        let r = try ResponseEncoder<Data>.image().response(data).get()
         #expect(r.status == .ok)
         #expect(r.headers.contains { $0 == ("Content-Type", "image/jpeg") })
         #expect(r.body == data)
     }
 
-    @Test func image_customMimeType() {
-        #expect(Response.image(Data(), mimeType: "image/png").headers.contains { $0 == ("Content-Type", "image/png") })
+    @Test func image_customMimeType() throws {
+        let r = try ResponseEncoder<Data>.image(mimeType: "image/png").response(Data()).get()
+        #expect(r.headers.contains { $0 == ("Content-Type", "image/png") })
     }
 
-    @Test func notFound() {
-        #expect(Response.notFound.status == .notFound)
-    }
-
-    @Test func badRequest_body() {
-        let r = Response.badRequest("missing field")
-        #expect(r.status == .badRequest)
-        #expect(String(data: r.body, encoding: .utf8) == "missing field")
-    }
-
-    @Test func serverError_body() {
-        let r = Response.serverError("oops")
-        #expect(r.status == .internalServerError)
-        #expect(String(data: r.body, encoding: .utf8) == "oops")
+    @Test func callAsFunction_returnsData() throws {
+        let data = try ResponseEncoder<String>.html("hello").get()
+        #expect(String(data: data, encoding: .utf8) == "hello")
     }
 }
 
-// MARK: - Handler
+// MARK: - matchPath
 
-@Suite("Handler")
-struct HandlerTests {
-    @Test func callAsFunction() {
-        let h = Handler { req in Just(Response.html(req.path)).eraseToAnyPublisher() }
-        let response = firstValue(of: h(Request(method: .GET, uri: "/hello", body: Data())))
-        #expect(String(data: response!.body, encoding: .utf8) == "/hello")
+@Suite("matchPath")
+struct MatchPathTests {
+    @Test func exactMatch() {
+        #expect(matchPath("/a/b", against: "/a/b") == [:])
     }
 
-    @Test func runPropertyEquivalentToCallAsFunction() {
-        let h   = Handler { _ in Just(Response.notFound).eraseToAnyPublisher() }
-        let req = Request(method: .GET, uri: "/", body: Data())
-        let via_call = firstValue(of: h(req))
-        let via_run  = firstValue(of: h.run(req))
-        #expect(via_call?.status == via_run?.status)
+    @Test func capturesSingleParam() {
+        #expect(matchPath("/users/42", against: "/users/:id") == ["id": "42"])
     }
 
-    @Test func initAcceptsClosure() {
-        // Ensures FunctionWrapper init compiles and round-trips correctly.
-        let h = Handler { _ in Just(Response.html("ok")).eraseToAnyPublisher() }
-        #expect(firstValue(of: h(Request(method: .GET, uri: "/", body: Data())))?.status == .ok)
+    @Test func capturesMultipleParams() {
+        #expect(matchPath("/albums/5/photos/99", against: "/albums/:albumId/photos/:photoId")
+            == ["albumId": "5", "photoId": "99"])
+    }
+
+    @Test func noMatchSegmentCountMismatch() {
+        #expect(matchPath("/a", against: "/a/b") == nil)
+    }
+
+    @Test func noMatchDifferentLiteral() {
+        #expect(matchPath("/a", against: "/b") == nil)
+    }
+}
+
+// MARK: - Route
+
+@Suite("Route")
+struct RouteTests {
+    private func req(_ method: HTTPMethod, _ uri: String) -> Request {
+        Request(method: method, uri: uri, body: Data())
+    }
+
+    @Test func matchesMethodAndPath() {
+        #expect(Route<Empty, Empty>(.GET, "/ping").match(req(.GET, "/ping")) != nil)
+    }
+
+    @Test func rejectsWrongMethod() {
+        #expect(Route<Empty, Empty>(.GET, "/ping").match(req(.POST, "/ping")) == nil)
+    }
+
+    @Test func rejectsWrongPath() {
+        #expect(Route<Empty, Empty>(.GET, "/ping").match(req(.GET, "/pong")) == nil)
+    }
+
+    @Test func decodesURLParams() {
+        struct UserParams: Decodable { let id: String }
+        let route = Route<UserParams, Empty>(.GET, "/users/:id")
+        guard case .success(let mr) = route.match(req(.GET, "/users/42")) else {
+            Issue.record("Expected .success"); return
+        }
+        #expect(mr.urlParams.id == "42")
+    }
+
+    @Test func returnsNilOnURLParamTypeMismatch() {
+        struct UserParams: Decodable { let id: Int }
+        #expect(Route<UserParams, Empty>(.GET, "/users/:id").match(req(.GET, "/users/abc")) == nil)
+    }
+
+    @Test func returnsErrorOnMissingRequiredQueryParam() {
+        struct Q: Decodable { let page: Int }
+        guard case .failure(let e) = Route<Empty, Q>(.GET, "/items").match(req(.GET, "/items")) else {
+            Issue.record("Expected .failure"); return
+        }
+        #expect(e.status == .badRequest)
+    }
+
+    @Test func decodesOptionalQueryParam() {
+        struct Q: Decodable { let page: Int? }
+        #expect(Route<Empty, Q>(.GET, "/items").match(req(.GET, "/items")) != nil)
+    }
+}
+
+// MARK: - RequestDecoder
+
+@Suite("RequestDecoder")
+struct RequestDecoderTests {
+    private func matched(raw: Request) -> MatchedRoute<Empty, Empty> {
+        MatchedRoute(urlParams: .value, queryParams: .value, raw: raw)
+    }
+
+    @Test func decodesBody() {
+        struct Body: Decodable, Equatable { let name: String }
+        let raw = Request(method: .POST, uri: "/", body: Data(#"{"name":"test"}"#.utf8))
+        let decoder = RequestDecoder<Empty, Empty, Body>()
+        guard case .success(let typedReq) = decoder.decode(matched(raw: raw)) else {
+            Issue.record("Expected .success"); return
+        }
+        #expect(typedReq.body == Body(name: "test"))
+    }
+
+    @Test func returnsErrorOnBadBody() {
+        struct Body: Decodable { let name: String }
+        let raw = Request(method: .POST, uri: "/", body: Data("not-json".utf8))
+        let decoder = RequestDecoder<Empty, Empty, Body>()
+        guard case .failure(let e) = decoder.decode(matched(raw: raw)) else {
+            Issue.record("Expected .failure"); return
+        }
+        #expect(e.status == .badRequest)
+    }
+
+    @Test func decodesEmptyBodyAsEmpty() {
+        let raw = Request(method: .GET, uri: "/", body: Data())
+        let decoder = RequestDecoder<Empty, Empty, Empty>()
+        if case .failure = decoder.decode(matched(raw: raw)) {
+            Issue.record("Expected .success for Empty body")
+        }
     }
 }
 
 // MARK: - Router
 
-@Suite("Router — route")
-struct RouterRouteTests {
-    private func req(_ method: HTTPMethod, _ uri: String) -> Request {
-        Request(method: method, uri: uri, body: Data())
+@Suite("Router")
+struct RouterTests {
+    private func req(_ method: HTTPMethod, _ uri: String, body: Data = Data()) -> Request {
+        Request(method: method, uri: uri, body: body)
     }
 
-    // Method matching
-    @Test func matchesCorrectMethod() {
-        #expect(route(.GET, "/foo", { _ in .notFound })(req(.GET, "/foo")) != nil)
-    }
-    @Test func rejectsWrongMethod() {
-        #expect(route(.POST, "/foo", { _ in .notFound })(req(.GET, "/foo")) == nil)
-    }
-    @Test func matchesPOST() {
-        #expect(route(.POST, "/foo", { _ in .notFound })(req(.POST, "/foo")) != nil)
+    @Test func notFoundForEmptyRouter() async {
+        #expect(await Router<Void>().handle(req(.GET, "/anything")).runReader(()).run().response.status == .notFound)
     }
 
-    // Path matching
-    @Test func matchesExactPath() {
-        #expect(route(.GET, "/users", { _ in .notFound })(req(.GET, "/users")) != nil)
-    }
-    @Test func rejectsPartialPath() {
-        #expect(route(.GET, "/a/b", { _ in .notFound })(req(.GET, "/a")) == nil)
-    }
-    @Test func rejectsExtraSegment() {
-        #expect(route(.GET, "/a", { _ in .notFound })(req(.GET, "/a/b")) == nil)
-    }
-    @Test func rejectsDifferentLiteral() {
-        #expect(route(.GET, "/users", { _ in .notFound })(req(.GET, "/admins")) == nil)
+    @Test func matchesRegisteredRoute() async {
+        var router = Router<Void>()
+        router.register(
+            route: Route<Empty, Empty>(.GET, "/ping"),
+            decoder: RequestDecoder<Empty, Empty, Empty>(),
+            handler: .handle { _ in ResponseEncoder<String>.html.response("pong") }
+        )
+        #expect(await router.handle(req(.GET, "/ping")).runReader(()).run().response.status == .ok)
     }
 
-    // Path params
-    @Test func capturesSingleParam() {
-        var captured: String?
-        let matcher = route(.GET, "/users/:id") { r -> Response in captured = r.pathParams["id"]; return .notFound }
-        _ = firstValue(of: matcher(req(.GET, "/users/42"))!)
-        #expect(captured == "42")
+    @Test func returnsNotFoundForUnregisteredPath() async {
+        var router = Router<Void>()
+        router.register(
+            route: Route<Empty, Empty>(.GET, "/ping"),
+            decoder: RequestDecoder<Empty, Empty, Empty>(),
+            handler: .handle { _ in ResponseEncoder<String>.html.response("pong") }
+        )
+        #expect(await router.handle(req(.GET, "/other")).runReader(()).run().response.status == .notFound)
     }
 
-    @Test func capturesMultipleParams() {
-        var params: [String: String]?
-        let matcher = route(.GET, "/albums/:albumId/photos/:photoId") { r -> Response in params = r.pathParams; return .notFound }
-        _ = firstValue(of: matcher(req(.GET, "/albums/5/photos/99"))!)
-        #expect(params?["albumId"] == "5")
-        #expect(params?["photoId"] == "99")
+    @Test func matchesFirstMatchingRoute() async {
+        var router = Router<Void>()
+        router.register(
+            route: Route<Empty, Empty>(.GET, "/a"),
+            decoder: RequestDecoder<Empty, Empty, Empty>(),
+            handler: .handle { _ in ResponseEncoder<String>.html.response("A") }
+        )
+        router.register(
+            route: Route<Empty, Empty>(.GET, "/b"),
+            decoder: RequestDecoder<Empty, Empty, Empty>(),
+            handler: .handle { _ in ResponseEncoder<String>.html.response("B") }
+        )
+        #expect(String(data: (await router.handle(req(.GET, "/a")).runReader(()).run()).response.body, encoding: .utf8) == "A")
+        #expect(String(data: (await router.handle(req(.GET, "/b")).runReader(()).run()).response.body, encoding: .utf8) == "B")
     }
 
-    @Test func paramSegmentMismatchesLiteral() {
-        // ":id" should capture even if it looks like a literal in the request
-        let matcher = route(.GET, "/:id", { _ in .notFound })
-        #expect(matcher(req(.GET, "/anything")) != nil)
+    @Test func decodesURLParams() async {
+        struct UserParams: Decodable { let id: String }
+        final class Box: @unchecked Sendable { var value: String? }
+        let box = Box()
+        var router = Router<Void>()
+        router.register(
+            route: Route<UserParams, Empty>(.GET, "/users/:id"),
+            decoder: RequestDecoder<UserParams, Empty, Empty>(),
+            handler: .handle { (typedReq: TypedRequest<UserParams, Empty, Empty>) -> Result<Response, ResponseError> in
+                box.value = typedReq.urlParams.id
+                return ResponseEncoder<String>.html.response("ok")
+            }
+        )
+        _ = await router.handle(req(.GET, "/users/42")).runReader(()).run()
+        #expect(box.value == "42")
     }
 
-    @Test func asyncHandlerVariant() {
-        let matcher = route(.GET, "/ping") { _ in Just(Response.html("pong")).eraseToAnyPublisher() }
-        let r = firstValue(of: matcher(req(.GET, "/ping"))!)
-        #expect(String(data: r!.body, encoding: .utf8) == "pong")
+    @Test func decodesBodyViaDecoder() async {
+        struct Body: Decodable { let name: String }
+        struct Resp: Codable { let echo: String }
+        var router = Router<Void>()
+        router.register(
+            route: Route<Empty, Empty>(.POST, "/echo"),
+            decoder: RequestDecoder<Empty, Empty, Body>(),
+            handler: .handle { typedReq in jsonEncoder(for: Resp.self).response(Resp(echo: typedReq.body.name)) }
+        )
+        let response = await router.handle(req(.POST, "/echo", body: Data(#"{"name":"hello"}"#.utf8))).runReader(()).run().response
+        let decoded  = try? JSONDecoder().decode(Resp.self, from: response.body)
+        #expect(decoded?.echo == "hello")
     }
 
-    @Test func syncHandlerVariant() {
-        let matcher = route(.DELETE, "/x", { _ in Response.html("deleted") })
-        let r = firstValue(of: matcher(req(.DELETE, "/x"))!)
-        #expect(String(data: r!.body, encoding: .utf8) == "deleted")
-    }
-}
-
-@Suite("Router — firstMatch")
-struct RouterFirstMatchTests {
-    private func req(_ method: HTTPMethod, _ uri: String) -> Request {
-        Request(method: method, uri: uri, body: Data())
+    @Test func asyncHandlerViaDeferredTask() async {
+        var router = Router<Void>()
+        router.register(
+            route: Route<Empty, Empty>(.GET, "/async"),
+            decoder: RequestDecoder<Empty, Empty, Empty>(),
+            handler: .handle { _ in DeferredTask { ResponseEncoder<String>.html.response("async") } }
+        )
+        #expect(String(data: (await router.handle(req(.GET, "/async")).runReader(()).run()).response.body, encoding: .utf8) == "async")
     }
 
-    @Test func returnsNotFoundForEmptyRoutes() {
-        let h = firstMatch([])
-        #expect(firstValue(of: h(req(.GET, "/")))?.status == .notFound)
+    #if canImport(Combine)
+    @Test func asyncHandlerViaCombinePublisher() async {
+        var router = Router<Void>()
+        router.register(
+            route: Route<Empty, Empty>(.GET, "/pub"),
+            decoder: RequestDecoder<Empty, Empty, Empty>(),
+            handler: .handle { _ in Just(ResponseEncoder<String>.html.response("pub").response).eraseToAnyPublisher() }
+        )
+        #expect(String(data: (await router.handle(req(.GET, "/pub")).runReader(()).run()).response.body, encoding: .utf8) == "pub")
     }
+    #endif
 
-    @Test func returnsNotFoundWhenNothingMatches() {
-        let h = firstMatch([route(.GET, "/a", { _ in .html("A") })])
-        #expect(firstValue(of: h(req(.GET, "/b")))?.status == .notFound)
-    }
-
-    @Test func returnsFirstMatchingRoute() {
-        let routes: [RouteMatcher] = [
-            route(.GET, "/a", { _ in .html("A") }),
-            route(.GET, "/b", { _ in .html("B") }),
-        ]
-        let h = firstMatch(routes)
-        #expect(String(data: firstValue(of: h(req(.GET, "/a")))!.body, encoding: .utf8) == "A")
-        #expect(String(data: firstValue(of: h(req(.GET, "/b")))!.body, encoding: .utf8) == "B")
-    }
-
-    @Test func stopsAtFirstMatch() {
-        var secondCalled = false
-        let routes: [RouteMatcher] = [
-            route(.GET, "/x", { _ in .html("first") }),
-            route(.GET, "/x") { _ -> Response in secondCalled = true; return .html("second") },
-        ]
-        _ = firstValue(of: firstMatch(routes)(req(.GET, "/x")))
-        #expect(!secondCalled)
-    }
-
-    @Test func skipsNonMatchingMethod() {
-        let routes: [RouteMatcher] = [
-            route(.POST, "/x", { _ in .html("post") }),
-            route(.GET,  "/x", { _ in .html("get")  }),
-        ]
-        let body = String(data: firstValue(of: firstMatch(routes)(req(.GET, "/x")))!.body, encoding: .utf8)
-        #expect(body == "get")
-    }
-
-    @Test func handlerIsAFunctionWrapper() {
-        // firstMatch returns Handler (FunctionWrapper), not a plain closure.
-        let h: Handler = firstMatch([])
-        let _ = h.run  // access the wrapped function directly
-        #expect(Bool(true))  // compile-time check
+    @Test func handlerReceivesEnvironment() async {
+        struct Env: Sendable { let greeting: String }
+        var router = Router<Env>()
+        router.register(
+            route: Route<Empty, Empty>(.GET, "/hello"),
+            decoder: RequestDecoder<Empty, Empty, Empty>(),
+            handler: .handle { _ in Reader { env in ResponseEncoder<String>.html.response(env.greeting) } }
+        )
+        let response = await router.handle(req(.GET, "/hello")).runReader(Env(greeting: "hi there")).run().response
+        #expect(String(data: response.body, encoding: .utf8) == "hi there")
     }
 }
 
@@ -296,30 +425,29 @@ struct RouterFirstMatchTests {
 @Suite("NIOServer")
 struct NIOServerTests {
 
-    @Test func startServer_returnsReaderOverHandler() {
-        // Type-level verification: Reader<Handler, Result<Void, Error>>
-        let reader = startServer(port: 0)
-        let _: (Handler) -> Result<Void, Error> = reader.runReader
+    @Test func startServer_returnsReaderOverEnv() {
+        let reader: Reader<Void, Result<Void, Error>> = startServer(port: 0, router: Router())
+        let _: (()) -> Result<Void, Error> = reader.runReader
         #expect(Bool(true))
     }
 
     @Test func startServer_failsOnOutOfRangePort() {
-        let result = startServer(host: "127.0.0.1", port: 99999).runReader(
-            Handler { _ in Just(.notFound).eraseToAnyPublisher() }
-        )
-        #expect(result.isFailure)
+        #expect(startServer(host: "127.0.0.1", port: 99999, router: Router()).runReader(()).isFailure)
     }
 
     @Test(.timeLimit(.minutes(1)))
     func startServer_respondsToRequest() async throws {
         let port = 18_091
-        let handler = Handler { req in
-            Just(Response.html("OK:\(req.path)")).eraseToAnyPublisher()
-        }
+        var router = Router<Void>()
+        router.register(
+            route: Route<Empty, Empty>(.GET, "/hello"),
+            decoder: RequestDecoder<Empty, Empty, Empty>(),
+            handler: .handle { req in ResponseEncoder<String>.html.response("OK:\(req.raw.path)") }
+        )
+        let frozenRouter = router
         Thread.detachNewThread {
-            _ = startServer(port: port).runReader(handler)
+            _ = startServer(port: port, router: frozenRouter).runReader(())
         }
-        // Allow NIO to bind and accept connections.
         try await Task.sleep(for: .milliseconds(300))
 
         var urlRequest = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/hello")!)
@@ -332,32 +460,38 @@ struct NIOServerTests {
     @Test(.timeLimit(.minutes(1)))
     func startServer_routesRequests() async throws {
         let port = 18_092
-        let routes: [RouteMatcher] = [
-            route(.GET,  "/ping", { _ in .html("pong") }),
-            route(.POST, "/echo") { req in
-                Response.html(String(data: req.body, encoding: .utf8) ?? "")
-            },
-        ]
+        struct EchoBody: Decodable { let message: String }
+        struct EchoResp: Codable { let message: String }
+
+        var router = Router<Void>()
+        router.register(
+            route: Route<Empty, Empty>(.GET, "/ping"),
+            decoder: RequestDecoder<Empty, Empty, Empty>(),
+            handler: .handle { _ in ResponseEncoder<String>.html.response("pong") }
+        )
+        router.register(
+            route: Route<Empty, Empty>(.POST, "/echo"),
+            decoder: RequestDecoder<Empty, Empty, EchoBody>(),
+            handler: .handle { req in jsonEncoder(for: EchoResp.self).response(EchoResp(message: req.body.message)) }
+        )
+        let frozenRouter = router
         Thread.detachNewThread {
-            _ = startServer(port: port).runReader(firstMatch(routes))
+            _ = startServer(port: port, router: frozenRouter).runReader(())
         }
         try await Task.sleep(for: .milliseconds(300))
 
-        // GET /ping
         let (pingData, pingResp) = try await URLSession.shared.data(
             from: URL(string: "http://127.0.0.1:\(port)/ping")!
         )
         #expect((pingResp as? HTTPURLResponse)?.statusCode == 200)
         #expect(String(data: pingData, encoding: .utf8) == "pong")
 
-        // POST /echo
         var echoReq = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/echo")!)
         echoReq.httpMethod = "POST"
-        echoReq.httpBody   = Data("hello".utf8)
+        echoReq.httpBody   = Data(#"{"message":"hello"}"#.utf8)
         let (echoData, _)  = try await URLSession.shared.data(for: echoReq)
-        #expect(String(data: echoData, encoding: .utf8) == "hello")
+        #expect(try JSONDecoder().decode(EchoResp.self, from: echoData).message == "hello")
 
-        // Unmatched route → 404
         let (_, notFoundResp) = try await URLSession.shared.data(
             from: URL(string: "http://127.0.0.1:\(port)/missing")!
         )

@@ -1,3 +1,4 @@
+#if canImport(Combine)
 import Combine
 import FP
 import Foundation
@@ -29,3 +30,4 @@ public func <=< <X, A, B>(
 ) -> (X) -> RequestPublisher<B> {
     RequestPublisher.kleisliBack(g, f)
 }
+#endif
