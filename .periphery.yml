@@ -4,6 +4,7 @@ retain_files:
   - Tests/**
 
 targets:
+  - Core
   - HTMLTemplating
   - NetworkClient
   - NetworkServer

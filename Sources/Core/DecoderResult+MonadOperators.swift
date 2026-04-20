@@ -1,5 +1,5 @@
-import FP
 import Foundation
+import FP
 
 // MARK: - DecoderResult Monad Operators
 

@@ -1,3 +1,4 @@
+// swiftlint:disable vertical_parameter_alignment_on_call
 import Foundation
 
 // MARK: - Decoder
@@ -17,11 +18,17 @@ struct StringKeyValueDecoder: Decoder {
     }
 
     func unkeyedContainer() throws -> any UnkeyedDecodingContainer {
-        throw DecodingError.dataCorrupted(.init(codingPath: codingPath, debugDescription: "Arrays are not supported in string-keyed parameters"))
+        throw DecodingError.dataCorrupted(.init(
+            codingPath: codingPath,
+            debugDescription: "Arrays are not supported in string-keyed parameters"
+        ))
     }
 
     func singleValueContainer() throws -> any SingleValueDecodingContainer {
-        throw DecodingError.dataCorrupted(.init(codingPath: codingPath, debugDescription: "Single-value root is not supported in string-keyed parameters"))
+        throw DecodingError.dataCorrupted(.init(
+            codingPath: codingPath,
+            debugDescription: "Single-value root is not supported in string-keyed parameters"
+        ))
     }
 }
 
@@ -51,7 +58,7 @@ struct StringKeyedContainer<Key: CodingKey>: KeyedDecodingContainerProtocol {
     func decode(_ type: Bool.Type, forKey key: Key) throws -> Bool {
         let s = try stringValue(forKey: key)
         switch s.lowercased() {
-        case "true",  "1", "yes": return true
+        case "true", "1", "yes": return true
         case "false", "0", "no":  return false
         default:
             throw DecodingError.typeMismatch(Bool.self, .init(codingPath: codingPath + [key],
@@ -77,13 +84,13 @@ struct StringKeyedContainer<Key: CodingKey>: KeyedDecodingContainerProtocol {
         return v
     }
 
-    func decode(_ type: Int.Type,    forKey key: Key) throws -> Int    { try decodeFixedWidth(forKey: key) }
-    func decode(_ type: Int8.Type,   forKey key: Key) throws -> Int8   { try decodeFixedWidth(forKey: key) }
-    func decode(_ type: Int16.Type,  forKey key: Key) throws -> Int16  { try decodeFixedWidth(forKey: key) }
-    func decode(_ type: Int32.Type,  forKey key: Key) throws -> Int32  { try decodeFixedWidth(forKey: key) }
-    func decode(_ type: Int64.Type,  forKey key: Key) throws -> Int64  { try decodeFixedWidth(forKey: key) }
-    func decode(_ type: UInt.Type,   forKey key: Key) throws -> UInt   { try decodeFixedWidth(forKey: key) }
-    func decode(_ type: UInt8.Type,  forKey key: Key) throws -> UInt8  { try decodeFixedWidth(forKey: key) }
+    func decode(_ type: Int.Type, forKey key: Key) throws -> Int { try decodeFixedWidth(forKey: key) }
+    func decode(_ type: Int8.Type, forKey key: Key) throws -> Int8 { try decodeFixedWidth(forKey: key) }
+    func decode(_ type: Int16.Type, forKey key: Key) throws -> Int16 { try decodeFixedWidth(forKey: key) }
+    func decode(_ type: Int32.Type, forKey key: Key) throws -> Int32 { try decodeFixedWidth(forKey: key) }
+    func decode(_ type: Int64.Type, forKey key: Key) throws -> Int64 { try decodeFixedWidth(forKey: key) }
+    func decode(_ type: UInt.Type, forKey key: Key) throws -> UInt { try decodeFixedWidth(forKey: key) }
+    func decode(_ type: UInt8.Type, forKey key: Key) throws -> UInt8 { try decodeFixedWidth(forKey: key) }
     func decode(_ type: UInt16.Type, forKey key: Key) throws -> UInt16 { try decodeFixedWidth(forKey: key) }
     func decode(_ type: UInt32.Type, forKey key: Key) throws -> UInt32 { try decodeFixedWidth(forKey: key) }
     func decode(_ type: UInt64.Type, forKey key: Key) throws -> UInt64 { try decodeFixedWidth(forKey: key) }
@@ -152,7 +159,7 @@ struct StringSingleValueContainer: SingleValueDecodingContainer {
 
     func decode(_ type: Bool.Type) throws -> Bool {
         switch value.lowercased() {
-        case "true",  "1", "yes": return true
+        case "true", "1", "yes": return true
         case "false", "0", "no":  return false
         default:
             throw DecodingError.typeMismatch(Bool.self, .init(codingPath: codingPath,
@@ -176,13 +183,13 @@ struct StringSingleValueContainer: SingleValueDecodingContainer {
         return v
     }
 
-    func decode(_ type: Int.Type)    throws -> Int    { try decodeFixedWidth() }
-    func decode(_ type: Int8.Type)   throws -> Int8   { try decodeFixedWidth() }
-    func decode(_ type: Int16.Type)  throws -> Int16  { try decodeFixedWidth() }
-    func decode(_ type: Int32.Type)  throws -> Int32  { try decodeFixedWidth() }
-    func decode(_ type: Int64.Type)  throws -> Int64  { try decodeFixedWidth() }
-    func decode(_ type: UInt.Type)   throws -> UInt   { try decodeFixedWidth() }
-    func decode(_ type: UInt8.Type)  throws -> UInt8  { try decodeFixedWidth() }
+    func decode(_ type: Int.Type)    throws -> Int { try decodeFixedWidth() }
+    func decode(_ type: Int8.Type)   throws -> Int8 { try decodeFixedWidth() }
+    func decode(_ type: Int16.Type)  throws -> Int16 { try decodeFixedWidth() }
+    func decode(_ type: Int32.Type)  throws -> Int32 { try decodeFixedWidth() }
+    func decode(_ type: Int64.Type)  throws -> Int64 { try decodeFixedWidth() }
+    func decode(_ type: UInt.Type)   throws -> UInt { try decodeFixedWidth() }
+    func decode(_ type: UInt8.Type)  throws -> UInt8 { try decodeFixedWidth() }
     func decode(_ type: UInt16.Type) throws -> UInt16 { try decodeFixedWidth() }
     func decode(_ type: UInt32.Type) throws -> UInt32 { try decodeFixedWidth() }
     func decode(_ type: UInt64.Type) throws -> UInt64 { try decodeFixedWidth() }
@@ -199,3 +206,4 @@ struct StringSingleValueContainer: SingleValueDecodingContainer {
         try T(from: StringSingleValueDecoder(value: value, codingPath: codingPath))
     }
 }
+// swiftlint:enable vertical_parameter_alignment_on_call

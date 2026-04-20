@@ -3,7 +3,6 @@ import Foundation
 // MARK: - Contravariant
 
 public extension EncoderResult {
-
     /// Maps over the *input* type: adapt an `EncoderResult<E>` to accept `F`
     /// by pre-processing `F → E` before encoding.
     func contramap<F>(_ f: @escaping (F) -> E) -> EncoderResult<F> {

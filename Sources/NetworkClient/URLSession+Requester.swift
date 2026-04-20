@@ -4,7 +4,6 @@ import Foundation
 import FP
 
 public extension URLSession {
-
     /// Wraps `URLSession.dataTaskPublisher` as a `Requester`, mapping both the network
     /// error and the missing-`HTTPURLResponse` case into `HTTPError`.
     var requester: Requester {

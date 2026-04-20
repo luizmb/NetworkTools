@@ -1,5 +1,5 @@
-import FP
 import Foundation
+import FP
 
 // MARK: - DecoderResult Functor Operators
 
@@ -14,6 +14,7 @@ public func <&> <A, B>(_ d: DecoderResult<A>, _ f: @escaping (A) -> B) -> Decode
 }
 
 // ($>) :: DecoderResult<a> -> b -> DecoderResult<b>
+// swiftlint:disable:next identifier_name
 public func £> <A, B>(_ d: DecoderResult<A>, _ value: B) -> DecoderResult<B> {
     d.replace(with: value)
 }

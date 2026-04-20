@@ -1,11 +1,12 @@
+// swiftlint:disable file_length
 import Core
-import FP
-import Testing
 import Foundation
+import FP
+import NIOHTTP1
+import Testing
 #if canImport(Combine)
 import Combine
 #endif
-import NIOHTTP1
 @testable import NetworkServer
 
 private typealias Empty = NetworkServer.Empty
@@ -77,7 +78,8 @@ struct RequestTests {
     @Test func decodeBody_success() throws {
         struct Item: Codable, Equatable { let name: String }
         let body = Data(#"{"name":"test"}"#.utf8)
-        #expect(try Request(method: .POST, uri: "/", body: body).decodeBody(as: Item.self).runReader(JSONDecoder()).get() == Item(name: "test"))
+        let result = Request(method: .POST, uri: "/", body: body).decodeBody(as: Item.self).runReader(JSONDecoder())
+        #expect(try result.get() == Item(name: "test"))
     }
 
     @Test func decodeBody_failure() {
@@ -168,7 +170,9 @@ struct ResponseEncoderTests {
     @Test func json_sortedKeys() throws {
         let r = try jsonEncoder(for: [String: Int].self) { $0.outputFormatting = .sortedKeys }.response(["b": 2, "a": 1]).get()
         let raw = String(data: r.body, encoding: .utf8) ?? ""
-        #expect(raw.range(of: "\"a\"")!.lowerBound < raw.range(of: "\"b\"")!.lowerBound)
+        let aRange = try #require(raw.range(of: "\"a\""))
+        let bRange = try #require(raw.range(of: "\"b\""))
+        #expect(aRange.lowerBound < bRange.lowerBound)
     }
 
     @Test func raw_isIdentity() throws {
@@ -200,7 +204,7 @@ struct ResponseEncoderTests {
 @Suite("matchPath")
 struct MatchPathTests {
     @Test func exactMatch() {
-        #expect(matchPath("/a/b", against: "/a/b") == [:])
+        #expect(matchPath("/a/b", against: "/a/b")?.isEmpty == true)
     }
 
     @Test func capturesSingleParam() {
@@ -379,7 +383,6 @@ struct RouterTests {
 
 @Suite("NIOServer")
 struct NIOServerTests {
-
     @Test func startServer_returnsReaderOverEnv() {
         let reader: Reader<Void, Result<Void, Error>> = startServer(port: 0, router: Router())
         let _: (()) -> Result<Void, Error> = reader.runReader
@@ -387,7 +390,7 @@ struct NIOServerTests {
     }
 
     @Test func startServer_failsOnOutOfRangePort() {
-        #expect(startServer(host: "127.0.0.1", port: 99999, router: Router()).runReader(()).isFailure)
+        #expect(startServer(host: "127.0.0.1", port: 99_999, router: Router()).runReader(()).isFailure)
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -404,6 +407,7 @@ struct NIOServerTests {
         }
         try await Task.sleep(for: .milliseconds(300))
 
+        // swiftlint:disable:next force_unwrapping
         var urlRequest = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/hello")!)
         urlRequest.timeoutInterval = 5
         let (data, response) = try await URLSession.shared.data(for: urlRequest)
@@ -433,21 +437,20 @@ struct NIOServerTests {
         }
         try await Task.sleep(for: .milliseconds(300))
 
-        let (pingData, pingResp) = try await URLSession.shared.data(
-            from: URL(string: "http://127.0.0.1:\(port)/ping")!
-        )
+        // swiftlint:disable:next force_unwrapping
+        let (pingData, pingResp) = try await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(port)/ping")!)
         #expect((pingResp as? HTTPURLResponse)?.statusCode == 200)
         #expect(String(data: pingData, encoding: .utf8) == "pong")
 
+        // swiftlint:disable:next force_unwrapping
         var echoReq = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/echo")!)
         echoReq.httpMethod = "POST"
         echoReq.httpBody   = Data(#"{"message":"hello"}"#.utf8)
         let (echoData, _)  = try await URLSession.shared.data(for: echoReq)
         #expect(try JSONDecoder().decode(EchoResp.self, from: echoData).message == "hello")
 
-        let (_, notFoundResp) = try await URLSession.shared.data(
-            from: URL(string: "http://127.0.0.1:\(port)/missing")!
-        )
+        // swiftlint:disable:next force_unwrapping
+        let (_, notFoundResp) = try await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(port)/missing")!)
         #expect((notFoundResp as? HTTPURLResponse)?.statusCode == 404)
     }
 }

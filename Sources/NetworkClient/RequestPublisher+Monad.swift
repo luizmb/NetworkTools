@@ -5,7 +5,6 @@ import Foundation
 // MARK: - Monad
 
 public extension RequestPublisher {
-
     /// Chains two `RequestPublisher`s, threading the same `URLRequest` through both
     /// (Reader + Publisher monad stack).
     func flatMap<B>(_ f: @escaping (A) -> RequestPublisher<B>) -> RequestPublisher<B> {

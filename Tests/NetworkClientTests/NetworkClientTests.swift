@@ -1,8 +1,9 @@
+// swiftlint:disable file_length
 import Core
-import Testing
 import Foundation
 import FP
 @testable import NetworkClient
+import Testing
 #if canImport(Combine)
 import Combine
 #endif
@@ -19,10 +20,11 @@ private let invalidJSON = Data("not json".utf8)
 
 private extension Result {
     var successValue: Success? { if case .success(let v) = self { v } else { nil } }
-    var isFailure: Bool        { if case .failure = self { true } else { false } }
+    var isFailure: Bool { if case .failure = self { true } else { false } }
 }
 
 #if canImport(Combine)
+// swiftlint:disable:next force_unwrapping
 private let mockRequest = URLRequest(url: URL(string: "https://example.com")!)
 
 // MARK: - Helpers
@@ -31,7 +33,7 @@ private func firstResult<O, E: Error>(of publisher: AnyPublisher<O, E>) -> Resul
     var result: Result<O, E>?
     let token = publisher.first().sink(
         receiveCompletion: { if case .failure(let e) = $0 { result = .failure(e) } },
-        receiveValue:      { result = .success($0) }
+        receiveValue: { result = .success($0) }
     )
     withExtendedLifetime(token) {}
     return result
@@ -145,14 +147,14 @@ struct DecoderResultMonadTests {
     }
 
     @Test func kleisli_composes() {
-        let f: (String) -> DecoderResult<Int>    = { s in .pure(s.count) }
-        let g: (Int)    -> DecoderResult<String> = { n in .pure("\(n)") }
+        let f: (String) -> DecoderResult<Int> = { s in .pure(s.count) }
+        let g: (Int) -> DecoderResult<String> = { n in .pure("\(n)") }
         #expect(DecoderResult.kleisli(f, g)("hello").run(Data()).successValue == "5")
     }
 
     @Test func kleisliBack_composes() {
-        let f: (String) -> DecoderResult<Int>    = { s in .pure(s.count) }
-        let g: (Int)    -> DecoderResult<String> = { n in .pure("\(n)") }
+        let f: (String) -> DecoderResult<Int> = { s in .pure(s.count) }
+        let g: (Int) -> DecoderResult<String> = { n in .pure("\(n)") }
         #expect(DecoderResult.kleisliBack(g, f)("hello").run(Data()).successValue == "5")
     }
 
@@ -171,9 +173,9 @@ struct DecoderResultMonadTests {
 
 @Suite("DecoderResult — Operators")
 struct DecoderResultOperatorTests {
-    @Test func fmapOp()        { #expect(({ $0 * 2 } <£> DecoderResult<Int>.pure(5)).run(Data()).successValue == 10) }
+    @Test func fmapOp() { #expect(({ $0 * 2 } <£> DecoderResult<Int>.pure(5)).run(Data()).successValue == 10) }
     @Test func flippedFmapOp() { #expect((DecoderResult<Int>.pure(5) <&> { $0 * 2 }).run(Data()).successValue == 10) }
-    @Test func replaceRightOp(){ #expect((DecoderResult<Int>.pure(5) £> "r").run(Data()).successValue == "r") }
+    @Test func replaceRightOp() { #expect((DecoderResult<Int>.pure(5) £> "r").run(Data()).successValue == "r") }
     @Test func replaceLeftOp() { #expect(("r" <£ DecoderResult<Int>.pure(5)).run(Data()).successValue == "r") }
 
     @Test func applyOp() {
@@ -181,18 +183,20 @@ struct DecoderResultOperatorTests {
         #expect((f <*> DecoderResult<Int>.pure(41)).run(Data()).successValue == 42)
     }
     @Test func seqRightOp() { #expect((DecoderResult<Int>.pure(1) *> DecoderResult<String>.pure("k")).run(Data()).successValue == "k") }
-    @Test func seqLeftOp()  { #expect((DecoderResult<Int>.pure(9) <* DecoderResult<String>.pure("d")).run(Data()).successValue == 9) }
+    @Test func seqLeftOp() { #expect((DecoderResult<Int>.pure(9) <* DecoderResult<String>.pure("d")).run(Data()).successValue == 9) }
 
-    @Test func bindOp()        { #expect((DecoderResult<Int>.pure(3) >>- { n in .pure(n * n) }).run(Data()).successValue == 9) }
-    @Test func flippedBindOp() { #expect(({ n in DecoderResult<Int>.pure(n * n) } -<< DecoderResult<Int>.pure(3)).run(Data()).successValue == 9) }
+    @Test func bindOp() { #expect((DecoderResult<Int>.pure(3) >>- { n in .pure(n * n) }).run(Data()).successValue == 9) }
+    @Test func flippedBindOp() {
+        #expect(({ n in DecoderResult<Int>.pure(n * n) } -<< DecoderResult<Int>.pure(3)).run(Data()).successValue == 9)
+    }
 
     @Test func kleisliOp() {
-        let f: (Int) -> DecoderResult<Int>    = { n in .pure(n + 1) }
+        let f: (Int) -> DecoderResult<Int> = { n in .pure(n + 1) }
         let g: (Int) -> DecoderResult<String> = { n in .pure("\(n)") }
         #expect((f >=> g)(41).run(Data()).successValue == "42")
     }
     @Test func kleisliBackOp() {
-        let f: (Int) -> DecoderResult<Int>    = { n in .pure(n + 1) }
+        let f: (Int) -> DecoderResult<Int> = { n in .pure(n + 1) }
         let g: (Int) -> DecoderResult<String> = { n in .pure("\(n)") }
         #expect((g <=< f)(41).run(Data()).successValue == "42")
     }
@@ -226,10 +230,10 @@ struct JSONDecoderDecoderResultTests {
 
 @Suite("RequestPublisher — Functor")
 struct RequestPublisherFunctorTests {
-    @Test func pure()                { #expect(run(RequestPublisher<Int>.pure(42))?.successValue == 42) }
-    @Test func map_transformsSuccess(){ #expect(run(just(3).map { $0 * 7 })?.successValue == 21) }
-    @Test func map_passesFailure()   { #expect(run(fail(.badStatus(404, Data())).map { (_: Int) in 0 })?.isFailure == true) }
-    @Test func replace()             { #expect(run(just(99).replace(with: "x"))?.successValue == "x") }
+    @Test func pure() { #expect(run(RequestPublisher<Int>.pure(42))?.successValue == 42) }
+    @Test func map_transformsSuccess() { #expect(run(just(3).map { $0 * 7 })?.successValue == 21) }
+    @Test func map_passesFailure() { #expect(run(fail(.badStatus(404, Data())).map { (_: Int) in 0 })?.isFailure == true) }
+    @Test func replace() { #expect(run(just(99).replace(with: "x"))?.successValue == "x") }
 
     @Test func fmap_curried() {
         let lift = RequestPublisher<Int>.fmap { $0 + 1 }
@@ -293,14 +297,14 @@ struct RequestPublisherMonadTests {
     }
 
     @Test func kleisli_composes() {
-        let f: (String) -> RequestPublisher<Int>    = { s in just(s.count) }
-        let g: (Int)    -> RequestPublisher<String> = { n in just("\(n)") }
+        let f: (String) -> RequestPublisher<Int> = { s in just(s.count) }
+        let g: (Int) -> RequestPublisher<String> = { n in just("\(n)") }
         #expect(run(RequestPublisher.kleisli(f, g)("hello"))?.successValue == "5")
     }
 
     @Test func kleisliBack_composes() {
-        let f: (String) -> RequestPublisher<Int>    = { s in just(s.count) }
-        let g: (Int)    -> RequestPublisher<String> = { n in just("\(n)") }
+        let f: (String) -> RequestPublisher<Int> = { s in just(s.count) }
+        let g: (Int) -> RequestPublisher<String> = { n in just("\(n)") }
         #expect(run(RequestPublisher.kleisliBack(g, f)("hello"))?.successValue == "5")
     }
 
@@ -317,9 +321,9 @@ struct RequestPublisherMonadTests {
 
 @Suite("RequestPublisher — Operators")
 struct RequestPublisherOperatorTests {
-    @Test func fmapOp()        { #expect(run({ $0 * 2 } <£> just(5))?.successValue == 10) }
+    @Test func fmapOp() { #expect(run({ $0 * 2 } <£> just(5))?.successValue == 10) }
     @Test func flippedFmapOp() { #expect(run(just(5) <&> { $0 * 2 })?.successValue == 10) }
-    @Test func replaceRightOp(){ #expect(run(just(5) £> "r")?.successValue == "r") }
+    @Test func replaceRightOp() { #expect(run(just(5) £> "r")?.successValue == "r") }
     @Test func replaceLeftOp() { #expect(run("r" <£ just(5))?.successValue == "r") }
 
     @Test func applyOp() {
@@ -327,18 +331,18 @@ struct RequestPublisherOperatorTests {
         #expect(run(f <*> just(41))?.successValue == 42)
     }
     @Test func seqRightOp() { #expect(run(just(1) *> just("k"))?.successValue == "k") }
-    @Test func seqLeftOp()  { #expect(run(just(9) <* just("d"))?.successValue == 9) }
+    @Test func seqLeftOp() { #expect(run(just(9) <* just("d"))?.successValue == 9) }
 
-    @Test func bindOp()        { #expect(run(just(3) >>- { n in just(n * n) })?.successValue == 9) }
+    @Test func bindOp() { #expect(run(just(3) >>- { n in just(n * n) })?.successValue == 9) }
     @Test func flippedBindOp() { #expect(run({ n in just(n * n) } -<< just(3))?.successValue == 9) }
 
     @Test func kleisliOp() {
-        let f: (Int) -> RequestPublisher<Int>    = { n in just(n + 1) }
+        let f: (Int) -> RequestPublisher<Int> = { n in just(n + 1) }
         let g: (Int) -> RequestPublisher<String> = { n in just("\(n)") }
         #expect(run((f >=> g)(41))?.successValue == "42")
     }
     @Test func kleisliBackOp() {
-        let f: (Int) -> RequestPublisher<Int>    = { n in just(n + 1) }
+        let f: (Int) -> RequestPublisher<Int> = { n in just(n + 1) }
         let g: (Int) -> RequestPublisher<String> = { n in just("\(n)") }
         #expect(run((g <=< f)(41))?.successValue == "42")
     }
@@ -349,8 +353,10 @@ struct RequestPublisherOperatorTests {
 @Suite("RequestPublisher — validateStatusCode")
 struct ValidateStatusCodeTests {
     private func makePublisher(status: Int, body: Data = Data()) -> RequestPublisher<(Data, HTTPURLResponse)> {
-        let resp = HTTPURLResponse(url: URL(string: "https://x.com")!, statusCode: status,
-                                   httpVersion: nil, headerFields: nil)!
+        // swiftlint:disable:next force_unwrapping
+        let url = URL(string: "https://x.com")!
+        // swiftlint:disable:next force_unwrapping
+        let resp = HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil)!
         return RequestPublisher { _ in
             Just((body, resp)).setFailureType(to: HTTPError.self).eraseToAnyPublisher()
         }

@@ -3,7 +3,6 @@ import Foundation
 // MARK: - Applicative
 
 public extension DecoderResult {
-
     /// Lifts a pure value into `DecoderResult`, ignoring the `Data`.
     static func pure(_ value: D) -> DecoderResult<D> {
         DecoderResult { _ in .success(value) }

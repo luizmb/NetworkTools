@@ -120,8 +120,8 @@ private func renderImpl(_ template: String, _ context: Context) -> Reader<HTMLEn
         var remaining = template[...]
 
         while let openRange = remaining.range(of: "{{") {
-            output    += remaining[..<openRange.lowerBound]
-            remaining  = remaining[openRange.upperBound...]
+            output += remaining[..<openRange.lowerBound]
+            remaining = remaining[openRange.upperBound...]
 
             guard let closeRange = remaining.range(of: "}}") else {
                 output += "{{"
@@ -132,57 +132,71 @@ private func renderImpl(_ template: String, _ context: Context) -> Reader<HTMLEn
                 .trimmingCharacters(in: .whitespaces)
             remaining = remaining[closeRange.upperBound...]
 
-            if token.hasPrefix("#each ") {
-                let parts = words(token.dropFirst(6), limit: 2)
-                guard parts.count == 2,
-                      case .list(let items) = context[parts[0]]
-                else { continue }
-
-                switch loadFragment(parts[1])
-                    .runReader(env)
-                    .flatMap({ frag in
-                        items.reduce(.success("")) { acc, item in
-                            acc.flatMap { prev in
-                                renderImpl(frag, item).runReader(env).map { prev + $0 }
-                            }
-                        }
-                    }) {
-                case .success(let s): output += s
-                case .failure(let e): return .failure(e)
-                }
-
-            } else if token.hasPrefix("#if ") {
-                let parts = words(token.dropFirst(4), limit: 2)
-                guard parts.count == 2, truthy(context[parts[0]]) else { continue }
-
-                switch loadFragment(parts[1])
-                    .runReader(env)
-                    .flatMap({ frag in renderImpl(frag, context).runReader(env) }) {
-                case .success(let s): output += s
-                case .failure(let e): return .failure(e)
-                }
-
-            } else if token.hasPrefix("#include ") {
-                let name = String(token.dropFirst(9)).trimmingCharacters(in: .whitespaces)
-
-                switch loadFragment(name)
-                    .runReader(env)
-                    .flatMap({ frag in renderImpl(frag, context).runReader(env) }) {
-                case .success(let s): output += s
-                case .failure(let e): return .failure(e)
-                }
-
-            } else {
-                switch context[token] {
-                case .string(let s): output += s
-                case .bool(let b):   output += b ? "true" : "false"
-                case .list, nil:     break
-                }
+            switch renderToken(token, context: context, env: env) {
+            case .success(let s): output += s
+            case .failure(let e): return .failure(e)
+            case .none: break
             }
         }
 
         output += remaining
         return .success(output)
+    }
+}
+
+private func renderToken(
+    _ token: String,
+    context: Context,
+    env: HTMLEnvironment
+) -> Result<String, TemplateError>? {
+    if token.hasPrefix("#each ") {
+        return renderEach(token, context: context, env: env)
+    } else if token.hasPrefix("#if ") {
+        return renderIf(token, context: context, env: env)
+    } else if token.hasPrefix("#include ") {
+        return renderInclude(token, context: context, env: env)
+    } else {
+        return renderVariable(token, context: context)
+    }
+}
+
+private func renderEach(_ token: String, context: Context, env: HTMLEnvironment) -> Result<String, TemplateError>? {
+    let parts = words(token.dropFirst(6), limit: 2)
+    guard parts.count == 2,
+          case .list(let items) = context[parts[0]]
+    else { return nil }
+
+    return loadFragment(parts[1])
+        .runReader(env)
+        .flatMap { frag in
+            items.reduce(.success("")) { acc, item in
+                acc.flatMap { prev in
+                    renderImpl(frag, item).runReader(env).map { prev + $0 }
+                }
+            }
+        }
+}
+
+private func renderIf(_ token: String, context: Context, env: HTMLEnvironment) -> Result<String, TemplateError>? {
+    let parts = words(token.dropFirst(4), limit: 2)
+    guard parts.count == 2, truthy(context[parts[0]]) else { return nil }
+    return loadFragment(parts[1])
+        .runReader(env)
+        .flatMap { frag in renderImpl(frag, context).runReader(env) }
+}
+
+private func renderInclude(_ token: String, context: Context, env: HTMLEnvironment) -> Result<String, TemplateError>? {
+    let name = String(token.dropFirst(9)).trimmingCharacters(in: .whitespaces)
+    return loadFragment(name)
+        .runReader(env)
+        .flatMap { frag in renderImpl(frag, context).runReader(env) }
+}
+
+private func renderVariable(_ token: String, context: Context) -> Result<String, TemplateError>? {
+    switch context[token] {
+    case .string(let s): .success(s)
+    case .bool(let b):   .success(b ? "true" : "false")
+    case .list, nil:     nil
     }
 }
 

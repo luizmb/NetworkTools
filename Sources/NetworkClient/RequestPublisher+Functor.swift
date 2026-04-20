@@ -5,7 +5,6 @@ import Foundation
 // MARK: - Functor
 
 public extension RequestPublisher {
-
     /// Transforms the output value; the same `URLRequest` is threaded through unchanged.
     func map<B>(_ f: @escaping (A) -> B) -> RequestPublisher<B> {
         RequestPublisher<B> { request in run(request).map(f).eraseToAnyPublisher() }

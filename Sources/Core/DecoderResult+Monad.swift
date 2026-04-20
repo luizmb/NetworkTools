@@ -3,7 +3,6 @@ import Foundation
 // MARK: - Monad
 
 public extension DecoderResult {
-
     /// Chains two `DecoderResult`s, threading the same `Data` through both.
     func flatMap<B>(_ f: @escaping (D) -> DecoderResult<B>) -> DecoderResult<B> {
         DecoderResult<B> { data in run(data).flatMap { d in f(d).run(data) } }

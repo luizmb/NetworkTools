@@ -1,7 +1,7 @@
 #if canImport(Combine)
 import Combine
-import FP
 import Foundation
+import FP
 
 // MARK: - RequestPublisher Monad Operators
 

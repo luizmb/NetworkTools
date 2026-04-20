@@ -1,6 +1,6 @@
 import Core
-import FP
 import Foundation
+import FP
 
 public struct Router<Env: Sendable>: @unchecked Sendable {
     private var entries: [(Request) -> Reader<Env, DeferredTask<Result<Response, ResponseError>>>?] = []
@@ -24,7 +24,12 @@ public struct Router<Env: Sendable>: @unchecked Sendable {
                 case .failure(let error):
                     return Reader { _ in DeferredTask { .failure(.badRequest(error.localizedDescription)) } }
                 case .success(let body):
-                    let typedReq = TypedRequest(urlParams: matched.urlParams, queryParams: matched.queryParams, body: body, raw: matched.raw)
+                    let typedReq = TypedRequest(
+                        urlParams: matched.urlParams,
+                        queryParams: matched.queryParams,
+                        body: body,
+                        raw: matched.raw
+                    )
                     return handler.run(typedReq)
                 }
             }

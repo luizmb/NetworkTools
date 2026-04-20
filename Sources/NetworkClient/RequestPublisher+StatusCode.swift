@@ -5,7 +5,6 @@ import Foundation
 // MARK: - Status code validation
 
 public extension RequestPublisher where A == (Data, HTTPURLResponse) {
-
     /// Validates that the response status code is in the 2xx range.
     /// Fails with `.badStatus` otherwise, attaching the raw body for diagnostics.
     func validateStatusCode() -> RequestPublisher<Data> {
@@ -18,7 +17,8 @@ public extension RequestPublisher where A == (Data, HTTPURLResponse) {
                 return Just(data)
                     .setFailureType(to: HTTPError.self)
                     .eraseToAnyPublisher()
-            }.eraseToAnyPublisher()
+            }
+            .eraseToAnyPublisher()
         }
     }
 }

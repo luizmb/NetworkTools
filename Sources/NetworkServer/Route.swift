@@ -41,6 +41,7 @@ public struct Route<URLParams: Decodable, QueryParams: Decodable>: Sendable {
 
 // MARK: - Path matching
 
+// swiftlint:disable:next discouraged_optional_collection
 func matchPath(_ path: String, against pattern: String) -> [String: String]? {
     let pathParts    = path.split(separator: "/", omittingEmptySubsequences: true)
     let patternParts = pattern.split(separator: "/", omittingEmptySubsequences: true)

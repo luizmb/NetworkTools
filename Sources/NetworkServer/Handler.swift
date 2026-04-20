@@ -1,10 +1,12 @@
-import FP
 import Foundation
+import FP
 
 public struct Handler<URLParams, QueryParams, Body, Env: Sendable>: @unchecked Sendable {
     let run: (TypedRequest<URLParams, QueryParams, Body>) -> Reader<Env, DeferredTask<Result<Response, ResponseError>>>
 
-    public init(_ run: @escaping (TypedRequest<URLParams, QueryParams, Body>) -> Reader<Env, DeferredTask<Result<Response, ResponseError>>>) {
+    public init(
+        _ run: @escaping (TypedRequest<URLParams, QueryParams, Body>) -> Reader<Env, DeferredTask<Result<Response, ResponseError>>>
+    ) {
         self.run = run
     }
 }

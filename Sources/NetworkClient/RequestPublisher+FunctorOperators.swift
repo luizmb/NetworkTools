@@ -1,7 +1,7 @@
 #if canImport(Combine)
 import Combine
-import FP
 import Foundation
+import FP
 
 // MARK: - RequestPublisher Functor Operators
 
@@ -16,6 +16,7 @@ public func <&> <A, B>(_ r: RequestPublisher<A>, _ f: @escaping (A) -> B) -> Req
 }
 
 // ($>) :: RequestPublisher<a> -> b -> RequestPublisher<b>
+// swiftlint:disable:next identifier_name
 public func £> <A, B>(_ r: RequestPublisher<A>, _ value: B) -> RequestPublisher<B> {
     r.replace(with: value)
 }

@@ -7,10 +7,10 @@ final class HTTPChannelHandler<Env: Sendable>: ChannelInboundHandler, @unchecked
     typealias OutboundOut = HTTPServerResponsePart
 
     private let router: Router<Env>
-    private let env:    Env
+    private let env: Env
     private var method: HTTPMethod = .GET
-    private var uri:    String     = "/"
-    private var body:   [UInt8]    = []
+    private var uri: String = "/"
+    private var body: [UInt8] = []
 
     init(router: Router<Env>, env: Env) {
         self.router = router
@@ -33,8 +33,8 @@ final class HTTPChannelHandler<Env: Sendable>: ChannelInboundHandler, @unchecked
             Task { [weak self] in
                 guard let self else { return }
                 let response = switch await task.run() {
-                    case .success(let r): r
-                    case .failure(let e): Response(e)
+                case .success(let r): r
+                case .failure(let e): Response(e)
                 }
                 eventLoop.execute { [weak self] in
                     guard let self else { return }

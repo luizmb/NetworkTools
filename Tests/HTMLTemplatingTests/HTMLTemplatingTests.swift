@@ -1,6 +1,7 @@
-import Testing
+// swiftlint:disable file_length
 import Foundation
 @testable import HTMLTemplating
+import Testing
 
 // MARK: - Helpers
 
@@ -27,12 +28,12 @@ private func withFragmentDir<T>(
 
 @Suite("esc")
 struct EscTests {
-    @Test func ampersand()    { #expect(esc("a&b") == "a&amp;b") }
-    @Test func lessThan()     { #expect(esc("<x>") == "&lt;x&gt;") }
-    @Test func greaterThan()  { #expect(esc("x>y") == "x&gt;y") }
-    @Test func noSpecials()   { #expect(esc("hello") == "hello") }
-    @Test func combined()     { #expect(esc("<a&b>") == "&lt;a&amp;b&gt;") }
-    @Test func empty()        { #expect(esc("") == "") }
+    @Test func ampersand() { #expect(esc("a&b") == "a&amp;b") }
+    @Test func lessThan() { #expect(esc("<x>") == "&lt;x&gt;") }
+    @Test func greaterThan() { #expect(esc("x>y") == "x&gt;y") }
+    @Test func noSpecials() { #expect(esc("hello") == "hello") }
+    @Test func combined() { #expect(esc("<a&b>") == "&lt;a&amp;b&gt;") }
+    @Test func empty() { #expect(esc("").isEmpty) }
 }
 
 @Suite("escAttr")
@@ -67,12 +68,12 @@ struct RenderSubstitutionTests {
 
     @Test func missingKeyIsEmpty() throws {
         let out = try render("{{missing}}", [:]).runReader(env).get()
-        #expect(out == "")
+        #expect(out.isEmpty)
     }
 
     @Test func listValueIgnored() throws {
         let out = try render("{{items}}", ["items": .list([["x": .string("1")]])]).runReader(env).get()
-        #expect(out == "")
+        #expect(out.isEmpty)
     }
 
     @Test func noTokens() throws {
@@ -97,7 +98,7 @@ struct RenderSubstitutionTests {
 
     @Test func emptyTemplate() throws {
         let out = try render("", [:]).runReader(env).get()
-        #expect(out == "")
+        #expect(out.isEmpty)
     }
 
     @Test func surroundingText() throws {
@@ -121,21 +122,21 @@ struct RenderEachTests {
     @Test func emptyListProducesEmpty() throws {
         try withFragmentDir(["row": "<li>{{x}}</li>"]) { env in
             let out = try render("{{#each items row}}", ["items": .list([])]).runReader(env).get()
-            #expect(out == "")
+            #expect(out.isEmpty)
         }
     }
 
     @Test func missingContextKeySkipped() throws {
         try withFragmentDir(["row": "<li/>"]) { env in
             let out = try render("{{#each missing row}}", [:]).runReader(env).get()
-            #expect(out == "")
+            #expect(out.isEmpty)
         }
     }
 
     @Test func nonListValueSkipped() throws {
         try withFragmentDir(["row": "<li/>"]) { env in
             let out = try render("{{#each s row}}", ["s": .string("not a list")]).runReader(env).get()
-            #expect(out == "")
+            #expect(out.isEmpty)
         }
     }
 
@@ -152,7 +153,7 @@ struct RenderEachTests {
     @Test func itemContextIsolated() throws {
         try withFragmentDir(["row": "{{val}}"]) { env in
             let ctx: Context = [
-                "val":   .string("outer"),
+                "val": .string("outer"),
                 "items": .list([["val": .string("inner")]]),
             ]
             let out = try render("{{#each items row}}", ctx).runReader(env).get()
@@ -175,14 +176,14 @@ struct RenderIfTests {
     @Test func falseBoolHidesFragment() throws {
         try withFragmentDir(["yes": "<p>shown</p>"]) { env in
             let out = try render("{{#if flag yes}}", ["flag": .bool(false)]).runReader(env).get()
-            #expect(out == "")
+            #expect(out.isEmpty)
         }
     }
 
     @Test func missingKeyHidesFragment() throws {
         try withFragmentDir(["yes": "<p>shown</p>"]) { env in
             let out = try render("{{#if flag yes}}", [:]).runReader(env).get()
-            #expect(out == "")
+            #expect(out.isEmpty)
         }
     }
 
@@ -196,7 +197,7 @@ struct RenderIfTests {
     @Test func emptyStringIsFalsy() throws {
         try withFragmentDir(["yes": "X"]) { env in
             let out = try render("{{#if s yes}}", ["s": .string("")]).runReader(env).get()
-            #expect(out == "")
+            #expect(out.isEmpty)
         }
     }
 
@@ -211,7 +212,7 @@ struct RenderIfTests {
     @Test func emptyListIsFalsy() throws {
         try withFragmentDir(["yes": "Y"]) { env in
             let out = try render("{{#if items yes}}", ["items": .list([])]).runReader(env).get()
-            #expect(out == "")
+            #expect(out.isEmpty)
         }
     }
 
@@ -289,7 +290,7 @@ struct RenderCompositionTests {
     @Test func eachInsideInclude() throws {
         try withFragmentDir([
             "list": "<ul>{{#each items row}}</ul>",
-            "row":  "<li>{{name}}</li>",
+            "row": "<li>{{name}}</li>",
         ]) { env in
             let ctx: Context = ["items": .list([["name": .string("A")], ["name": .string("B")]])]
             let out = try render("{{#include list}}", ctx).runReader(env).get()

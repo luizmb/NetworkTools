@@ -1,6 +1,6 @@
 import Core
-import FP
 import Foundation
+import FP
 import NIOHTTP1
 
 public struct ResponseEncoder<T>: @unchecked Sendable {

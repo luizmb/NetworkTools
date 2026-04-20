@@ -1,8 +1,8 @@
 import Foundation
 import FP
 import NIOCore
-import NIOPosix
 import NIOHTTP1
+import NIOPosix
 
 /// Returns a `Reader` that, when run with an `Env`, starts the HTTP server
 /// on `host:port` and blocks until the server shuts down or an error occurs.

@@ -3,7 +3,6 @@ import Foundation
 // MARK: - Functor
 
 public extension DecoderResult {
-
     /// Transforms the decoded value; the same `Data` is threaded through unchanged.
     func map<B>(_ f: @escaping (D) -> B) -> DecoderResult<B> {
         DecoderResult<B> { data in run(data).map(f) }
