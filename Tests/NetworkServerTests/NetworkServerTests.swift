@@ -7,6 +7,9 @@ import Testing
 #if canImport(Combine)
 import Combine
 #endif
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 @testable import NetworkServer
 
 private typealias Empty = NetworkServer.Empty
@@ -310,10 +313,13 @@ struct RouterTests {
     }
 
     @Test func matchesFirstMatchingRoute() async {
-        let router: Router<Void> =
-            Router(Route<Empty, Empty>(.GET, "/a").matchReader() >=> emptyBody() >=> handle { _ in ResponseEncoder<String>.html.response("A") })
-            <> Router(Route<Empty, Empty>(.GET, "/b").matchReader() >=> emptyBody() >=> handle { _ in ResponseEncoder<String>.html.response("B") })
-        let run = router.handle.runReader(())
+        let routerA: Router<Void> =
+            Router(Route<Empty, Empty>(.GET, "/a").matchReader() >=> emptyBody()
+                   >=> handle { _ in ResponseEncoder<String>.html.response("A") })
+        let routerB: Router<Void> =
+            Router(Route<Empty, Empty>(.GET, "/b").matchReader() >=> emptyBody()
+                   >=> handle { _ in ResponseEncoder<String>.html.response("B") })
+        let run = (routerA <> routerB).handle.runReader(())
         #expect(String(data: (await run(req(.GET, "/a")).run()).response.body, encoding: .utf8) == "A")
         #expect(String(data: (await run(req(.GET, "/b")).run()).response.body, encoding: .utf8) == "B")
     }
