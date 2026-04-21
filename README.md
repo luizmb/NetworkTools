@@ -505,7 +505,7 @@ Thread.detachNewThread {
 
 ```swift
 let router: Router<Void> = Router(
-    Route<Empty, Empty>(.GET, "/ping").matchReader()
+    when(.GET, "/ping")
     >=> ignoreBody()
     >=> handle { _ in ResponseEncoder<String>.html.response("pong") }
 )
@@ -523,7 +523,7 @@ Declare a `Decodable` struct whose property names match the `:placeholder` names
 struct AlbumID: Decodable { let id: String }
 
 let router: Router<Void> = Router(
-    Route<AlbumID, Empty>(.GET, "/albums/:id").matchReader()
+    when(.GET, "/albums/:id", params: AlbumID.self)
     >=> ignoreBody()
     >=> handle { req in ResponseEncoder<String>.html.response("Album: \(req.urlParams.id)") }
 )
@@ -538,7 +538,7 @@ struct PhotoPath: Decodable {
 }
 
 let router: Router<Void> = Router(
-    Route<PhotoPath, Empty>(.GET, "/albums/:albumId/photos/:photoId").matchReader()
+    when(.GET, "/albums/:albumId/photos/:photoId", params: PhotoPath.self)
     >=> ignoreBody()
     >=> handle { req in
         ResponseEncoder<String>.html.response(
@@ -557,9 +557,9 @@ struct StringSlug: Decodable { let id: String }
 // GET /albums/123  → matched by Int route  → "Numeric album: 123"
 // GET /albums/jazz → falls through (404)   → matched by String route → "Album slug: jazz"
 let router: Router<Void> =
-    Router(Route<NumericID, Empty>(.GET, "/albums/:id").matchReader() >=> ignoreBody()
+    Router(when(.GET, "/albums/:id", params: NumericID.self) >=> ignoreBody()
            >=> handle { req in ResponseEncoder<String>.html.response("Numeric album: \(req.urlParams.id)") })
-    <|> Router(Route<StringSlug, Empty>(.GET, "/albums/:id").matchReader() >=> ignoreBody()
+    <|> Router(when(.GET, "/albums/:id", params: StringSlug.self) >=> ignoreBody()
                >=> handle { req in ResponseEncoder<String>.html.response("Album slug: \(req.urlParams.id)") })
 ```
 
@@ -575,7 +575,7 @@ struct Pagination: Decodable {
 
 // GET /items?page=2&limit=20
 let router: Router<Void> = Router(
-    Route<Empty, Pagination>(.GET, "/items").matchReader()
+    when(.GET, "/items", query: Pagination.self)
     >=> ignoreBody()
     >=> handle { req in
         let page  = req.queryParams.page  ?? 1
@@ -600,7 +600,7 @@ let albumEncoderResult: EncoderResult<Album>     = .json.runReader(JSONEncoder()
 let albumEncoder:       ResponseEncoder<Album>   = .json.runReader(albumEncoderResult)
 
 let router: Router<Void> = Router(
-    Route<Empty, Empty>(.GET, "/albums/1").matchReader()
+    when(.GET, "/albums/1")
     >=> ignoreBody()
     >=> handle { _ in albumEncoder.response(Album(id: 1, title: "Kind of Blue")) }
 )
@@ -633,7 +633,7 @@ let albumEncoderResult: EncoderResult<Album>       = .json.runReader(JSONEncoder
 let albumEncoder:       ResponseEncoder<Album>     = .json.runReader(albumEncoderResult)
 
 let router: Router<Void> = Router(
-    Route<Empty, Empty>(.POST, "/albums").matchReader()
+    when(.POST, "/albums")
     >=> decodeBody(albumDecoder)
     >=> handle { req in albumEncoder.response(Album(id: nextID(), title: req.body.title), status: .created) }
 )
@@ -647,7 +647,7 @@ struct Format:      Decodable { let format: String? }
 struct CreatePhoto: Decodable { let caption: String; let data: String }
 
 let router: Router<Void> = Router(
-    Route<AlbumID, Format>(.POST, "/albums/:id/photos").matchReader()
+    when(.POST, "/albums/:id/photos", params: AlbumID.self, query: Format.self)
     >=> decodeBody(DecoderResult<CreatePhoto>.json.runReader(JSONDecoder()))
     >=> handle { req in
         ResponseEncoder<String>.html.response(
@@ -663,10 +663,10 @@ let router: Router<Void> = Router(
 
 ```swift
 let router: Router<Void> =
-    Router(Route<Empty, Empty>(.GET,  "/ping").matchReader()   >=> ignoreBody() >=> handle { _ in ResponseEncoder<String>.html.response("pong") })
-    <|> Router(Route<Empty, Empty>(.GET,  "/health").matchReader() >=> ignoreBody() >=> handle { _ in ResponseEncoder<String>.html.response("ok") })
+    Router(when(.GET,  "/ping")   >=> ignoreBody() >=> handle { _ in ResponseEncoder<String>.html.response("pong") })
+    <|> Router(when(.GET,  "/health") >=> ignoreBody() >=> handle { _ in ResponseEncoder<String>.html.response("ok") })
     <|> Router(
-        Route<Empty, Empty>(.POST, "/echo").matchReader()
+        when(.POST, "/echo")
         >=> decodeBody(DecoderResult<[String: String]>.json.runReader(JSONDecoder()))
         >=> handle { req in
             let encoderResult: EncoderResult<[String: String]> = .json.runReader(JSONEncoder())
@@ -728,7 +728,7 @@ struct AppEnv: Sendable {
 struct AlbumID: Decodable { let id: Int }
 
 let router: Router<AppEnv> = Router(
-    Route<AlbumID, Empty>(.GET, "/albums/:id").matchReader()
+    when(.GET, "/albums/:id", params: AlbumID.self)
     >=> ignoreBody()
     >=> handle { req in
         Reader { env in
@@ -752,7 +752,7 @@ For synchronous env access:
 struct ConfigEnv: Sendable { let greeting: String }
 
 let router: Router<ConfigEnv> = Router(
-    Route<Empty, Empty>(.GET, "/hello").matchReader()
+    when(.GET, "/hello")
     >=> ignoreBody()
     >=> handle { _ in Reader { env in ResponseEncoder<String>.html.response(env.greeting) } }
 )
@@ -871,7 +871,7 @@ let router: Router<AppEnv> =
 
     // GET /albums — list all, optionally filtered by ?year=
     Router(
-        Route<Empty, YearQuery>(.GET, "/albums").matchReader()
+        when(.GET, "/albums", query: YearQuery.self)
         >=> ignoreBody()
         >=> handle { req in
             Reader { env -> Result<Response, ResponseError> in
@@ -884,7 +884,7 @@ let router: Router<AppEnv> =
 
     // GET /albums/:id — fetch one album by integer ID
     <|> Router(
-        Route<AlbumID, Empty>(.GET, "/albums/:id").matchReader()
+        when(.GET, "/albums/:id", params: AlbumID.self)
         >=> ignoreBody()
         >=> handle { req in
             Reader { env -> Result<Response, ResponseError> in
@@ -898,7 +898,7 @@ let router: Router<AppEnv> =
 
     // POST /albums — create a new album from a JSON body
     <|> Router(
-        Route<Empty, Empty>(.POST, "/albums").matchReader()
+        when(.POST, "/albums")
         >=> decodeBody(albumDecoder)
         >=> handle { req in
             Reader { env -> Result<Response, ResponseError> in
@@ -926,7 +926,7 @@ struct WebEnv: Sendable {
 }
 
 let router: Router<WebEnv> = Router(
-    Route<Empty, Empty>(.GET, "/").matchReader()
+    when(.GET, "/")
     >=> ignoreBody()
     >=> handle { _ in
         Reader { env -> Result<Response, ResponseError> in
