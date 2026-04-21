@@ -698,7 +698,7 @@ handle { req in
 // Combine — returns AnyPublisher<Response, ResponseError> (env-independent)
 handle { req in
     fetchAlbumPublisher(req.urlParams.id)      // AnyPublisher<Album, ResponseError>
-        .tryMap { try JSONEncoder().encode($0) }
+        .flatMap { AnyPublisher.encoding($0, using: JSONEncoder()) }
         .map { Response(status: .ok, headers: [("Content-Type", "application/json")], body: $0) }
         .mapError { ResponseError.serverError($0.localizedDescription) }
         .eraseToAnyPublisher()
