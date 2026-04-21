@@ -430,23 +430,21 @@ let resilient: RequestPublisher<User> =
 
 ## NetworkServer
 
-An embedded HTTP server backed by SwiftNIO. Routes are built by Kleisli-composing (`>=>`) a series of lifting functions, then wrapping the result in `Router(…)`. Routers are values — they combine with `<|>`, transform their environment with `pullback`, and are injected into the server via `Reader`.
+An embedded HTTP server backed by SwiftNIO. Routes are built by Kleisli-composing (`>=>`) a series of lifting functions, then wrapping the result with `when(…)`. Routers are values — they combine with `<|>`, transform their environment with `pullback`, and are injected into the server via `Reader`.
 
 ### Mental model
 
 ```
-when(method, path, params:, query:)  — convenience entry point; equivalent to Route<U,Q>(…).matchReader()
-Route<URLParams, QueryParams>        — first-class route value, storable and reusable
-  .matchReader()                     — lift Route into a Kleisli step
+get(path, params:, query:)    — GET route entry point
+post / put / patch / delete   — other HTTP verbs; same signature
 
->=> ignoreBody()                 — no body; imposes no Decodable constraint
- or decodeBody(decoder)          — decode body as B (requires B: Decodable)
+>=> ignoreBody()              — no body; imposes no Decodable constraint
+ or decodeBody(decoder)       — decode body as B (requires B: Decodable)
 
->=> handle { req in … }          — lift closure into Reader<Env, DeferredTask<Result<Response, ResponseError>>>
+>=> handle { req in … }       — lift closure into Reader<Env, DeferredTask<Result<Response, ResponseError>>>
 
- = (Request) -> Reader<Env, DeferredTask<Result<Response, ResponseError>>>
-
-Router(…)                        — wrap the composed chain into a first-class router value
+when(chain)                   — wrap into Router<Void>
+when(chain, injecting: T.self) — wrap into Router<T> for non-Void environments
 ```
 
 Multiple routers combine with `<|>`. The operator tries the left router first and falls through to the right only on a 404 (unmatched route). Query-param errors (400) and body-decode errors (400) stop immediately without trying the next router.
@@ -504,10 +502,8 @@ Thread.detachNewThread {
 ### Minimal example
 
 ```swift
-let router: Router<Void> = Router(
-    when(.GET, "/ping")
-    >=> ignoreBody()
-    >=> handle { _ in ResponseEncoder<String>.html.response("pong") }
+let router = when(
+    get("/ping") >=> ignoreBody() >=> handle { _ in .html("pong") }
 )
 
 Thread.detachNewThread {
@@ -522,10 +518,10 @@ Declare a `Decodable` struct whose property names match the `:placeholder` names
 ```swift
 struct AlbumID: Decodable { let id: String }
 
-let router: Router<Void> = Router(
-    when(.GET, "/albums/:id", params: AlbumID.self)
+let router = when(
+    get("/albums/:id", params: AlbumID.self)
     >=> ignoreBody()
-    >=> handle { req in ResponseEncoder<String>.html.response("Album: \(req.urlParams.id)") }
+    >=> handle { req in .html("Album: \(req.urlParams.id)") }
 )
 ```
 
@@ -537,14 +533,10 @@ struct PhotoPath: Decodable {
     let photoId: String
 }
 
-let router: Router<Void> = Router(
-    when(.GET, "/albums/:albumId/photos/:photoId", params: PhotoPath.self)
+let router = when(
+    get("/albums/:albumId/photos/:photoId", params: PhotoPath.self)
     >=> ignoreBody()
-    >=> handle { req in
-        ResponseEncoder<String>.html.response(
-            "Album \(req.urlParams.albumId), photo \(req.urlParams.photoId)"
-        )
-    }
+    >=> handle { req in .html("Album \(req.urlParams.albumId), photo \(req.urlParams.photoId)") }
 )
 ```
 
@@ -556,11 +548,11 @@ struct StringSlug: Decodable { let id: String }
 
 // GET /albums/123  → matched by Int route  → "Numeric album: 123"
 // GET /albums/jazz → falls through (404)   → matched by String route → "Album slug: jazz"
-let router: Router<Void> =
-    Router(when(.GET, "/albums/:id", params: NumericID.self) >=> ignoreBody()
-           >=> handle { req in ResponseEncoder<String>.html.response("Numeric album: \(req.urlParams.id)") })
-    <|> Router(when(.GET, "/albums/:id", params: StringSlug.self) >=> ignoreBody()
-               >=> handle { req in ResponseEncoder<String>.html.response("Album slug: \(req.urlParams.id)") })
+let router =
+    when(get("/albums/:id", params: NumericID.self) >=> ignoreBody()
+         >=> handle { req in .html("Numeric album: \(req.urlParams.id)") })
+    <|> when(get("/albums/:id", params: StringSlug.self) >=> ignoreBody()
+             >=> handle { req in .html("Album slug: \(req.urlParams.id)") })
 ```
 
 ### Typed query parameters
@@ -574,13 +566,13 @@ struct Pagination: Decodable {
 }
 
 // GET /items?page=2&limit=20
-let router: Router<Void> = Router(
-    when(.GET, "/items", query: Pagination.self)
+let router = when(
+    get("/items", query: Pagination.self)
     >=> ignoreBody()
     >=> handle { req in
         let page  = req.queryParams.page  ?? 1
         let limit = req.queryParams.limit ?? 10
-        return ResponseEncoder<String>.plainText.response("page=\(page) limit=\(limit)")
+        return .plainText("page=\(page) limit=\(limit)")
     }
 )
 ```
@@ -598,8 +590,8 @@ struct Album: Codable {
 // Define encoders once and reuse them across handlers.
 let albumEncoder: ResponseEncoder<Album> = .json.runReader(JSONEncoder())
 
-let router: Router<Void> = Router(
-    when(.GET, "/albums/1")
+let router = when(
+    get("/albums/1")
     >=> ignoreBody()
     >=> handle { _ in albumEncoder.response(Album(id: 1, title: "Kind of Blue")) }
 )
@@ -629,8 +621,8 @@ struct Album:       Codable   { let id: Int; let title: String }
 let albumDecoder: DecoderResult<CreateAlbum> = JSONDecoder().decoderResult(for: CreateAlbum.self)
 let albumEncoder: ResponseEncoder<Album>     = .json.runReader(JSONEncoder())
 
-let router: Router<Void> = Router(
-    when(.POST, "/albums")
+let router = when(
+    post("/albums")
     >=> decodeBody(albumDecoder)
     >=> handle { req in albumEncoder.response(Album(id: nextID(), title: req.body.title), status: .created) }
 )
@@ -643,13 +635,11 @@ struct AlbumID:     Decodable { let id: Int }
 struct Format:      Decodable { let format: String? }
 struct CreatePhoto: Decodable { let caption: String; let data: String }
 
-let router: Router<Void> = Router(
-    when(.POST, "/albums/:id/photos", params: AlbumID.self, query: Format.self)
+let router = when(
+    post("/albums/:id/photos", params: AlbumID.self, query: Format.self)
     >=> decodeBody(JSONDecoder().decoderResult(for: CreatePhoto.self))
     >=> handle { req in
-        ResponseEncoder<String>.html.response(
-            "Uploaded to album \(req.urlParams.id) as \(req.queryParams.format ?? "jpeg")"
-        )
+        .html("Uploaded to album \(req.urlParams.id) as \(req.queryParams.format ?? "jpeg")")
     }
 )
 ```
@@ -660,10 +650,10 @@ let router: Router<Void> = Router(
 
 ```swift
 let router: Router<Void> =
-    Router(when(.GET,  "/ping")   >=> ignoreBody() >=> handle { _ in ResponseEncoder<String>.html.response("pong") })
-    <|> Router(when(.GET,  "/health") >=> ignoreBody() >=> handle { _ in ResponseEncoder<String>.html.response("ok") })
-    <|> Router(
-        when(.POST, "/echo")
+    when(get("/ping")   >=> ignoreBody() >=> handle { _ in .html("pong") })
+    <|> when(get("/health") >=> ignoreBody() >=> handle { _ in .html("ok") })
+    <|> when(
+        post("/echo")
         >=> decodeBody(JSONDecoder().decoderResult(for: [String: String].self))
         >=> handle { req in
             .from(encoder: JSONEncoder(), entity: req.body)
@@ -722,8 +712,8 @@ struct AppEnv: Sendable {
 
 struct AlbumID: Decodable { let id: Int }
 
-let router: Router<AppEnv> = Router(
-    when(.GET, "/albums/:id", params: AlbumID.self)
+let router: Router<AppEnv> = when(
+    get("/albums/:id", params: AlbumID.self)
     >=> ignoreBody()
     >=> handle { req in
         Reader { env in
@@ -734,7 +724,8 @@ let router: Router<AppEnv> = Router(
                 return albumEncoder.response(album)
             }
         }
-    }
+    },
+    injecting: AppEnv.self
 )
 
 // Inject the environment at startup, not at route definition time.
@@ -746,10 +737,11 @@ For synchronous env access:
 ```swift
 struct ConfigEnv: Sendable { let greeting: String }
 
-let router: Router<ConfigEnv> = Router(
-    when(.GET, "/hello")
+let router: Router<ConfigEnv> = when(
+    get("/hello")
     >=> ignoreBody()
-    >=> handle { _ in Reader { env in ResponseEncoder<String>.html.response(env.greeting) } }
+    >=> handle { _ in Reader { env in .html(env.greeting) } },
+    injecting: ConfigEnv.self
 )
 
 startServer(port: 8080, router: router).runReader(ConfigEnv(greeting: "Hi there!"))
@@ -889,8 +881,8 @@ struct YearQuery: Decodable { let year: Int? }
 let router: Router<AppEnv> =
 
     // GET /albums — list all, optionally filtered by ?year=
-    Router(
-        when(.GET, "/albums", query: YearQuery.self)
+    when(
+        get("/albums", query: YearQuery.self)
         >=> ignoreBody()
         >=> handle { req in
             Reader { env -> Result<Response, ResponseError> in
@@ -898,12 +890,13 @@ let router: Router<AppEnv> =
                              ?? env.albums
                 return albumsEncoder.response(albums)
             }
-        }
+        },
+        injecting: AppEnv.self
     )
 
     // GET /albums/:id — fetch one album by integer ID
-    <|> Router(
-        when(.GET, "/albums/:id", params: AlbumID.self)
+    <|> when(
+        get("/albums/:id", params: AlbumID.self)
         >=> ignoreBody()
         >=> handle { req in
             Reader { env -> Result<Response, ResponseError> in
@@ -912,19 +905,21 @@ let router: Router<AppEnv> =
                 }
                 return albumEncoder.response(album)
             }
-        }
+        },
+        injecting: AppEnv.self
     )
 
     // POST /albums — create a new album from a JSON body
-    <|> Router(
-        when(.POST, "/albums")
+    <|> when(
+        post("/albums")
         >=> decodeBody(albumDecoder)
         >=> handle { req in
             Reader { env -> Result<Response, ResponseError> in
                 let newAlbum = Album(id: env.albums.count + 1, title: req.body.title, year: req.body.year)
                 return albumEncoder.response(newAlbum, status: .created)
             }
-        }
+        },
+        injecting: AppEnv.self
     )
 
 // MARK: - Start
@@ -944,8 +939,8 @@ struct WebEnv: Sendable {
     let db: Database
 }
 
-let router: Router<WebEnv> = Router(
-    when(.GET, "/")
+let router: Router<WebEnv> = when(
+    get("/")
     >=> ignoreBody()
     >=> handle { _ in
         Reader { env -> Result<Response, ResponseError> in
@@ -958,7 +953,8 @@ let router: Router<WebEnv> = Router(
             case .failure(let err):  return .serverError(String(describing: err))
             }
         }
-    }
+    },
+    injecting: WebEnv.self
 )
 
 startServer(port: 8080, router: router).runReader(
