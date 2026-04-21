@@ -297,7 +297,7 @@ struct RouterTests {
     @Test func matchesRegisteredRoute() async {
         let router: Router<Void> = Router(
             Route<Empty, Empty>(.GET, "/ping").matchReader()
-            >=> emptyBody()
+            >=> ignoreBody()
             >=> handle { _ in ResponseEncoder<String>.html.response("pong") }
         )
         #expect(await router.handle.runReader(())(req(.GET, "/ping")).run().response.status == .ok)
@@ -306,7 +306,7 @@ struct RouterTests {
     @Test func returnsNotFoundForUnregisteredPath() async {
         let router: Router<Void> = Router(
             Route<Empty, Empty>(.GET, "/ping").matchReader()
-            >=> emptyBody()
+            >=> ignoreBody()
             >=> handle { _ in ResponseEncoder<String>.html.response("pong") }
         )
         #expect(await router.handle.runReader(())(req(.GET, "/other")).run().response.status == .notFound)
@@ -314,10 +314,10 @@ struct RouterTests {
 
     @Test func matchesFirstMatchingRoute() async {
         let routerA: Router<Void> =
-            Router(Route<Empty, Empty>(.GET, "/a").matchReader() >=> emptyBody()
+            Router(Route<Empty, Empty>(.GET, "/a").matchReader() >=> ignoreBody()
                    >=> handle { _ in ResponseEncoder<String>.html.response("A") })
         let routerB: Router<Void> =
-            Router(Route<Empty, Empty>(.GET, "/b").matchReader() >=> emptyBody()
+            Router(Route<Empty, Empty>(.GET, "/b").matchReader() >=> ignoreBody()
                    >=> handle { _ in ResponseEncoder<String>.html.response("B") })
         let run = (routerA <|> routerB).handle.runReader(())
         #expect(String(data: (await run(req(.GET, "/a")).run()).response.body, encoding: .utf8) == "A")
@@ -330,7 +330,7 @@ struct RouterTests {
         let box = Box()
         let router: Router<Void> = Router(
             Route<UserParams, Empty>(.GET, "/users/:id").matchReader()
-            >=> emptyBody()
+            >=> ignoreBody()
             >=> handle { (typedReq: TypedRequest<UserParams, Empty, Empty>) -> Result<Response, ResponseError> in
                 box.value = typedReq.urlParams.id
                 return ResponseEncoder<String>.html.response("ok")
@@ -356,7 +356,7 @@ struct RouterTests {
     @Test func asyncHandlerViaDeferredTask() async {
         let router: Router<Void> = Router(
             Route<Empty, Empty>(.GET, "/async").matchReader()
-            >=> emptyBody()
+            >=> ignoreBody()
             >=> handle { _ in DeferredTask { ResponseEncoder<String>.html.response("async") } }
         )
         #expect(
@@ -368,7 +368,7 @@ struct RouterTests {
     @Test func asyncHandlerViaCombinePublisher() async {
         let router: Router<Void> = Router(
             Route<Empty, Empty>(.GET, "/pub").matchReader()
-            >=> emptyBody()
+            >=> ignoreBody()
             >=> handle { (_: TypedRequest<Empty, Empty, Empty>) in
                 Just(ResponseEncoder<String>.html.response("pub").response).eraseToAnyPublisher()
             }
@@ -383,7 +383,7 @@ struct RouterTests {
         struct Env: Sendable { let greeting: String }
         let router: Router<Env> = Router(
             Route<Empty, Empty>(.GET, "/hello").matchReader()
-            >=> emptyBody()
+            >=> ignoreBody()
             >=> handle { _ in Reader { env in ResponseEncoder<String>.html.response(env.greeting) } }
         )
         let response = await router.handle.runReader(Env(greeting: "hi there"))(req(.GET, "/hello")).run().response
@@ -415,7 +415,7 @@ struct NIOServerTests {
         let port = 18_091
         let frozenRouter: Router<Void> = Router(
             Route<Empty, Empty>(.GET, "/hello").matchReader()
-            >=> emptyBody()
+            >=> ignoreBody()
             >=> handle { req in ResponseEncoder<String>.html.response("OK:\(req.raw.path)") }
         )
         Thread.detachNewThread {
@@ -438,7 +438,7 @@ struct NIOServerTests {
         struct EchoResp: Codable { let message: String }
 
         let frozenRouter: Router<Void> =
-            Router(Route<Empty, Empty>(.GET, "/ping").matchReader() >=> emptyBody() >=> handle { _ in
+            Router(Route<Empty, Empty>(.GET, "/ping").matchReader() >=> ignoreBody() >=> handle { _ in
                 ResponseEncoder<String>.html.response("pong")
             })
             <|> Router(

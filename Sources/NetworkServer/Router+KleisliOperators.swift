@@ -1,6 +1,7 @@
 import Core
 import Foundation
 import FP
+import NIOHTTP1
 
 // MARK: - Bridge: (A -> Reader<Env, Result<B, E>>) >=> (B -> Reader<Env, DeferredTask<Result<C, E>>>)
 //
@@ -29,22 +30,37 @@ public func >=> <Env: Sendable, A, B, C, E: Error>(
 
 public extension Route {
     /// Lifts `match` into `Reader<Env, Result<…>>` for Kleisli composition via `>=>`.
-    ///
-    /// ```swift
-    /// let router = Router(
-    ///     route.matchReader() >=> decodeBody(bodyDecoder) >=> myHandler.run
-    /// )
-    /// ```
     func matchReader<Env>() -> (Request) -> Reader<Env, Result<MatchedRoute<URLParams, QueryParams>, ResponseError>> {
         { request in Reader { _ in self.match(request) } }
     }
 }
 
-// MARK: - Empty body → Kleisli step
+// MARK: - when — convenience entry point for a Kleisli chain
 
-/// Lifts a matched route with no body into `Reader<Env, Result<…>>` for Kleisli composition.
-/// Use this when the route requires no body decoding — no `Decodable` constraint is imposed.
-public func emptyBody<U, Q, Env>() -> (MatchedRoute<U, Q>) -> Reader<Env, Result<TypedRequest<U, Q, Empty>, ResponseError>> {
+/// Creates the first Kleisli step from a method, path, and typed parameter structs.
+/// Equivalent to `Route<U, Q>(method, path).matchReader()` but avoids explicit generic
+/// type parameters at the call site.
+///
+/// ```swift
+/// Router(
+///     when(.GET, "/albums/:id", params: AlbumID.self)
+///     >=> ignoreBody()
+///     >=> handle { req in … }
+/// )
+/// ```
+public func when<U: Decodable, Q: Decodable, Env>(
+    _ method: HTTPMethod,
+    _ path: String,
+    params: U.Type = Empty.self,
+    query: Q.Type = Empty.self
+) -> (Request) -> Reader<Env, Result<MatchedRoute<U, Q>, ResponseError>> {
+    Route<U, Q>(method, path).matchReader()
+}
+
+// MARK: - ignoreBody → Kleisli step
+
+/// Passes a matched route through with an `Empty` body — no `Decodable` constraint imposed.
+public func ignoreBody<U, Q, Env>() -> (MatchedRoute<U, Q>) -> Reader<Env, Result<TypedRequest<U, Q, Empty>, ResponseError>> {
     { matched in
         Reader { _ in
             .success(TypedRequest(urlParams: matched.urlParams, queryParams: matched.queryParams, body: .value, raw: matched.raw))

@@ -435,10 +435,11 @@ An embedded HTTP server backed by SwiftNIO. Routes are built by Kleisli-composin
 ### Mental model
 
 ```
-Route<URLParams, QueryParams>    — method + path pattern, typed param decoding
-  .matchReader()                 — lift Route into a Kleisli step
+when(method, path, params:, query:)  — convenience entry point; equivalent to Route<U,Q>(…).matchReader()
+Route<URLParams, QueryParams>        — first-class route value, storable and reusable
+  .matchReader()                     — lift Route into a Kleisli step
 
->=> emptyBody()                  — no body; imposes no Decodable constraint
+>=> ignoreBody()                 — no body; imposes no Decodable constraint
  or decodeBody(decoder)          — decode body as B (requires B: Decodable)
 
 >=> handle { req in … }          — lift closure into Reader<Env, DeferredTask<Result<Response, ResponseError>>>
@@ -505,7 +506,7 @@ Thread.detachNewThread {
 ```swift
 let router: Router<Void> = Router(
     Route<Empty, Empty>(.GET, "/ping").matchReader()
-    >=> emptyBody()
+    >=> ignoreBody()
     >=> handle { _ in ResponseEncoder<String>.html.response("pong") }
 )
 
@@ -523,7 +524,7 @@ struct AlbumID: Decodable { let id: String }
 
 let router: Router<Void> = Router(
     Route<AlbumID, Empty>(.GET, "/albums/:id").matchReader()
-    >=> emptyBody()
+    >=> ignoreBody()
     >=> handle { req in ResponseEncoder<String>.html.response("Album: \(req.urlParams.id)") }
 )
 ```
@@ -538,7 +539,7 @@ struct PhotoPath: Decodable {
 
 let router: Router<Void> = Router(
     Route<PhotoPath, Empty>(.GET, "/albums/:albumId/photos/:photoId").matchReader()
-    >=> emptyBody()
+    >=> ignoreBody()
     >=> handle { req in
         ResponseEncoder<String>.html.response(
             "Album \(req.urlParams.albumId), photo \(req.urlParams.photoId)"
@@ -556,9 +557,9 @@ struct StringSlug: Decodable { let id: String }
 // GET /albums/123  → matched by Int route  → "Numeric album: 123"
 // GET /albums/jazz → falls through (404)   → matched by String route → "Album slug: jazz"
 let router: Router<Void> =
-    Router(Route<NumericID, Empty>(.GET, "/albums/:id").matchReader() >=> emptyBody()
+    Router(Route<NumericID, Empty>(.GET, "/albums/:id").matchReader() >=> ignoreBody()
            >=> handle { req in ResponseEncoder<String>.html.response("Numeric album: \(req.urlParams.id)") })
-    <|> Router(Route<StringSlug, Empty>(.GET, "/albums/:id").matchReader() >=> emptyBody()
+    <|> Router(Route<StringSlug, Empty>(.GET, "/albums/:id").matchReader() >=> ignoreBody()
                >=> handle { req in ResponseEncoder<String>.html.response("Album slug: \(req.urlParams.id)") })
 ```
 
@@ -575,7 +576,7 @@ struct Pagination: Decodable {
 // GET /items?page=2&limit=20
 let router: Router<Void> = Router(
     Route<Empty, Pagination>(.GET, "/items").matchReader()
-    >=> emptyBody()
+    >=> ignoreBody()
     >=> handle { req in
         let page  = req.queryParams.page  ?? 1
         let limit = req.queryParams.limit ?? 10
@@ -600,7 +601,7 @@ let albumEncoder:       ResponseEncoder<Album>   = .json.runReader(albumEncoderR
 
 let router: Router<Void> = Router(
     Route<Empty, Empty>(.GET, "/albums/1").matchReader()
-    >=> emptyBody()
+    >=> ignoreBody()
     >=> handle { _ in albumEncoder.response(Album(id: 1, title: "Kind of Blue")) }
 )
 ```
@@ -621,7 +622,7 @@ let albumEncoder:       ResponseEncoder<Album> = .json.runReader(albumEncoderRes
 
 ### Body decoding
 
-Use `decodeBody(decoder)` as the middle step in the Kleisli chain. It runs the decoder only when the route matches; a decode failure returns 400 before the handler is called. Unlike `emptyBody()`, it requires `B: Decodable`.
+Use `decodeBody(decoder)` as the middle step in the Kleisli chain. It runs the decoder only when the route matches; a decode failure returns 400 before the handler is called. Unlike `ignoreBody()`, it requires `B: Decodable`.
 
 ```swift
 struct CreateAlbum: Decodable { let title: String }
@@ -662,8 +663,8 @@ let router: Router<Void> = Router(
 
 ```swift
 let router: Router<Void> =
-    Router(Route<Empty, Empty>(.GET,  "/ping").matchReader()   >=> emptyBody() >=> handle { _ in ResponseEncoder<String>.html.response("pong") })
-    <|> Router(Route<Empty, Empty>(.GET,  "/health").matchReader() >=> emptyBody() >=> handle { _ in ResponseEncoder<String>.html.response("ok") })
+    Router(Route<Empty, Empty>(.GET,  "/ping").matchReader()   >=> ignoreBody() >=> handle { _ in ResponseEncoder<String>.html.response("pong") })
+    <|> Router(Route<Empty, Empty>(.GET,  "/health").matchReader() >=> ignoreBody() >=> handle { _ in ResponseEncoder<String>.html.response("ok") })
     <|> Router(
         Route<Empty, Empty>(.POST, "/echo").matchReader()
         >=> decodeBody(DecoderResult<[String: String]>.json.runReader(JSONDecoder()))
@@ -716,7 +717,7 @@ handle { req in
 
 ### Environment-dependent handlers
 
-When the handler needs values from the server's environment (database connections, config, auth tokens), return a `Reader` from the closure. `Env` is only constrained by what your closure returns — no protocol conformance required by `emptyBody` or `decodeBody` themselves.
+When the handler needs values from the server's environment (database connections, config, auth tokens), return a `Reader` from the closure. `Env` is only constrained by what your closure returns — no protocol conformance required by `ignoreBody` or `decodeBody` themselves.
 
 ```swift
 struct AppEnv: Sendable {
@@ -728,7 +729,7 @@ struct AlbumID: Decodable { let id: Int }
 
 let router: Router<AppEnv> = Router(
     Route<AlbumID, Empty>(.GET, "/albums/:id").matchReader()
-    >=> emptyBody()
+    >=> ignoreBody()
     >=> handle { req in
         Reader { env in
             DeferredTask {
@@ -752,7 +753,7 @@ struct ConfigEnv: Sendable { let greeting: String }
 
 let router: Router<ConfigEnv> = Router(
     Route<Empty, Empty>(.GET, "/hello").matchReader()
-    >=> emptyBody()
+    >=> ignoreBody()
     >=> handle { _ in Reader { env in ResponseEncoder<String>.html.response(env.greeting) } }
 )
 
@@ -871,7 +872,7 @@ let router: Router<AppEnv> =
     // GET /albums — list all, optionally filtered by ?year=
     Router(
         Route<Empty, YearQuery>(.GET, "/albums").matchReader()
-        >=> emptyBody()
+        >=> ignoreBody()
         >=> handle { req in
             Reader { env -> Result<Response, ResponseError> in
                 let albums = req.queryParams.year.map { y in env.albums.filter { $0.year == y } }
@@ -884,7 +885,7 @@ let router: Router<AppEnv> =
     // GET /albums/:id — fetch one album by integer ID
     <|> Router(
         Route<AlbumID, Empty>(.GET, "/albums/:id").matchReader()
-        >=> emptyBody()
+        >=> ignoreBody()
         >=> handle { req in
             Reader { env -> Result<Response, ResponseError> in
                 guard let album = env.albums.first(where: { $0.id == req.urlParams.id }) else {
@@ -926,7 +927,7 @@ struct WebEnv: Sendable {
 
 let router: Router<WebEnv> = Router(
     Route<Empty, Empty>(.GET, "/").matchReader()
-    >=> emptyBody()
+    >=> ignoreBody()
     >=> handle { _ in
         Reader { env -> Result<Response, ResponseError> in
             let ctx: Context = [
