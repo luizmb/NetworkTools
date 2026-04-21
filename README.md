@@ -695,7 +695,7 @@ handle { req in
     }
 }
 
-// Combine — returns AnyPublisher<Response, ResponseError>
+// Combine — returns AnyPublisher<Response, ResponseError> (env-independent)
 handle { req in
     fetchAlbumPublisher(req.urlParams.id)      // AnyPublisher<Album, ResponseError>
         .tryMap { try JSONEncoder().encode($0) }
@@ -703,6 +703,10 @@ handle { req in
         .mapError { ResponseError.serverError($0.localizedDescription) }
         .eraseToAnyPublisher()
 }
+
+// Env-dependent — closure receives both request and environment directly
+handle { req, env in .json(req.urlParams.id, encoder: JSONEncoder()) }                // sync
+handle { req, env in DeferredTask { await env.db.fetchAlbum(req.urlParams.id) } }     // async
 ```
 
 ### Environment-dependent handlers
@@ -720,14 +724,12 @@ struct AlbumID: Decodable { let id: Int }
 let router: Router<AppEnv> = when(
     get("/albums/:id", params: AlbumID.self)
     >=> ignoreBody()
-    >=> handle { req in
-        Reader { env in
-            DeferredTask {
-                guard let album = await env.db.fetchAlbum(id: req.urlParams.id) else {
-                    return .notFound
-                }
-                return .json(album, encoder: JSONEncoder())
+    >=> handle { req, env in
+        DeferredTask {
+            guard let album = await env.db.fetchAlbum(id: req.urlParams.id) else {
+                return .notFound
             }
+            return .json(album, encoder: JSONEncoder())
         }
     },
     injecting: AppEnv.self
@@ -745,7 +747,7 @@ struct ConfigEnv: Sendable { let greeting: String }
 let router: Router<ConfigEnv> = when(
     get("/hello")
     >=> ignoreBody()
-    >=> handle { _ in Reader { env in .html(env.greeting) } },
+    >=> handle { _, env in .html(env.greeting) },
     injecting: ConfigEnv.self
 )
 
@@ -857,12 +859,10 @@ let router: Router<AppEnv> =
     when(
         get("/albums", query: YearQuery.self)
         >=> ignoreBody()
-        >=> handle { req in
-            Reader { env -> Result<Response, ResponseError> in
-                let albums = req.queryParams.year.map { y in env.albums.filter { $0.year == y } }
-                             ?? env.albums
-                return .json(albums, encoder: albumEncoder)
-            }
+        >=> handle { req, env in
+            let albums = req.queryParams.year.map { y in env.albums.filter { $0.year == y } }
+                         ?? env.albums
+            return .json(albums, encoder: albumEncoder)
         },
         injecting: AppEnv.self
     )
@@ -871,13 +871,11 @@ let router: Router<AppEnv> =
     <|> when(
         get("/albums/:id", params: AlbumID.self)
         >=> ignoreBody()
-        >=> handle { req in
-            Reader { env -> Result<Response, ResponseError> in
-                guard let album = env.albums.first(where: { $0.id == req.urlParams.id }) else {
-                    return .notFound
-                }
-                return .json(album, encoder: albumEncoder)
+        >=> handle { req, env in
+            guard let album = env.albums.first(where: { $0.id == req.urlParams.id }) else {
+                return .notFound
             }
+            return .json(album, encoder: albumEncoder)
         },
         injecting: AppEnv.self
     )
@@ -886,11 +884,9 @@ let router: Router<AppEnv> =
     <|> when(
         post("/albums")
         >=> decodeBody(albumDecoder)
-        >=> handle { req in
-            Reader { env -> Result<Response, ResponseError> in
-                let newAlbum = Album(id: env.albums.count + 1, title: req.body.title, year: req.body.year)
-                return .json(newAlbum, encoder: albumEncoder, status: .created)
-            }
+        >=> handle { req, env in
+            let newAlbum = Album(id: env.albums.count + 1, title: req.body.title, year: req.body.year)
+            return .json(newAlbum, encoder: albumEncoder, status: .created)
         },
         injecting: AppEnv.self
     )
@@ -915,16 +911,14 @@ struct WebEnv: Sendable {
 let router: Router<WebEnv> = when(
     get("/")
     >=> ignoreBody()
-    >=> handle { _ in
-        Reader { env -> Result<Response, ResponseError> in
-            let ctx: Context = [
-                "title":  .string("Albums"),
-                "albums": .list(env.db.allAlbums().map { ["title": .string($0.title)] }),
-            ]
-            switch render("{{#include page}}", ctx).runReader(env.templates) {
-            case .success(let html): return .html(html)
-            case .failure(let err):  return .serverError(String(describing: err))
-            }
+    >=> handle { _, env in
+        let ctx: Context = [
+            "title":  .string("Albums"),
+            "albums": .list(env.db.allAlbums().map { ["title": .string($0.title)] }),
+        ]
+        switch render("{{#include page}}", ctx).runReader(env.templates) {
+        case .success(let html): return .html(html)
+        case .failure(let err):  return .serverError(String(describing: err))
         }
     },
     injecting: WebEnv.self

@@ -42,27 +42,39 @@ public func handle<U, Q, B, Env: Sendable>(
 // MARK: - Env-dependent lifters
 
 public func handle<U, Q, B, Env: Sendable>(
-    _ fn: @escaping @Sendable (TypedRequest<U, Q, B>) -> Reader<Env, Response>
+    _ fn: @escaping @Sendable (TypedRequest<U, Q, B>, Env) -> Response
 ) -> (TypedRequest<U, Q, B>) -> Reader<Env, DeferredTask<Result<Response, ResponseError>>> {
-    { req in Reader { env in DeferredTask { .success(fn(req).runReader(env)) } } }
+    { req in Reader { env in DeferredTask { .success(fn(req, env)) } } }
 }
 
 public func handle<U, Q, B, Env: Sendable>(
-    _ fn: @escaping @Sendable (TypedRequest<U, Q, B>) -> Reader<Env, Result<Response, ResponseError>>
+    _ fn: @escaping @Sendable (TypedRequest<U, Q, B>, Env) -> Result<Response, ResponseError>
 ) -> (TypedRequest<U, Q, B>) -> Reader<Env, DeferredTask<Result<Response, ResponseError>>> {
-    { req in Reader { env in DeferredTask { fn(req).runReader(env) } } }
+    { req in Reader { env in DeferredTask { fn(req, env) } } }
 }
 
 public func handle<U, Q, B, Env: Sendable>(
-    _ fn: @escaping @Sendable (TypedRequest<U, Q, B>) -> Reader<Env, DeferredTask<Response>>
+    _ fn: @escaping @Sendable (TypedRequest<U, Q, B>, Env) throws(ResponseError) -> Response
 ) -> (TypedRequest<U, Q, B>) -> Reader<Env, DeferredTask<Result<Response, ResponseError>>> {
-    { req in Reader { env in DeferredTask { .success(await fn(req).runReader(env).run()) } } }
+    { req in
+        Reader { env in
+            DeferredTask {
+                do throws(ResponseError) { return .success(try fn(req, env)) } catch { return .failure(error) }
+            }
+        }
+    }
 }
 
 public func handle<U, Q, B, Env: Sendable>(
-    _ fn: @escaping @Sendable (TypedRequest<U, Q, B>) -> Reader<Env, DeferredTask<Result<Response, ResponseError>>>
+    _ fn: @escaping @Sendable (TypedRequest<U, Q, B>, Env) -> DeferredTask<Response>
 ) -> (TypedRequest<U, Q, B>) -> Reader<Env, DeferredTask<Result<Response, ResponseError>>> {
-    fn
+    { req in Reader { env in DeferredTask { .success(await fn(req, env).run()) } } }
+}
+
+public func handle<U, Q, B, Env: Sendable>(
+    _ fn: @escaping @Sendable (TypedRequest<U, Q, B>, Env) -> DeferredTask<Result<Response, ResponseError>>
+) -> (TypedRequest<U, Q, B>) -> Reader<Env, DeferredTask<Result<Response, ResponseError>>> {
+    { req in Reader { env in fn(req, env) } }
 }
 
 // MARK: - Combine lifters
@@ -77,8 +89,8 @@ public func handle<U, Q, B, Env: Sendable>(
 }
 
 public func handle<U, Q, B, Env: Sendable>(
-    _ fn: @escaping @Sendable (TypedRequest<U, Q, B>) -> Reader<Env, AnyPublisher<Response, ResponseError>>
+    _ fn: @escaping @Sendable (TypedRequest<U, Q, B>, Env) -> AnyPublisher<Response, ResponseError>
 ) -> (TypedRequest<U, Q, B>) -> Reader<Env, DeferredTask<Result<Response, ResponseError>>> {
-    { req in Reader { env in fn(req).runReader(env).asDeferredTask() } }
+    { req in Reader { env in fn(req, env).asDeferredTask() } }
 }
 #endif

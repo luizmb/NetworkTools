@@ -363,7 +363,7 @@ struct RouterTests {
     @Test func handlerReceivesEnvironment() async {
         struct Env: Sendable { let greeting: String }
         let router = when(
-            get("/hello") >=> ignoreBody() >=> handle { _ in Reader { env in .html(env.greeting) } },
+            get("/hello") >=> ignoreBody() >=> handle { _, env in .html(env.greeting) },
             injecting: Env.self
         )
         let response = await router.handle.runReader(Env(greeting: "hi there"))(req(.GET, "/hello")).run().response
