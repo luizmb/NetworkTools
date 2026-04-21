@@ -430,7 +430,7 @@ let resilient: RequestPublisher<User> =
 
 ## NetworkServer
 
-An embedded HTTP server backed by SwiftNIO. Routes are built by Kleisli-composing (`>=>`) a series of lifting functions, then wrapping the result in `Router(…)`. Routers are values — they combine with `<>`, transform their environment with `pullback`, and are injected into the server via `Reader`.
+An embedded HTTP server backed by SwiftNIO. Routes are built by Kleisli-composing (`>=>`) a series of lifting functions, then wrapping the result in `Router(…)`. Routers are values — they combine with `<|>`, transform their environment with `pullback`, and are injected into the server via `Reader`.
 
 ### Mental model
 
@@ -448,7 +448,7 @@ Route<URLParams, QueryParams>    — method + path pattern, typed param decoding
 Router(…)                        — wrap the composed chain into a first-class router value
 ```
 
-Multiple routers combine with `<>`. The semigroup tries the left router first and falls through to the right only on a 404 (unmatched route). Query-param errors (400) and body-decode errors (400) stop immediately without trying the next router.
+Multiple routers combine with `<|>`. The operator tries the left router first and falls through to the right only on a 404 (unmatched route). Query-param errors (400) and body-decode errors (400) stop immediately without trying the next router.
 
 The environment is injected **once at startup** via `runReader`. Every `>=>` step and every call to `handle` is pure — no side effects, no env access — until `startServer(…).runReader(env)` is called.
 
@@ -461,7 +461,7 @@ public struct Route<URLParams: Decodable, QueryParams: Decodable>: Sendable
 
 // A first-class router value. Its handle property is a Reader — inject the
 // environment once at startup via handle.runReader(env) to get the request handler.
-public struct Router<Env: Sendable>: Semigroup, Monoid
+public struct Router<Env: Sendable>
 
 // A fully decoded, typed request passed to every handler.
 public struct TypedRequest<URLParams, QueryParams, Body> {
@@ -558,8 +558,8 @@ struct StringSlug: Decodable { let id: String }
 let router: Router<Void> =
     Router(Route<NumericID, Empty>(.GET, "/albums/:id").matchReader() >=> emptyBody()
            >=> handle { req in ResponseEncoder<String>.html.response("Numeric album: \(req.urlParams.id)") })
-    <> Router(Route<StringSlug, Empty>(.GET, "/albums/:id").matchReader() >=> emptyBody()
-              >=> handle { req in ResponseEncoder<String>.html.response("Album slug: \(req.urlParams.id)") })
+    <|> Router(Route<StringSlug, Empty>(.GET, "/albums/:id").matchReader() >=> emptyBody()
+               >=> handle { req in ResponseEncoder<String>.html.response("Album slug: \(req.urlParams.id)") })
 ```
 
 ### Typed query parameters
@@ -586,7 +586,7 @@ let router: Router<Void> = Router(
 
 ### Returning JSON
 
-Use `ResponseEncoder<T>.json` — it is a `Reader<EncoderResult<T>, ResponseEncoder<T>>`, so inject a `JSONEncoder` to materialise it:
+Use `ResponseEncoder<T>.json` — it is a `Reader<EncoderResult<T>, ResponseEncoder<T>>`, so inject an `EncoderResult<T>` (itself produced by running `EncoderResult.json` with a `JSONEncoder`) to materialise it:
 
 ```swift
 struct Album: Codable {
@@ -595,7 +595,8 @@ struct Album: Codable {
 }
 
 // Define encoders once and reuse them across handlers.
-let albumEncoder: ResponseEncoder<Album> = .json.runReader(.json.runReader(JSONEncoder()))
+let albumEncoderResult: EncoderResult<Album>     = .json.runReader(JSONEncoder())
+let albumEncoder:       ResponseEncoder<Album>   = .json.runReader(albumEncoderResult)
 
 let router: Router<Void> = Router(
     Route<Empty, Empty>(.GET, "/albums/1").matchReader()
@@ -614,7 +615,8 @@ let prettyEncoder: JSONEncoder = {
     return e
 }()
 
-let albumEncoder: ResponseEncoder<Album> = .json.runReader(.json.runReader(prettyEncoder))
+let albumEncoderResult: EncoderResult<Album>   = .json.runReader(prettyEncoder)
+let albumEncoder:       ResponseEncoder<Album> = .json.runReader(albumEncoderResult)
 ```
 
 ### Body decoding
@@ -625,8 +627,9 @@ Use `decodeBody(decoder)` as the middle step in the Kleisli chain. It runs the d
 struct CreateAlbum: Decodable { let title: String }
 struct Album:       Codable   { let id: Int; let title: String }
 
-let albumDecoder: DecoderResult<CreateAlbum> = .json.runReader(JSONDecoder())
-let albumEncoder: ResponseEncoder<Album>     = .json.runReader(.json.runReader(JSONEncoder()))
+let albumDecoder:       DecoderResult<CreateAlbum> = .json.runReader(JSONDecoder())
+let albumEncoderResult: EncoderResult<Album>       = .json.runReader(JSONEncoder())
+let albumEncoder:       ResponseEncoder<Album>     = .json.runReader(albumEncoderResult)
 
 let router: Router<Void> = Router(
     Route<Empty, Empty>(.POST, "/albums").matchReader()
@@ -655,26 +658,28 @@ let router: Router<Void> = Router(
 
 ### Combining routers
 
-Routers form a `Semigroup` via `<>`. The combined router tries the left side first; it falls through to the right only when the left returns 404.
+`<|>` is the ordered-choice operator for routers. It tries the left side first; it falls through to the right only when the left returns 404.
 
 ```swift
 let router: Router<Void> =
     Router(Route<Empty, Empty>(.GET,  "/ping").matchReader()   >=> emptyBody() >=> handle { _ in ResponseEncoder<String>.html.response("pong") })
-    <> Router(Route<Empty, Empty>(.GET,  "/health").matchReader() >=> emptyBody() >=> handle { _ in ResponseEncoder<String>.html.response("ok") })
-    <> Router(
+    <|> Router(Route<Empty, Empty>(.GET,  "/health").matchReader() >=> emptyBody() >=> handle { _ in ResponseEncoder<String>.html.response("ok") })
+    <|> Router(
         Route<Empty, Empty>(.POST, "/echo").matchReader()
         >=> decodeBody(DecoderResult<[String: String]>.json.runReader(JSONDecoder()))
         >=> handle { req in
-            ResponseEncoder<[String: String]>.json.runReader(.json.runReader(JSONEncoder())).response(req.body)
+            let encoderResult: EncoderResult<[String: String]> = .json.runReader(JSONEncoder())
+            let encoder: ResponseEncoder<[String: String]>     = .json.runReader(encoderResult)
+            return encoder.response(req.body)
         }
     )
 ```
 
-`Router<Env>` is also a `Monoid` — `Router<Env>()` gives you the identity router that always returns 404:
+`Router.empty` is the identity — a router that always returns 404:
 
 ```swift
-let empty = Router<Void>()
-// empty.handle.runReader(env)(request) always yields .failure(.notFound)
+let empty = Router<Void>.empty
+// empty.handle.runReader(())(request) always yields .failure(.notFound)
 ```
 
 ### `handle` — lifting closure variants
@@ -771,7 +776,7 @@ let dataRouter: Router<DataEnv> = /* resource routes */
 // Combine at the app level, mapping each router to its env slice.
 let appRouter: Router<AppEnv> =
     authRouter.pullback(\.auth)
-    <> dataRouter.pullback(\.data)
+    <|> dataRouter.pullback(\.data)
 
 startServer(port: 8080, router: appRouter).runReader(AppEnv(auth: authEnv, data: dataEnv))
 ```
@@ -787,7 +792,8 @@ ResponseEncoder<String>.html.response("<b>bad</b>", status: .badRequest)
 ResponseEncoder<String>.plainText.response("OK")
 
 // JSON — inject a JSONEncoder to configure it
-let enc: ResponseEncoder<MyType> = .json.runReader(.json.runReader(JSONEncoder()))
+let encResult: EncoderResult<MyType>     = .json.runReader(JSONEncoder())
+let enc:       ResponseEncoder<MyType>   = .json.runReader(encResult)
 enc.response(value)              // 200
 enc.response(value, status: .created) // 201
 
@@ -847,9 +853,11 @@ struct AppEnv: Sendable {
 
 // MARK: - Encoders / Decoders
 
-let albumEncoder:  ResponseEncoder<Album>     = .json.runReader(.json.runReader(JSONEncoder()))
-let albumsEncoder: ResponseEncoder<[Album]>   = .json.runReader(.json.runReader(JSONEncoder()))
-let albumDecoder:  DecoderResult<CreateAlbum> = .json.runReader(JSONDecoder())
+let albumEncoderResult:  EncoderResult<Album>       = .json.runReader(JSONEncoder())
+let albumsEncoderResult: EncoderResult<[Album]>     = .json.runReader(JSONEncoder())
+let albumEncoder:        ResponseEncoder<Album>     = .json.runReader(albumEncoderResult)
+let albumsEncoder:       ResponseEncoder<[Album]>   = .json.runReader(albumsEncoderResult)
+let albumDecoder:        DecoderResult<CreateAlbum> = .json.runReader(JSONDecoder())
 
 // MARK: - Route params
 
@@ -874,7 +882,7 @@ let router: Router<AppEnv> =
     )
 
     // GET /albums/:id — fetch one album by integer ID
-    <> Router(
+    <|> Router(
         Route<AlbumID, Empty>(.GET, "/albums/:id").matchReader()
         >=> emptyBody()
         >=> handle { req in
@@ -888,7 +896,7 @@ let router: Router<AppEnv> =
     )
 
     // POST /albums — create a new album from a JSON body
-    <> Router(
+    <|> Router(
         Route<Empty, Empty>(.POST, "/albums").matchReader()
         >=> decodeBody(albumDecoder)
         >=> handle { req in
@@ -948,5 +956,5 @@ All three packages follow the same functional conventions via [`FP`](https://git
 - **`Result`** instead of `throws` at all public API boundaries. Errors are values.
 - **`DeferredTask`** for async work in the server (lazy, nothing runs until `.run()` is called). **`Publisher`** (Combine) for the HTTP client (composable, cancellable, backpressure-aware).
 - **`FunctionWrapper`** for any `(A) -> B` that should be composable — `RequestPublisher`, `DecoderResult`, `EncoderResult` all conform.
-- **`Semigroup` / `Monoid`** for router composition — `<>` tries left then right (only 404 falls through), identity is the empty router.
+- **Alternative (`<|>`)** for router composition — tries left then right (only 404 falls through), identity is `Router.empty`.
 - **No crashing operations** — no force-unwrap, no `fatalError`, no `try!`. All failure paths return `Result` or publisher errors.

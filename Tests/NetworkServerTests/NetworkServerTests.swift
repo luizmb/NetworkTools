@@ -291,7 +291,7 @@ struct RouterTests {
     }
 
     @Test func notFoundForEmptyRouter() async {
-        #expect(await Router<Void>().handle.runReader(())(req(.GET, "/anything")).run().response.status == .notFound)
+        #expect(await Router<Void>.empty.handle.runReader(())(req(.GET, "/anything")).run().response.status == .notFound)
     }
 
     @Test func matchesRegisteredRoute() async {
@@ -319,7 +319,7 @@ struct RouterTests {
         let routerB: Router<Void> =
             Router(Route<Empty, Empty>(.GET, "/b").matchReader() >=> emptyBody()
                    >=> handle { _ in ResponseEncoder<String>.html.response("B") })
-        let run = (routerA <> routerB).handle.runReader(())
+        let run = (routerA <|> routerB).handle.runReader(())
         #expect(String(data: (await run(req(.GET, "/a")).run()).response.body, encoding: .utf8) == "A")
         #expect(String(data: (await run(req(.GET, "/b")).run()).response.body, encoding: .utf8) == "B")
     }
@@ -396,13 +396,13 @@ struct RouterTests {
 @Suite("NIOServer")
 struct NIOServerTests {
     @Test func startServer_returnsReaderOverEnv() {
-        let reader: Reader<Void, Result<Void, Error>> = startServer(port: 0, router: Router())
+        let reader: Reader<Void, Result<Void, Error>> = startServer(port: 0, router: Router<Void>.empty)
         let _: (()) -> Result<Void, Error> = reader.runReader
         #expect(Bool(true))
     }
 
     @Test func startServer_failsOnOutOfRangePort() {
-        #expect(startServer(host: "127.0.0.1", port: 99_999, router: Router()).runReader(()).isFailure)
+        #expect(startServer(host: "127.0.0.1", port: 99_999, router: Router<Void>.empty).runReader(()).isFailure)
     }
 
     // URLSession on Linux (FoundationNetworking) ignores timeoutInterval and hangs forever;
@@ -439,7 +439,7 @@ struct NIOServerTests {
             Router(Route<Empty, Empty>(.GET, "/ping").matchReader() >=> emptyBody() >=> handle { _ in
                 ResponseEncoder<String>.html.response("pong")
             })
-            <> Router(
+            <|> Router(
                 Route<Empty, Empty>(.POST, "/echo").matchReader()
                 >=> decodeBody(DecoderResult<EchoBody>.json.runReader(JSONDecoder()))
                 >=> handle { req in jsonEncoder(for: EchoResp.self).response(EchoResp(message: req.body.message)) }

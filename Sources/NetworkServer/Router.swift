@@ -11,8 +11,9 @@ public struct Router<Env: Sendable>: @unchecked Sendable {
         self.handle = handle
     }
 
-    public init() {
-        handle = Reader { _ in { _ in DeferredTask { .failure(.notFound) } } }
+    /// The empty router — always returns 404. Identity for `<|>`.
+    public static var empty: Router<Env> {
+        Router(Reader { _ in { _ in DeferredTask { .failure(.notFound) } } })
     }
 
     public func pullback<World: Sendable>(_ f: @escaping (World) -> Env) -> Router<World> {
@@ -20,19 +21,19 @@ public struct Router<Env: Sendable>: @unchecked Sendable {
     }
 }
 
-// MARK: - Semigroup / Monoid
+// MARK: - Alternative
 
 struct SendableHandler: @unchecked Sendable {
     let call: (Request) -> DeferredTask<Result<Response, ResponseError>>
     func callAsFunction(_ request: Request) -> DeferredTask<Result<Response, ResponseError>> { call(request) }
 }
 
-extension Router: Semigroup {
-    /// Tries `lhs`; falls through to `rhs` only on `.failure(.notFound)`.
-    /// Both sub-routers are materialised once (inside the Reader), so `runReader` is
-    /// called at most once per combined router — at server-start time.
-    public static func combine(_ lhs: Router<Env>, _ rhs: Router<Env>) -> Router<Env> {
-        Router(Reader { env in
+extension Router {
+    /// Ordered choice: try `lhs`; fall through to `rhs` only on `.failure(.notFound)`.
+    /// Both sub-routers are materialised once inside the Reader — at server-start time, not per request.
+    public static func alt(_ lhs: Router<Env>, _ rhs: @autoclosure () -> Router<Env>) -> Router<Env> {
+        let rhs = rhs()
+        return Router(Reader { env in
             let l = SendableHandler(call: lhs.handle.runReader(env))
             let r = SendableHandler(call: rhs.handle.runReader(env))
             return { request in
@@ -48,6 +49,6 @@ extension Router: Semigroup {
     }
 }
 
-extension Router: Monoid {
-    public static var identity: Router<Env> { Router() }
+public func <|> <Env: Sendable>(_ lhs: Router<Env>, _ rhs: @autoclosure () -> Router<Env>) -> Router<Env> {
+    Router.alt(lhs, rhs())
 }
