@@ -13,13 +13,4 @@ public extension AnyPublisher where Output: Decodable, Failure == DecodingError 
     }
 }
 
-public extension AnyPublisher where Output == Data, Failure == EncodingError {
-    static func encoding<E: Encodable>(_ value: E, using encoder: EncoderResult<E>) -> Self {
-        encoder(value).publisher.eraseToAnyPublisher()
-    }
-
-    static func encoding<E: Encodable>(_ value: E, using factory: EncoderResultFactory) -> Self {
-        encoding(value, using: factory.encoderResult(for: E.self))
-    }
-}
 #endif

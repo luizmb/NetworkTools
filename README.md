@@ -246,6 +246,67 @@ All IO is fully contained in the environment — `render` never touches the file
 
 ---
 
+## Core
+
+Shared building blocks used by all three packages. The most broadly useful surface is the codec layer and its Combine extensions.
+
+### `DecoderResult` / `EncoderResult`
+
+`DecoderResult<D>` is a `FunctionWrapper<Data, Result<D, DecodingError>>`. `EncoderResult<E>` is a `FunctionWrapper<E, Result<Data, EncodingError>>`. Both are composable values — they support the full Functor / Applicative / Monad hierarchy.
+
+```swift
+let userDecoder: DecoderResult<User>    = JSONDecoder().decoderResult(for: User.self)
+let albumEncoder: EncoderResult<Album>  = JSONEncoder().encoderResult(for: Album.self)
+
+// Call directly:
+let result: Result<User, DecodingError>  = userDecoder(jsonData)
+let encoded: Result<Data, EncodingError> = albumEncoder(myAlbum)
+```
+
+### `DecoderResultFactory` / `EncoderResultFactory`
+
+Protocols satisfied by `JSONDecoder` / `JSONEncoder` (and any custom codec). They let you inject the codec as a dependency rather than constructing it inline.
+
+```swift
+func makeDecoder() -> DecoderResultFactory {
+    let d = JSONDecoder()
+    d.keyDecodingStrategy = .convertFromSnakeCase
+    return d
+}
+```
+
+### `AnyPublisher` — decoding (Combine)
+
+Static factory that lifts a `Data` value into a typed decoded publisher, for use inside `flatMap` chains:
+
+```swift
+// AnyPublisher<User, DecodingError>
+let pub: AnyPublisher<User, DecodingError> = .decoding(jsonData, using: JSONDecoder())
+
+// With a pre-built DecoderResult:
+let pub2 = AnyPublisher<User, DecodingError>.decoding(jsonData, using: userDecoder)
+```
+
+### `AnyPublisher` — encoding (Combine)
+
+Instance methods that encode the publisher's `Encodable` output to `Data`.
+
+```swift
+// Upstream failure type == EncodingError — no mapping needed:
+let dataPublisher: AnyPublisher<Data, EncodingError> =
+    someAlbumPublisher.encode(using: JSONEncoder())
+
+// Upstream failure type is different — lift EncodingError with mapError:
+let dataPublisher2: AnyPublisher<Data, MyError> =
+    someAlbumPublisher.encode(using: JSONEncoder(), mapError: MyError.encoding)
+
+// Both overloads also accept a pre-built EncoderResult<Output>:
+someAlbumPublisher.encode(using: albumEncoder)
+someAlbumPublisher.encode(using: albumEncoder, mapError: MyError.encoding)
+```
+
+---
+
 ## NetworkClient
 
 A composable HTTP client. The core type `RequestPublisher<A>` is a `FunctionWrapper` around `(URLRequest) -> AnyPublisher<A, HTTPError>`, forming a Reader + Publisher monad stack. Every step in a request pipeline — sending, validating, decoding — is a composable value.
@@ -695,18 +756,21 @@ handle { req in
     }
 }
 
-// Combine — returns AnyPublisher<Response, ResponseError> (env-independent)
+// Combine env-independent — encoder inline; mapError lifts EncodingError into ResponseError
 handle { req in
     fetchAlbumPublisher(req.urlParams.id)      // AnyPublisher<Album, ResponseError>
-        .flatMap { AnyPublisher.encoding($0, using: JSONEncoder()) }
+        .encode(using: JSONEncoder(), mapError: { ResponseError.serverError($0.localizedDescription) })
         .map { Response(status: .ok, headers: [("Content-Type", "application/json")], body: $0) }
-        .mapError { ResponseError.serverError($0.localizedDescription) }
         .eraseToAnyPublisher()
 }
 
-// Env-dependent — closure receives both request and environment directly
-handle { req, env in .json(req.urlParams.id, encoder: JSONEncoder()) }                // sync
-handle { req, env in DeferredTask { await env.db.fetchAlbum(req.urlParams.id) } }     // async
+// Combine env-dependent — encoder comes from the environment via Reader
+handle { req, env in
+    fetchAlbumPublisher(req.urlParams.id)      // AnyPublisher<Album, ResponseError>
+        .encode(using: env.encoder, mapError: { ResponseError.serverError($0.localizedDescription) })
+        .map { Response(status: .ok, headers: [("Content-Type", "application/json")], body: $0) }
+        .eraseToAnyPublisher()
+}
 ```
 
 ### Environment-dependent handlers
@@ -729,7 +793,7 @@ let router: Router<AppEnv> = when(
             guard let album = await env.db.fetchAlbum(id: req.urlParams.id) else {
                 return .notFound
             }
-            return .json(album, encoder: JSONEncoder())
+            return .json(album, encoder: env.encoder)
         }
     },
     injecting: AppEnv.self
@@ -833,17 +897,20 @@ struct CreateAlbum: Decodable { let title: String; let year: Int }
 
 struct AppEnv: Sendable {
     var albums: [Album]
+    let encoder: EncoderResultFactory
 
-    static let live = AppEnv(albums: [
-        Album(id: 1, title: "Kind of Blue",    year: 1959),
-        Album(id: 2, title: "A Love Supreme",  year: 1964),
-        Album(id: 3, title: "In a Silent Way", year: 1969),
-    ])
+    static let live = AppEnv(
+        albums: [
+            Album(id: 1, title: "Kind of Blue",    year: 1959),
+            Album(id: 2, title: "A Love Supreme",  year: 1964),
+            Album(id: 3, title: "In a Silent Way", year: 1969),
+        ],
+        encoder: JSONEncoder()
+    )
 }
 
-// MARK: - Encoders / Decoders
+// MARK: - Decoders
 
-let albumEncoder  = JSONEncoder()
 let albumDecoder: DecoderResult<CreateAlbum> = JSONDecoder().decoderResult(for: CreateAlbum.self)
 
 // MARK: - Route params
@@ -862,7 +929,7 @@ let router: Router<AppEnv> =
         >=> handle { req, env in
             let albums = req.queryParams.year.map { y in env.albums.filter { $0.year == y } }
                          ?? env.albums
-            return .json(albums, encoder: albumEncoder)
+            return .json(albums, encoder: env.encoder)
         },
         injecting: AppEnv.self
     )
@@ -875,7 +942,7 @@ let router: Router<AppEnv> =
             guard let album = env.albums.first(where: { $0.id == req.urlParams.id }) else {
                 return .notFound
             }
-            return .json(album, encoder: albumEncoder)
+            return .json(album, encoder: env.encoder)
         },
         injecting: AppEnv.self
     )
@@ -886,7 +953,7 @@ let router: Router<AppEnv> =
         >=> decodeBody(albumDecoder)
         >=> handle { req, env in
             let newAlbum = Album(id: env.albums.count + 1, title: req.body.title, year: req.body.year)
-            return .json(newAlbum, encoder: albumEncoder, status: .created)
+            return .json(newAlbum, encoder: env.encoder, status: .created)
         },
         injecting: AppEnv.self
     )

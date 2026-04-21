@@ -426,6 +426,42 @@ struct RequestPublisherDecodeTests {
     }
 }
 
+// MARK: - AnyPublisher: Encoding
+
+@Suite("AnyPublisher — encode")
+struct AnyPublisherEncodeTests {
+    private let person  = Person(id: 1, name: "Alice")
+    private let encoder = JSONEncoder().encoderResult(for: Person.self)
+
+    private func personPublisher(failure: EncodingError.Type = EncodingError.self) -> AnyPublisher<Person, EncodingError> {
+        Just(person).setFailureType(to: EncodingError.self).eraseToAnyPublisher()
+    }
+
+    @Test func encodesValue() throws {
+        let data = try #require(firstResult(of: personPublisher().encode(using: encoder))?.successValue)
+        #expect(try JSONDecoder().decode(Person.self, from: data) == person)
+    }
+
+    @Test func encodesWithFactory() throws {
+        let data = try #require(firstResult(of: personPublisher().encode(using: JSONEncoder()))?.successValue)
+        #expect(try JSONDecoder().decode(Person.self, from: data) == person)
+    }
+
+    @Test func encodesWithMapError() throws {
+        enum E: Error { case enc(EncodingError) }
+        let pub = Just(person).setFailureType(to: E.self).eraseToAnyPublisher()
+        let data = try #require(firstResult(of: pub.encode(using: encoder, mapError: E.enc))?.successValue)
+        #expect(try JSONDecoder().decode(Person.self, from: data) == person)
+    }
+
+    @Test func encodesWithFactoryAndMapError() throws {
+        enum E: Error { case enc(EncodingError) }
+        let pub = Just(person).setFailureType(to: E.self).eraseToAnyPublisher()
+        let data = try #require(firstResult(of: pub.encode(using: JSONEncoder(), mapError: E.enc))?.successValue)
+        #expect(try JSONDecoder().decode(Person.self, from: data) == person)
+    }
+}
+
 #endif
 
 // MARK: - HTTPError
