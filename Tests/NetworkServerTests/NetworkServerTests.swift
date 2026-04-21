@@ -401,13 +401,15 @@ struct NIOServerTests {
         #expect(Bool(true))
     }
 
+    // NIO's syncShutdownGracefully can hang on Linux even for a failed bind; skip all
+    // tests that call runReader (and thus spin up an EventLoopGroup) on Linux.
+    #if !os(Linux)
     @Test func startServer_failsOnOutOfRangePort() {
         #expect(startServer(host: "127.0.0.1", port: 99_999, router: Router<Void>.empty).runReader(()).isFailure)
     }
 
     // URLSession on Linux (FoundationNetworking) ignores timeoutInterval and hangs forever;
-    // Swift Testing's .timeLimit is also not enforced on Linux. Skip these on Linux.
-    #if !os(Linux)
+    // Swift Testing's .timeLimit is also not enforced on Linux.
     @Test(.timeLimit(.minutes(1)))
     func startServer_respondsToRequest() async throws {
         let port = 18_091
