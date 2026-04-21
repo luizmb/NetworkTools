@@ -587,7 +587,7 @@ let router: Router<Void> = Router(
 
 ### Returning JSON
 
-Use `ResponseEncoder<T>.json` — it is a `Reader<any EncoderResultFactory, ResponseEncoder<T>>`, so inject a factory (any `EncoderResultFactory`, e.g. a `JSONEncoder`) directly to materialise it:
+Use `ResponseEncoder<T>.json` — it is a `Reader<EncoderResultFactory, ResponseEncoder<T>>`, so inject a factory (any `EncoderResultFactory`, e.g. a `JSONEncoder`) directly to materialise it:
 
 ```swift
 struct Album: Codable {
@@ -688,7 +688,7 @@ handle { req -> Response in Response(status: .ok) }
 
 // Sync failable — returns Result<Response, ResponseError>
 handle { req -> Result<Response, ResponseError> in
-    guard req.urlParams.id > 0 else { return .failure(.badRequest("id must be positive")) }
+    guard req.urlParams.id > 0 else { return .badRequest("id must be positive") }
     return albumEncoder.response(myAlbum)
 }
 
@@ -704,7 +704,7 @@ handle { req in DeferredTask { await fetchAlbum(req.urlParams.id) } }
 // Async failable — returns DeferredTask<Result<Response, ResponseError>>
 handle { req in
     DeferredTask {
-        guard let album = await db.fetchAlbum(req.urlParams.id) else { return .failure(.notFound) }
+        guard let album = await db.fetchAlbum(req.urlParams.id) else { return .notFound }
         return albumEncoder.response(album)
     }
 }
@@ -729,7 +729,7 @@ let router: Router<AppEnv> = Router(
         Reader { env in
             DeferredTask {
                 guard let album = await env.db.fetchAlbum(id: req.urlParams.id) else {
-                    return .failure(.notFound)
+                    return .notFound
                 }
                 return albumEncoder.response(album)
             }
