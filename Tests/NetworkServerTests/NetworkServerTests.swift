@@ -405,6 +405,9 @@ struct NIOServerTests {
         #expect(startServer(host: "127.0.0.1", port: 99_999, router: Router()).runReader(()).isFailure)
     }
 
+    // URLSession on Linux (FoundationNetworking) ignores timeoutInterval and hangs forever;
+    // Swift Testing's .timeLimit is also not enforced on Linux. Skip these on Linux.
+    #if !os(Linux)
     @Test(.timeLimit(.minutes(1)))
     func startServer_respondsToRequest() async throws {
         let port = 18_091
@@ -462,4 +465,5 @@ struct NIOServerTests {
         let (_, notFoundResp) = try await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(port)/missing")!)
         #expect((notFoundResp as? HTTPURLResponse)?.statusCode == 404)
     }
+    #endif
 }
