@@ -400,20 +400,20 @@ struct RequestPublisherDecodeTests {
     private let decoder = JSONDecoder().decoderResult(for: Person.self)
 
     @Test func decodesValidJSON() {
-        let p = just(personJSON).decode(Person.self, decoder: decoder.run)
+        let p = just(personJSON).decode(using: decoder)
         #expect(run(p)?.successValue == Person(id: 1, name: "Alice"))
     }
 
     @Test func failsOnInvalidJSON() {
-        #expect(run(just(invalidJSON).decode(Person.self, decoder: decoder.run))?.isFailure == true)
+        #expect(run(just(invalidJSON).decode(using: decoder))?.isFailure == true)
     }
 
     @Test func upstreamFailurePassesThrough() {
-        #expect(run(fail(.badStatus(500, Data())).decode(Person.self, decoder: decoder.run))?.isFailure == true)
+        #expect(run(fail(.badStatus(500, Data())).decode(using: decoder))?.isFailure == true)
     }
 
     @Test func decodingErrorIsWrappedInHTTPError() {
-        guard case .failure(let e) = run(just(invalidJSON).decode(Person.self, decoder: decoder.run)),
+        guard case .failure(let e) = run(just(invalidJSON).decode(using: decoder)),
               case .decoding = e else {
             Issue.record("Expected .failure(.decoding)")
             return
@@ -421,7 +421,7 @@ struct RequestPublisherDecodeTests {
     }
 
     @Test func mapAfterDecode() {
-        let p = just(personJSON).decode(Person.self, decoder: decoder.run).map(\.name)
+        let p = just(personJSON).decode(using: decoder).map(\.name)
         #expect(run(p)?.successValue == "Alice")
     }
 }

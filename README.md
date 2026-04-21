@@ -300,7 +300,7 @@ struct User: Decodable {
 let getUser: RequestPublisher<User> =
     URLSession.shared.requester
         .validateStatusCode()
-        .decode(User.self, decoder: JSONDecoder().decoderResult(for: User.self).run)
+        .decode(using: JSONDecoder())
 
 // swiftlint:disable:next force_unwrapping
 let request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
@@ -339,14 +339,14 @@ let nameDecoder: DecoderResult<String> = userDecoder.map(\.name)
 let namePublisher: RequestPublisher<String> =
     URLSession.shared.requester
         .validateStatusCode()
-        .decode(User.self, decoder: userDecoder.run)
+        .decode(using: userDecoder)
         .map(\.name)
 
 // Using the <£> (fmap) operator — function on the left:
 let namePublisher2: RequestPublisher<String> =
     \.name <£> URLSession.shared.requester
         .validateStatusCode()
-        .decode(User.self, decoder: userDecoder.run)
+        .decode(using: userDecoder)
 ```
 
 ### Applicative — combining independent requests
@@ -359,8 +359,8 @@ struct Dashboard { let user: User; let stats: Stats }
 // Lift the constructor into a publisher, then apply each field independently.
 let dashboardPublisher: RequestPublisher<Dashboard> =
     RequestPublisher.pure(curry(Dashboard.init))
-    <*> URLSession.shared.requester.validateStatusCode().decode(User.self,  decoder: userDecoder.run)
-    <*> URLSession.shared.requester.validateStatusCode().decode(Stats.self, decoder: statsDecoder.run)
+    <*> URLSession.shared.requester.validateStatusCode().decode(using: userDecoder)
+    <*> URLSession.shared.requester.validateStatusCode().decode(using: statsDecoder)
 ```
 
 ### Monad — chaining dependent requests
@@ -372,13 +372,13 @@ let dashboardPublisher: RequestPublisher<Dashboard> =
 let userAndTeam: RequestPublisher<(User, Team)> =
     URLSession.shared.requester
         .validateStatusCode()
-        .decode(User.self, decoder: userDecoder.run)
+        .decode(using: userDecoder)
         >>- { user in
             // swiftlint:disable:next force_unwrapping
             let teamURL = URL(string: "https://api.example.com/teams/\(user.teamId)")!
             return URLSession.shared.requester
                 .validateStatusCode()
-                .decode(Team.self, decoder: teamDecoder.run)
+                .decode(using: teamDecoder)
                 .map { (user, $0) }
         }
 ```
@@ -407,7 +407,7 @@ fetchProjectForUser(42)(URLRequest(url: URL(string: "https://api.example.com")!)
 let resilient: RequestPublisher<User> =
     URLSession.shared.requester
         .validateStatusCode()
-        .decode(User.self, decoder: userDecoder.run)
+        .decode(using: userDecoder)
         .flatMapError { _ in RequestPublisher.pure(User.guest) }
 ```
 
