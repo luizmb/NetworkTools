@@ -35,26 +35,89 @@ public extension Route {
     }
 }
 
-// MARK: - when — convenience entry point for a Kleisli chain
+// MARK: - HTTP verb entry points
 
-/// Creates the first Kleisli step from a method, path, and typed parameter structs.
-/// Equivalent to `Route<U, Q>(method, path).matchReader()` but avoids explicit generic
-/// type parameters at the call site.
-///
-/// ```swift
-/// Router(
-///     when(.GET, "/albums/:id", params: AlbumID.self)
-///     >=> ignoreBody()
-///     >=> handle { req in … }
-/// )
-/// ```
-public func when<U: Decodable, Q: Decodable, Env>(
-    _ method: HTTPMethod,
+public func get<U: Decodable, Q: Decodable, Env>(
     _ path: String,
     params: U.Type = Empty.self,
     query: Q.Type = Empty.self
 ) -> (Request) -> Reader<Env, Result<MatchedRoute<U, Q>, ResponseError>> {
-    Route<U, Q>(method, path).matchReader()
+    Route<U, Q>(.GET, path).matchReader()
+}
+
+public func post<U: Decodable, Q: Decodable, Env>(
+    _ path: String,
+    params: U.Type = Empty.self,
+    query: Q.Type = Empty.self
+) -> (Request) -> Reader<Env, Result<MatchedRoute<U, Q>, ResponseError>> {
+    Route<U, Q>(.POST, path).matchReader()
+}
+
+public func put<U: Decodable, Q: Decodable, Env>(
+    _ path: String,
+    params: U.Type = Empty.self,
+    query: Q.Type = Empty.self
+) -> (Request) -> Reader<Env, Result<MatchedRoute<U, Q>, ResponseError>> {
+    Route<U, Q>(.PUT, path).matchReader()
+}
+
+public func patch<U: Decodable, Q: Decodable, Env>(
+    _ path: String,
+    params: U.Type = Empty.self,
+    query: Q.Type = Empty.self
+) -> (Request) -> Reader<Env, Result<MatchedRoute<U, Q>, ResponseError>> {
+    Route<U, Q>(.PATCH, path).matchReader()
+}
+
+public func delete<U: Decodable, Q: Decodable, Env>(
+    _ path: String,
+    params: U.Type = Empty.self,
+    query: Q.Type = Empty.self
+) -> (Request) -> Reader<Env, Result<MatchedRoute<U, Q>, ResponseError>> {
+    Route<U, Q>(.DELETE, path).matchReader()
+}
+
+public func head<U: Decodable, Q: Decodable, Env>(
+    _ path: String,
+    params: U.Type = Empty.self,
+    query: Q.Type = Empty.self
+) -> (Request) -> Reader<Env, Result<MatchedRoute<U, Q>, ResponseError>> {
+    Route<U, Q>(.HEAD, path).matchReader()
+}
+
+public func options<U: Decodable, Q: Decodable, Env>(
+    _ path: String,
+    params: U.Type = Empty.self,
+    query: Q.Type = Empty.self
+) -> (Request) -> Reader<Env, Result<MatchedRoute<U, Q>, ResponseError>> {
+    Route<U, Q>(.OPTIONS, path).matchReader()
+}
+
+// MARK: - when — Router wrapper
+
+/// Wraps a Kleisli chain into a `Router<Void>`.
+///
+/// ```swift
+/// when(get("/ping") >=> ignoreBody() >=> handle { _ in .html("pong") })
+/// ```
+public func when(
+    _ chain: @escaping (Request) -> Reader<Void, DeferredTask<Result<Response, ResponseError>>>
+) -> Router<Void> {
+    Router(chain)
+}
+
+/// Wraps a Kleisli chain into a `Router<Env>`. Supply `injecting: Env.self` to pin the environment type.
+///
+/// ```swift
+/// when(get("/albums/:id", params: AlbumID.self) >=> ignoreBody() >=> handle { req in
+///     Reader { env in … }
+/// }, injecting: AppEnv.self)
+/// ```
+public func when<Env: Sendable>(
+    _ chain: @escaping (Request) -> Reader<Env, DeferredTask<Result<Response, ResponseError>>>,
+    injecting _: Env.Type
+) -> Router<Env> {
+    Router(chain)
 }
 
 // MARK: - ignoreBody → Kleisli step
@@ -94,18 +157,7 @@ public func decodeBody<U, Q, B: Decodable, Env>(
 
 // MARK: - Router init from Kleisli chain
 
-public extension Router {
-    /// Wraps a Kleisli function `(Request) -> Reader<Env, DeferredTask<…>>` into a `Router`.
-    ///
-    /// The Kleisli form and the stored `Reader<Env, (Request) -> DeferredTask<…>>` are
-    /// isomorphic via currying; this init performs that conversion so `runReader` is
-    /// called once at server startup, not per request.
-    ///
-    /// ```swift
-    /// let router = Router(
-    ///     route.matchReader() >=> decodeBody(decoder) >=> handler.run
-    /// )
-    /// ```
+extension Router {
     init(_ fn: @escaping (Request) -> Reader<Env, DeferredTask<Result<Response, ResponseError>>>) {
         self.init(Reader { env in { request in fn(request).runReader(env) } })
     }

@@ -30,10 +30,10 @@ private extension Result where Success == Response, Failure == ResponseError {
     }
 }
 
-private func jsonEncoder<T: Encodable>(for type: T.Type = T.self, _ configure: (JSONEncoder) -> Void = { _ in }) -> ResponseEncoder<T> {
+private func jsonEncoder(_ configure: (JSONEncoder) -> Void = { _ in }) -> JSONEncoder {
     let e = JSONEncoder()
     configure(e)
-    return ResponseEncoder<T>.json.runReader(e)
+    return e
 }
 
 // MARK: - Request
@@ -128,37 +128,37 @@ struct ResponseErrorTests {
 
     @Test func encodedJson() throws {
         struct Payload: Codable { let code: Int }
-        let e = ResponseError(Payload(code: 42), encoder: jsonEncoder(), status: .unprocessableEntity)
+        let e = ResponseError.json(Payload(code: 42), encoder: jsonEncoder(), status: .unprocessableEntity)
         #expect(e.status == .unprocessableEntity)
         #expect(e.headers.contains { $0 == ("Content-Type", "application/json") })
         #expect(try JSONDecoder().decode(Payload.self, from: e.body).code == 42)
     }
 
     @Test func encodedHtml() {
-        let e = ResponseError("<b>bad</b>", encoder: ResponseEncoder<String>.html, status: .badRequest)
+        let e = ResponseError.html("<b>bad</b>", status: .badRequest)
         #expect(e.status == .badRequest)
         #expect(String(data: e.body, encoding: .utf8) == "<b>bad</b>")
     }
 }
 
-// MARK: - ResponseEncoder
+// MARK: - Result<Response, ResponseError> factories
 
-@Suite("ResponseEncoder")
-struct ResponseEncoderTests {
+@Suite("ResultResponse")
+struct ResultResponseTests {
     @Test func html_encodesUTF8() throws {
-        let r = try ResponseEncoder<String>.html.response("<h1>Hi</h1>").get()
+        let r = try Result<Response, ResponseError>.html("<h1>Hi</h1>").get()
         #expect(r.status == .ok)
         #expect(r.headers.contains { $0 == ("Content-Type", "text/html; charset=utf-8") })
         #expect(String(data: r.body, encoding: .utf8) == "<h1>Hi</h1>")
     }
 
     @Test func html_customStatus() throws {
-        #expect(try ResponseEncoder<String>.html.response("x", status: .notFound).get().status == .notFound)
+        #expect(try Result<Response, ResponseError>.html("x", status: .notFound).get().status == .notFound)
     }
 
     @Test func json_encodesValue() throws {
         struct Point: Codable { let x: Int; let y: Int }
-        let r = try jsonEncoder(for: Point.self).response(Point(x: 1, y: 2)).get()
+        let r = try Result<Response, ResponseError>.json(Point(x: 1, y: 2), encoder: JSONEncoder()).get()
         #expect(r.status == .ok)
         #expect(r.headers.contains { $0 == ("Content-Type", "application/json") })
         let decoded = try JSONDecoder().decode(Point.self, from: r.body)
@@ -167,11 +167,11 @@ struct ResponseEncoderTests {
 
     @Test func json_customStatus() throws {
         struct S: Encodable { let k: String }
-        #expect(try jsonEncoder(for: S.self).response(S(k: "v"), status: .created).get().status == .created)
+        #expect(try Result<Response, ResponseError>.json(S(k: "v"), encoder: JSONEncoder(), status: .created).get().status == .created)
     }
 
     @Test func json_sortedKeys() throws {
-        let r = try jsonEncoder(for: [String: Int].self) { $0.outputFormatting = .sortedKeys }.response(["b": 2, "a": 1]).get()
+        let r = try Result<Response, ResponseError>.json(["b": 2, "a": 1], encoder: jsonEncoder { $0.outputFormatting = .sortedKeys }).get()
         let raw = String(data: r.body, encoding: .utf8) ?? ""
         let aRange = try #require(raw.range(of: "\"a\""))
         let bRange = try #require(raw.range(of: "\"b\""))
@@ -180,25 +180,20 @@ struct ResponseEncoderTests {
 
     @Test func raw_isIdentity() throws {
         let data = Data([0x01, 0x02, 0x03])
-        #expect(try ResponseEncoder<Data>.raw.response(data).get().body == data)
+        #expect(try Result<Response, ResponseError>.raw(data).get().body == data)
     }
 
     @Test func image_jpeg() throws {
         let data = Data([0xFF, 0xD8])
-        let r = try ResponseEncoder<Data>.image().response(data).get()
+        let r = try Result<Response, ResponseError>.image(data).get()
         #expect(r.status == .ok)
         #expect(r.headers.contains { $0 == ("Content-Type", "image/jpeg") })
         #expect(r.body == data)
     }
 
     @Test func image_customMimeType() throws {
-        let r = try ResponseEncoder<Data>.image(mimeType: "image/png").response(Data()).get()
+        let r = try Result<Response, ResponseError>.image(Data(), mimeType: "image/png").get()
         #expect(r.headers.contains { $0 == ("Content-Type", "image/png") })
-    }
-
-    @Test func callAsFunction_returnsData() throws {
-        let data = try ResponseEncoder<String>.html("hello").get()
-        #expect(String(data: data, encoding: .utf8) == "hello")
     }
 }
 
@@ -295,30 +290,18 @@ struct RouterTests {
     }
 
     @Test func matchesRegisteredRoute() async {
-        let router: Router<Void> = Router(
-            Route<Empty, Empty>(.GET, "/ping").matchReader()
-            >=> ignoreBody()
-            >=> handle { _ in ResponseEncoder<String>.html.response("pong") }
-        )
+        let router = when(get("/ping") >=> ignoreBody() >=> handle { _ in .html("pong") })
         #expect(await router.handle.runReader(())(req(.GET, "/ping")).run().response.status == .ok)
     }
 
     @Test func returnsNotFoundForUnregisteredPath() async {
-        let router: Router<Void> = Router(
-            Route<Empty, Empty>(.GET, "/ping").matchReader()
-            >=> ignoreBody()
-            >=> handle { _ in ResponseEncoder<String>.html.response("pong") }
-        )
+        let router = when(get("/ping") >=> ignoreBody() >=> handle { _ in .html("pong") })
         #expect(await router.handle.runReader(())(req(.GET, "/other")).run().response.status == .notFound)
     }
 
     @Test func matchesFirstMatchingRoute() async {
-        let routerA: Router<Void> =
-            Router(Route<Empty, Empty>(.GET, "/a").matchReader() >=> ignoreBody()
-                   >=> handle { _ in ResponseEncoder<String>.html.response("A") })
-        let routerB: Router<Void> =
-            Router(Route<Empty, Empty>(.GET, "/b").matchReader() >=> ignoreBody()
-                   >=> handle { _ in ResponseEncoder<String>.html.response("B") })
+        let routerA = when(get("/a") >=> ignoreBody() >=> handle { _ in .html("A") })
+        let routerB = when(get("/b") >=> ignoreBody() >=> handle { _ in .html("B") })
         let run = (routerA <|> routerB).handle.runReader(())
         #expect(String(data: (await run(req(.GET, "/a")).run()).response.body, encoding: .utf8) == "A")
         #expect(String(data: (await run(req(.GET, "/b")).run()).response.body, encoding: .utf8) == "B")
@@ -328,12 +311,12 @@ struct RouterTests {
         struct UserParams: Decodable { let id: String }
         final class Box: @unchecked Sendable { var value: String? }
         let box = Box()
-        let router: Router<Void> = Router(
-            Route<UserParams, Empty>(.GET, "/users/:id").matchReader()
+        let router = when(
+            get("/users/:id", params: UserParams.self)
             >=> ignoreBody()
             >=> handle { (typedReq: TypedRequest<UserParams, Empty, Empty>) -> Result<Response, ResponseError> in
                 box.value = typedReq.urlParams.id
-                return ResponseEncoder<String>.html.response("ok")
+                return .html("ok")
             }
         )
         _ = await router.handle.runReader(())(req(.GET, "/users/42")).run()
@@ -343,10 +326,10 @@ struct RouterTests {
     @Test func decodesBodyViaDecoder() async {
         struct Body: Decodable { let name: String }
         struct Resp: Codable { let echo: String }
-        let router: Router<Void> = Router(
-            Route<Empty, Empty>(.POST, "/echo").matchReader()
+        let router = when(
+            post("/echo")
             >=> decodeBody(JSONDecoder().decoderResult(for: Body.self))
-            >=> handle { typedReq in jsonEncoder(for: Resp.self).response(Resp(echo: typedReq.body.name)) }
+            >=> handle { typedReq in .json(Resp(echo: typedReq.body.name), encoder: JSONEncoder()) }
         )
         let response = await router.handle.runReader(())(req(.POST, "/echo", body: Data(#"{"name":"hello"}"#.utf8))).run().response
         let decoded  = try? JSONDecoder().decode(Resp.self, from: response.body)
@@ -354,11 +337,7 @@ struct RouterTests {
     }
 
     @Test func asyncHandlerViaDeferredTask() async {
-        let router: Router<Void> = Router(
-            Route<Empty, Empty>(.GET, "/async").matchReader()
-            >=> ignoreBody()
-            >=> handle { _ in DeferredTask { ResponseEncoder<String>.html.response("async") } }
-        )
+        let router = when(get("/async") >=> ignoreBody() >=> handle { _ in DeferredTask { .html("async") } })
         #expect(
             String(data: (await router.handle.runReader(())(req(.GET, "/async")).run()).response.body, encoding: .utf8) == "async"
         )
@@ -366,11 +345,13 @@ struct RouterTests {
 
     #if canImport(Combine)
     @Test func asyncHandlerViaCombinePublisher() async {
-        let router: Router<Void> = Router(
-            Route<Empty, Empty>(.GET, "/pub").matchReader()
+        let router = when(
+            get("/pub")
             >=> ignoreBody()
             >=> handle { (_: TypedRequest<Empty, Empty, Empty>) in
-                Just(ResponseEncoder<String>.html.response("pub").response).eraseToAnyPublisher()
+                Just(Result<Response, ResponseError>.html("pub").response)
+                    .setFailureType(to: ResponseError.self)
+                    .eraseToAnyPublisher()
             }
         )
         #expect(
@@ -381,10 +362,9 @@ struct RouterTests {
 
     @Test func handlerReceivesEnvironment() async {
         struct Env: Sendable { let greeting: String }
-        let router: Router<Env> = Router(
-            Route<Empty, Empty>(.GET, "/hello").matchReader()
-            >=> ignoreBody()
-            >=> handle { _ in Reader { env in ResponseEncoder<String>.html.response(env.greeting) } }
+        let router = when(
+            get("/hello") >=> ignoreBody() >=> handle { _ in Reader { env in .html(env.greeting) } },
+            injecting: Env.self
         )
         let response = await router.handle.runReader(Env(greeting: "hi there"))(req(.GET, "/hello")).run().response
         #expect(String(data: response.body, encoding: .utf8) == "hi there")
@@ -413,10 +393,8 @@ struct NIOServerTests {
     @Test(.timeLimit(.minutes(1)))
     func startServer_respondsToRequest() async throws {
         let port = 18_091
-        let frozenRouter: Router<Void> = Router(
-            Route<Empty, Empty>(.GET, "/hello").matchReader()
-            >=> ignoreBody()
-            >=> handle { req in ResponseEncoder<String>.html.response("OK:\(req.raw.path)") }
+        let frozenRouter = when(
+            get("/hello") >=> ignoreBody() >=> handle { req in .html("OK:\(req.raw.path)") }
         )
         Thread.detachNewThread {
             _ = startServer(port: port, router: frozenRouter).runReader(())
@@ -437,14 +415,12 @@ struct NIOServerTests {
         struct EchoBody: Decodable { let message: String }
         struct EchoResp: Codable { let message: String }
 
-        let frozenRouter: Router<Void> =
-            Router(Route<Empty, Empty>(.GET, "/ping").matchReader() >=> ignoreBody() >=> handle { _ in
-                ResponseEncoder<String>.html.response("pong")
-            })
-            <|> Router(
-                Route<Empty, Empty>(.POST, "/echo").matchReader()
+        let frozenRouter =
+            when(get("/ping") >=> ignoreBody() >=> handle { _ in .html("pong") })
+            <|> when(
+                post("/echo")
                 >=> decodeBody(JSONDecoder().decoderResult(for: EchoBody.self))
-                >=> handle { req in jsonEncoder(for: EchoResp.self).response(EchoResp(message: req.body.message)) }
+                >=> handle { req in .json(EchoResp(message: req.body.message), encoder: JSONEncoder()) }
             )
         Thread.detachNewThread {
             _ = startServer(port: port, router: frozenRouter).runReader(())

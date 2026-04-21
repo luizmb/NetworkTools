@@ -5,27 +5,26 @@ import NIOHTTP1
 // MARK: - Success factories
 
 public extension Result where Success == Response, Failure == ResponseError {
-    /// Encodes `entity` using `encoder` and returns a JSON response.
-    static func from<E: Encodable>(
-        encoder: EncoderResultFactory,
-        entity: E,
-        status: HTTPResponseStatus = .ok
-    ) -> Self {
+    static func json<E: Encodable>(_ entity: E, encoder: EncoderResultFactory, status: HTTPResponseStatus = .ok) -> Self {
         encoder.encoderResult(for: E.self).run(entity)
             .map { Response(status: status, headers: [("Content-Type", "application/json")], body: $0) }
             .mapError { ResponseError(status: .internalServerError, body: Data($0.localizedDescription.utf8)) }
     }
 
     static func html(_ string: String, status: HTTPResponseStatus = .ok) -> Self {
-        ResponseEncoder<String>.html.response(string, status: status)
+        .success(Response(status: status, headers: [("Content-Type", "text/html; charset=utf-8")], body: Data(string.utf8)))
     }
 
     static func plainText(_ string: String, status: HTTPResponseStatus = .ok) -> Self {
-        ResponseEncoder<String>.plainText.response(string, status: status)
+        .success(Response(status: status, headers: [("Content-Type", "text/plain; charset=utf-8")], body: Data(string.utf8)))
     }
 
     static func raw(_ data: Data, status: HTTPResponseStatus = .ok) -> Self {
-        ResponseEncoder<Data>.raw.response(data, status: status)
+        .success(Response(status: status, headers: [("Content-Type", "application/octet-stream")], body: data))
+    }
+
+    static func image(_ data: Data, mimeType: String = "image/jpeg", status: HTTPResponseStatus = .ok) -> Self {
+        .success(Response(status: status, headers: [("Content-Type", mimeType)], body: data))
     }
 }
 

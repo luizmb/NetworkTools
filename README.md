@@ -470,9 +470,6 @@ public struct TypedRequest<URLParams, QueryParams, Body> {
     public let raw:         Request     // original NIO request (method, uri, path, body, queryParams)
 }
 
-// Encodes a value T into a Result<Response, ResponseError>.
-public struct ResponseEncoder<T>
-
 // Typed error value; the response status code, headers, and body are all fields.
 public struct ResponseError: Error {
     public let status:  HTTPResponseStatus
@@ -579,7 +576,7 @@ let router = when(
 
 ### Returning JSON
 
-Use `ResponseEncoder<T>.json` — it is a `Reader<EncoderResultFactory, ResponseEncoder<T>>`, so inject a factory (any `EncoderResultFactory`, e.g. a `JSONEncoder`) directly to materialise it:
+Use `.json(_:encoder:)` — pass the value and any `EncoderResultFactory` (e.g. a `JSONEncoder`). The factory is typically injected from a `Reader` environment or captured from an outer scope:
 
 ```swift
 struct Album: Codable {
@@ -587,27 +584,26 @@ struct Album: Codable {
     let title: String
 }
 
-// Define encoders once and reuse them across handlers.
-let albumEncoder: ResponseEncoder<Album> = .json.runReader(JSONEncoder())
-
 let router = when(
     get("/albums/1")
     >=> ignoreBody()
-    >=> handle { _ in albumEncoder.response(Album(id: 1, title: "Kind of Blue")) }
+    >=> handle { _ in .json(Album(id: 1, title: "Kind of Blue"), encoder: JSONEncoder()) }
 )
 ```
 
-Configure the `JSONEncoder` before injecting it:
+Pre-configure a `JSONEncoder` and reuse it across handlers:
 
 ```swift
 let prettyEncoder: JSONEncoder = {
     let e = JSONEncoder()
-    e.outputFormatting  = [.prettyPrinted, .sortedKeys]
+    e.outputFormatting    = [.prettyPrinted, .sortedKeys]
     e.keyEncodingStrategy = .convertToSnakeCase
     return e
 }()
 
-let albumEncoder: ResponseEncoder<Album> = .json.runReader(prettyEncoder)
+// Use directly in any handler:
+.json(myValue, encoder: prettyEncoder)
+.json(myValue, encoder: prettyEncoder, status: .created)
 ```
 
 ### Body decoding
@@ -619,12 +615,12 @@ struct CreateAlbum: Decodable { let title: String }
 struct Album:       Codable   { let id: Int; let title: String }
 
 let albumDecoder: DecoderResult<CreateAlbum> = JSONDecoder().decoderResult(for: CreateAlbum.self)
-let albumEncoder: ResponseEncoder<Album>     = .json.runReader(JSONEncoder())
+let albumEncoder = JSONEncoder()
 
 let router = when(
     post("/albums")
     >=> decodeBody(albumDecoder)
-    >=> handle { req in albumEncoder.response(Album(id: nextID(), title: req.body.title), status: .created) }
+    >=> handle { req in .json(Album(id: nextID(), title: req.body.title), encoder: albumEncoder, status: .created) }
 )
 ```
 
@@ -656,7 +652,7 @@ let router: Router<Void> =
         post("/echo")
         >=> decodeBody(JSONDecoder().decoderResult(for: [String: String].self))
         >=> handle { req in
-            .from(encoder: JSONEncoder(), entity: req.body)
+            .json(req.body, encoder: JSONEncoder())
         }
     )
 ```
@@ -679,13 +675,13 @@ handle { req -> Response in Response(status: .ok) }
 // Sync failable — returns Result<Response, ResponseError>
 handle { req -> Result<Response, ResponseError> in
     guard req.urlParams.id > 0 else { return .badRequest("id must be positive") }
-    return albumEncoder.response(myAlbum)
+    return .json(myAlbum, encoder: JSONEncoder())
 }
 
 // Sync throwing — typed throws(ResponseError)
 handle { req throws(ResponseError) -> Response in
     guard let album = find(req.urlParams.id) else { throw .notFound }
-    return try albumEncoder.response(album).get()
+    return try Result<Response, ResponseError>.json(album, encoder: JSONEncoder()).get()
 }
 
 // Async — returns DeferredTask<Response>
@@ -695,8 +691,17 @@ handle { req in DeferredTask { await fetchAlbum(req.urlParams.id) } }
 handle { req in
     DeferredTask {
         guard let album = await db.fetchAlbum(req.urlParams.id) else { return .notFound }
-        return albumEncoder.response(album)
+        return .json(album, encoder: JSONEncoder())
     }
+}
+
+// Combine — returns AnyPublisher<Response, ResponseError>
+handle { req in
+    fetchAlbumPublisher(req.urlParams.id)      // AnyPublisher<Album, ResponseError>
+        .tryMap { try JSONEncoder().encode($0) }
+        .map { Response(status: .ok, headers: [("Content-Type", "application/json")], body: $0) }
+        .mapError { ResponseError.serverError($0.localizedDescription) }
+        .eraseToAnyPublisher()
 }
 ```
 
@@ -721,7 +726,7 @@ let router: Router<AppEnv> = when(
                 guard let album = await env.db.fetchAlbum(id: req.urlParams.id) else {
                     return .notFound
                 }
-                return albumEncoder.response(album)
+                return .json(album, encoder: JSONEncoder())
             }
         }
     },
@@ -769,57 +774,25 @@ let appRouter: Router<AppEnv> =
 startServer(port: 8080, router: appRouter).runReader(AppEnv(auth: authEnv, data: dataEnv))
 ```
 
-### `ResponseEncoder` reference
-
-```swift
-// HTML — wraps a String in text/html; charset=utf-8
-ResponseEncoder<String>.html.response("Hello")              // Result<Response, ResponseError>
-ResponseEncoder<String>.html.response("<b>bad</b>", status: .badRequest)
-
-// Plain text
-ResponseEncoder<String>.plainText.response("OK")
-
-// JSON — inject any EncoderResultFactory (e.g. JSONEncoder) directly
-let enc: ResponseEncoder<MyType> = .json.runReader(JSONEncoder())
-enc.response(value)              // 200
-enc.response(value, status: .created) // 201
-
-// Raw bytes — passes Data through unchanged (application/octet-stream)
-ResponseEncoder<Data>.raw.response(pdfData)
-
-// Image — defaults to image/jpeg; specify mimeType for others
-ResponseEncoder<Data>.image().response(jpegData)
-ResponseEncoder<Data>.image(mimeType: "image/png").response(pngData)
-
-// Calling as a function — returns just the Data (no Response wrapper)
-let data: Result<Data, EncodingError> = enc(value)
-```
-
 ### `Result<Response, ResponseError>` factories
 
 Handlers return `Result<Response, ResponseError>`. Static factories let you construct these with leading-dot syntax:
 
 ```swift
 // Success
-.from(encoder: JSONEncoder(), entity: album)              // 200 application/json
-.from(encoder: JSONEncoder(), entity: album, status: .created)
+.json(album, encoder: JSONEncoder())                      // 200 application/json
+.json(album, encoder: JSONEncoder(), status: .created)    // 201
 .html("<h1>Hello</h1>")                                   // 200 text/html
 .html("<b>bad</b>", status: .badRequest)
 .plainText("OK")
-.raw(pdfData)
+.raw(pdfData)                                             // application/octet-stream
+.image(jpegData)                                          // image/jpeg
+.image(pngData, mimeType: "image/png")
 
 // Failure
 .notFound                                                 // 404
 .badRequest("missing 'title'")                            // 400
 .serverError("db unavailable")                            // 500
-```
-
-Pre-configure a `ResponseEncoder` once and call `.response` on it when you need more control (custom content type, image, re-use across handlers):
-
-```swift
-let albumEncoder: ResponseEncoder<Album> = .json.runReader(JSONEncoder())
-albumEncoder.response(album)                              // 200
-albumEncoder.response(album, status: .created)            // 201
 ```
 
 ### `ResponseError` reference
@@ -832,8 +805,9 @@ ResponseError.serverError("db unavailable")     // 500 text/plain
 // Custom status/headers/body
 ResponseError(status: .unauthorized, headers: [("WWW-Authenticate", "Bearer")], body: Data())
 
-// Encoded body — use any ResponseEncoder
-ResponseError(Payload(code: 42), encoder: enc, status: .unprocessableEntity)
+// Encoded body — factory mirrors the Result factories but returns ResponseError directly
+ResponseError.json(Payload(code: 42), encoder: JSONEncoder(), status: .unprocessableEntity)
+ResponseError.html("<b>error</b>", status: .badRequest)
 ```
 
 ### Full example: mini albums API
@@ -867,9 +841,8 @@ struct AppEnv: Sendable {
 
 // MARK: - Encoders / Decoders
 
-let albumEncoder:  ResponseEncoder<Album>     = .json.runReader(JSONEncoder())
-let albumsEncoder: ResponseEncoder<[Album]>   = .json.runReader(JSONEncoder())
-let albumDecoder:  DecoderResult<CreateAlbum> = JSONDecoder().decoderResult(for: CreateAlbum.self)
+let albumEncoder  = JSONEncoder()
+let albumDecoder: DecoderResult<CreateAlbum> = JSONDecoder().decoderResult(for: CreateAlbum.self)
 
 // MARK: - Route params
 
@@ -888,7 +861,7 @@ let router: Router<AppEnv> =
             Reader { env -> Result<Response, ResponseError> in
                 let albums = req.queryParams.year.map { y in env.albums.filter { $0.year == y } }
                              ?? env.albums
-                return albumsEncoder.response(albums)
+                return .json(albums, encoder: albumEncoder)
             }
         },
         injecting: AppEnv.self
@@ -903,7 +876,7 @@ let router: Router<AppEnv> =
                 guard let album = env.albums.first(where: { $0.id == req.urlParams.id }) else {
                     return .notFound
                 }
-                return albumEncoder.response(album)
+                return .json(album, encoder: albumEncoder)
             }
         },
         injecting: AppEnv.self
@@ -916,7 +889,7 @@ let router: Router<AppEnv> =
         >=> handle { req in
             Reader { env -> Result<Response, ResponseError> in
                 let newAlbum = Album(id: env.albums.count + 1, title: req.body.title, year: req.body.year)
-                return albumEncoder.response(newAlbum, status: .created)
+                return .json(newAlbum, encoder: albumEncoder, status: .created)
             }
         },
         injecting: AppEnv.self

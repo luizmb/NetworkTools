@@ -71,14 +71,14 @@ public func handle<U, Q, B, Env: Sendable>(
 import Combine
 
 public func handle<U, Q, B, Env: Sendable>(
-    _ fn: @escaping @Sendable (TypedRequest<U, Q, B>) -> AnyPublisher<Response, Never>
+    _ fn: @escaping @Sendable (TypedRequest<U, Q, B>) -> AnyPublisher<Response, ResponseError>
 ) -> (TypedRequest<U, Q, B>) -> Reader<Env, DeferredTask<Result<Response, ResponseError>>> {
-    { req in Reader { _ in DeferredTask { .success(await fn(req).asDeferredTask().run()) } } }
+    { req in Reader { _ in fn(req).asDeferredTask() } }
 }
 
 public func handle<U, Q, B, Env: Sendable>(
-    _ fn: @escaping @Sendable (TypedRequest<U, Q, B>) -> Reader<Env, AnyPublisher<Response, Never>>
+    _ fn: @escaping @Sendable (TypedRequest<U, Q, B>) -> Reader<Env, AnyPublisher<Response, ResponseError>>
 ) -> (TypedRequest<U, Q, B>) -> Reader<Env, DeferredTask<Result<Response, ResponseError>>> {
-    { req in Reader { env in DeferredTask { .success(await fn(req).runReader(env).asDeferredTask().run()) } } }
+    { req in Reader { env in fn(req).runReader(env).asDeferredTask() } }
 }
 #endif

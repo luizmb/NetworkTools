@@ -33,12 +33,16 @@ public extension ResponseError {
 // MARK: - Encoded errors
 
 public extension ResponseError {
-    init<T>(_ value: T, encoder: ResponseEncoder<T>, status: HTTPResponseStatus = .internalServerError) {
-        switch encoder.callAsFunction(value) {
+    static func json<T: Encodable>(_ value: T, encoder: EncoderResultFactory, status: HTTPResponseStatus = .internalServerError) -> ResponseError {
+        switch encoder.encoderResult(for: T.self).run(value) {
         case .success(let data):
-            self.init(status: status, headers: [("Content-Type", encoder.contentType)], body: data)
+            ResponseError(status: status, headers: [("Content-Type", "application/json")], body: data)
         case .failure(let e):
-            self.init(status: .internalServerError, body: Data(e.localizedDescription.utf8))
+            ResponseError(status: .internalServerError, body: Data(e.localizedDescription.utf8))
         }
+    }
+
+    static func html(_ string: String, status: HTTPResponseStatus = .internalServerError) -> ResponseError {
+        ResponseError(status: status, headers: [("Content-Type", "text/html; charset=utf-8")], body: Data(string.utf8))
     }
 }
