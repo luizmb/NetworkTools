@@ -33,7 +33,7 @@ private extension Result where Success == Response, Failure == ResponseError {
 private func jsonEncoder<T: Encodable>(for type: T.Type = T.self, _ configure: (JSONEncoder) -> Void = { _ in }) -> ResponseEncoder<T> {
     let e = JSONEncoder()
     configure(e)
-    return ResponseEncoder<T>.json.runReader(.json.runReader(e))
+    return ResponseEncoder<T>.json.runReader(e)
 }
 
 // MARK: - Request
@@ -345,7 +345,7 @@ struct RouterTests {
         struct Resp: Codable { let echo: String }
         let router: Router<Void> = Router(
             Route<Empty, Empty>(.POST, "/echo").matchReader()
-            >=> decodeBody(DecoderResult<Body>.json.runReader(JSONDecoder()))
+            >=> decodeBody(JSONDecoder().decoderResult(for: Body.self))
             >=> handle { typedReq in jsonEncoder(for: Resp.self).response(Resp(echo: typedReq.body.name)) }
         )
         let response = await router.handle.runReader(())(req(.POST, "/echo", body: Data(#"{"name":"hello"}"#.utf8))).run().response
@@ -443,7 +443,7 @@ struct NIOServerTests {
             })
             <|> Router(
                 Route<Empty, Empty>(.POST, "/echo").matchReader()
-                >=> decodeBody(DecoderResult<EchoBody>.json.runReader(JSONDecoder()))
+                >=> decodeBody(JSONDecoder().decoderResult(for: EchoBody.self))
                 >=> handle { req in jsonEncoder(for: EchoResp.self).response(EchoResp(message: req.body.message)) }
             )
         Thread.detachNewThread {

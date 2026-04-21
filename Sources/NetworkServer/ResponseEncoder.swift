@@ -42,7 +42,7 @@ extension ResponseEncoder where T == String {
 }
 
 extension ResponseEncoder where T: Encodable {
-    public static var json: Reader<EncoderResult<T>, Self> {
-        Reader { Self(contentType: "application/json", $0) }
+    public static var json: Reader<EncoderResultFactory, Self> {
+        Reader { factory in Self(contentType: "application/json", factory.encoderResult(for: T.self)) }
     }
 }

@@ -40,8 +40,8 @@ public struct Request: Sendable {
             }
     }
 
-    /// Decodes the request body as JSON into the given `Decodable` type.
-    public func decodeBody<T: Decodable>(as _: T.Type = T.self) -> Reader<JSONDecoder, Result<T, DecodingError>> {
-        Reader { decoder in DecoderResult<T>.json.runReader(decoder).run(body) }
+    /// Decodes the request body using the given factory into the given `Decodable` type.
+    public func decodeBody<T: Decodable>(as _: T.Type = T.self) -> Reader<DecoderResultFactory, Result<T, DecodingError>> {
+        Reader { factory in factory.decoderResult(for: T.self).run(body) }
     }
 }

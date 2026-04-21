@@ -20,8 +20,3 @@ extension JSONEncoder: EncoderResultFactory {
     }
 }
 
-public extension EncoderResult where E: Encodable {
-    static var json: Reader<JSONEncoder, EncoderResult<E>> {
-        Reader { $0.encoderResult() }
-    }
-}
