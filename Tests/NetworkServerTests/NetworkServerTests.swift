@@ -290,18 +290,18 @@ struct RouterTests {
     }
 
     @Test func matchesRegisteredRoute() async {
-        let router = when(get("/ping") >=> ignoreBody() >=> Effect.response { _ in .html("pong") })
+        let router = when(get("/ping") >=> ignoreBody() >=> .response { _ in .html("pong") })
         #expect(await router.handle.runReader(DefaultEnv())(req(.GET, "/ping")).run().response.status == .ok)
     }
 
     @Test func returnsNotFoundForUnregisteredPath() async {
-        let router = when(get("/ping") >=> ignoreBody() >=> Effect.response { _ in .html("pong") })
+        let router = when(get("/ping") >=> ignoreBody() >=> .response { _ in .html("pong") })
         #expect(await router.handle.runReader(DefaultEnv())(req(.GET, "/other")).run().response.status == .notFound)
     }
 
     @Test func matchesFirstMatchingRoute() async {
-        let routerA = when(get("/a") >=> ignoreBody() >=> Effect.response { _ in .html("A") })
-        let routerB = when(get("/b") >=> ignoreBody() >=> Effect.response { _ in .html("B") })
+        let routerA = when(get("/a") >=> ignoreBody() >=> .response { _ in .html("A") })
+        let routerB = when(get("/b") >=> ignoreBody() >=> .response { _ in .html("B") })
         let run = (routerA <|> routerB).handle.runReader(DefaultEnv())
         #expect(String(data: (await run(req(.GET, "/a")).run()).response.body, encoding: .utf8) == "A")
         #expect(String(data: (await run(req(.GET, "/b")).run()).response.body, encoding: .utf8) == "B")
@@ -314,7 +314,7 @@ struct RouterTests {
         let router = when(
             get("/users/:id", params: UserParams.self)
             >=> ignoreBody()
-            >=> Effect.response { (typedReq: TypedRequest<UserParams, Empty, Empty>) -> Result<Response, ResponseError> in
+            >=> .response { (typedReq: TypedRequest<UserParams, Empty, Empty>) -> Result<Response, ResponseError> in
                 box.value = typedReq.urlParams.id
                 return .html("ok")
             }
@@ -323,21 +323,28 @@ struct RouterTests {
         #expect(box.value == "42")
     }
 
-    @Test func decodesBodyViaDecoder() async {
+    @Test func decodesBody() async {
         struct Body: Decodable { let name: String }
         struct Resp: Codable { let echo: String }
+        struct Env: HasDictionaryDecoderFactory, Sendable {
+            let decoder: JSONDecoder
+            var dictionaryDecoderFactory: DictionaryDecoderFactory { DefaultEnv().dictionaryDecoderFactory }
+        }
         let router = when(
             post("/echo")
-            >=> decodeBody(JSONDecoder().dataDecoder(for: Body.self))
-            >=> Effect.response { typedReq in .json(Resp(echo: typedReq.body.name), encoder: JSONEncoder()) }
+            >=> decodeBody(using: \.decoder)
+            >=> .response { (typedReq: TypedRequest<Empty, Empty, Body>) in
+                .json(Resp(echo: typedReq.body.name), encoder: JSONEncoder())
+            },
+            injecting: Env.self
         )
-        let response = await router.handle.runReader(DefaultEnv())(req(.POST, "/echo", body: Data(#"{"name":"hello"}"#.utf8))).run().response
-        let decoded  = try? JSONDecoder().decode(Resp.self, from: response.body)
+        let response = await router.handle.runReader(Env(decoder: JSONDecoder()))(req(.POST, "/echo", body: Data(#"{"name":"hello"}"#.utf8))).run().response
+        let decoded = try? JSONDecoder().decode(Resp.self, from: response.body)
         #expect(decoded?.echo == "hello")
     }
 
     @Test func asyncHandlerViaDeferredTask() async {
-        let router = when(get("/async") >=> ignoreBody() >=> Effect.response { _ in DeferredTask { .html("async") } })
+        let router = when(get("/async") >=> ignoreBody() >=> .response { _ in DeferredTask { .html("async") } })
         #expect(
             String(data: (await router.handle.runReader(DefaultEnv())(req(.GET, "/async")).run()).response.body, encoding: .utf8) == "async"
         )
@@ -348,7 +355,7 @@ struct RouterTests {
         let router = when(
             get("/pub")
             >=> ignoreBody()
-            >=> Effect.response { (_: TypedRequest<Empty, Empty, Empty>) in
+            >=> .response { (_: TypedRequest<Empty, Empty, Empty>) in
                 Just(Result<Response, ResponseError>.html("pub").response)
                     .setFailureType(to: ResponseError.self)
                     .eraseToAnyPublisher()
@@ -366,7 +373,7 @@ struct RouterTests {
             var dictionaryDecoderFactory: DictionaryDecoderFactory { DefaultEnv().dictionaryDecoderFactory }
         }
         let router = when(
-            get("/hello") >=> ignoreBody() >=> Effect.response { _, env in .html(env.greeting) },
+            get("/hello") >=> ignoreBody() >=> .response { _, env in .html(env.greeting) },
             injecting: Env.self
         )
         let response = await router.handle.runReader(Env(greeting: "hi there"))(req(.GET, "/hello")).run().response
@@ -397,7 +404,7 @@ struct NIOServerTests {
     func startServer_respondsToRequest() async throws {
         let port = 18_091
         let frozenRouter = when(
-            get("/hello") >=> ignoreBody() >=> Effect.response { req in .html("OK:\(req.raw.path)") }
+            get("/hello") >=> ignoreBody() >=> .response { req in .html("OK:\(req.raw.path)") }
         )
         Thread.detachNewThread {
             _ = startServer(port: port, router: frozenRouter).runReader(DefaultEnv())
@@ -417,16 +424,23 @@ struct NIOServerTests {
         let port = 18_092
         struct EchoBody: Decodable { let message: String }
         struct EchoResp: Codable { let message: String }
+        struct Env: HasDictionaryDecoderFactory, Sendable {
+            let decoder: JSONDecoder
+            var dictionaryDecoderFactory: DictionaryDecoderFactory { DefaultEnv().dictionaryDecoderFactory }
+        }
 
-        let frozenRouter =
-            when(get("/ping") >=> ignoreBody() >=> Effect.response { _ in .html("pong") })
+        let frozenRouter: Router<Env> =
+            when(get("/ping") >=> ignoreBody() >=> .response { _ in .html("pong") }, injecting: Env.self)
             <|> when(
                 post("/echo")
-                >=> decodeBody(JSONDecoder().dataDecoder(for: EchoBody.self))
-                >=> Effect.response { req in .json(EchoResp(message: req.body.message), encoder: JSONEncoder()) }
+                >=> decodeBody(using: \.decoder)
+                >=> .response { (req: TypedRequest<Empty, Empty, EchoBody>) in
+                    .json(EchoResp(message: req.body.message), encoder: JSONEncoder())
+                },
+                injecting: Env.self
             )
         Thread.detachNewThread {
-            _ = startServer(port: port, router: frozenRouter).runReader(DefaultEnv())
+            _ = startServer(port: port, router: frozenRouter).runReader(Env(decoder: JSONDecoder()))
         }
         try await Task.sleep(for: .milliseconds(300))
 

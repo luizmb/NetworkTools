@@ -32,7 +32,7 @@ extension StringKeyValueDecoder: DictionaryDecoderFactory {
 ///
 /// Use this when building `Router<DefaultEnv>` with `when(_:)`:
 /// ```swift
-/// let router = when(get("/ping") >=> ignoreBody() >=> handle { _ in .html("pong") })
+/// let router = when(get("/ping") >=> ignoreBody() >=> .response { _ in .html("pong") })
 /// startServer(port: 8080, router: router).runReader(DefaultEnv())
 /// ```
 public struct DefaultEnv: HasDictionaryDecoderFactory, Sendable {

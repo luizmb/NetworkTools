@@ -7,6 +7,10 @@ public protocol DataEncoderFactory {
     func dataEncoder<Input: Encodable>(for type: Input.Type) -> DataEncoder<Input>
 }
 
+public protocol HasDataEncoderFactory {
+    var dataEncoderFactory: DataEncoderFactory { get }
+}
+
 extension JSONEncoder: DataEncoderFactory {
     public func dataEncoder<Input: Encodable>(for _: Input.Type = Input.self) -> DataEncoder<Input> {
         Convert { [self] value in

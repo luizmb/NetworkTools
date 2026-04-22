@@ -6,7 +6,7 @@ private final class _CancellableBox: @unchecked Sendable {
     var cancellable: AnyCancellable?
 }
 
-extension AnyPublisher {
+public extension AnyPublisher {
     func asDeferredTask() -> DeferredTask<Output> where Failure == Never {
         DeferredTask {
             // swiftlint:disable:next force_unwrapping

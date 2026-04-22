@@ -7,6 +7,10 @@ public protocol DataDecoderFactory {
     func dataDecoder<Output: Decodable>(for type: Output.Type) -> DataDecoder<Output>
 }
 
+public protocol HasDataDecoderFactory {
+    var dataDecoderFactory: DataDecoderFactory { get }
+}
+
 extension JSONDecoder: DataDecoderFactory {
     public func dataDecoder<Output: Decodable>(for type: Output.Type = Output.self) -> DataDecoder<Output> {
         Convert { [self] data in

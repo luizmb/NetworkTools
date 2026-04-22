@@ -517,9 +517,9 @@ get(path, params:, query:)    — GET route entry point
 post / put / patch / delete   — other HTTP verbs; same signature
 
 >=> ignoreBody()              — no body; imposes no Decodable constraint
- or decodeBody(decoder)       — decode body as B (requires B: Decodable)
+ or decodeBody()              — decode body as B using env's DataDecoderFactory (Env: HasDataDecoderFactory)
 
->=> Effect.response { req in … } — lift closure into Effect<TypedRequest, Env, Response, ResponseError>
+>=> .response { req in … }   — lift closure into Effect<TypedRequest, Env, Response, ResponseError>
 
 when(chain)                   — wrap into Router<DefaultEnv>
 when(chain, injecting: T.self) — wrap into Router<T> for custom environments
@@ -527,7 +527,7 @@ when(chain, injecting: T.self) — wrap into Router<T> for custom environments
 
 Multiple routers combine with `<|>`. The operator tries the left router first and falls through to the right only on a 404 (unmatched route). Query-param errors (400) and body-decode errors (400) stop immediately without trying the next router.
 
-The environment is injected **once at startup** via `runReader`. Every `>=>` step and every call to `Effect.response` is pure — no side effects, no env access — until `startServer(…).runReader(env)` is called.
+The environment is injected **once at startup** via `runReader`. Every `>=>` step and every `.response` closure is pure — no side effects, no env access — until `startServer(…).runReader(env)` is called.
 
 ### Core types
 
@@ -578,7 +578,7 @@ Thread.detachNewThread {
 
 ```swift
 let router = when(
-    get("/ping") >=> ignoreBody() >=> Effect.response { _ in .html("pong") }
+    get("/ping") >=> ignoreBody() >=> .response { _ in .html("pong") }
 )
 
 Thread.detachNewThread {
@@ -596,7 +596,7 @@ struct AlbumID: Decodable { let id: String }
 let router = when(
     get("/albums/:id", params: AlbumID.self)
     >=> ignoreBody()
-    >=> Effect.response { req in .html("Album: \(req.urlParams.id)") }
+    >=> .response { req in .html("Album: \(req.urlParams.id)") }
 )
 ```
 
@@ -611,7 +611,7 @@ struct PhotoPath: Decodable {
 let router = when(
     get("/albums/:albumId/photos/:photoId", params: PhotoPath.self)
     >=> ignoreBody()
-    >=> Effect.response { req in .html("Album \(req.urlParams.albumId), photo \(req.urlParams.photoId)") }
+    >=> .response { req in .html("Album \(req.urlParams.albumId), photo \(req.urlParams.photoId)") }
 )
 ```
 
@@ -625,9 +625,9 @@ struct StringSlug: Decodable { let id: String }
 // GET /albums/jazz → falls through (404)   → matched by String route → "Album slug: jazz"
 let router =
     when(get("/albums/:id", params: NumericID.self) >=> ignoreBody()
-         >=> Effect.response { req in .html("Numeric album: \(req.urlParams.id)") })
+         >=> .response { req in .html("Numeric album: \(req.urlParams.id)") })
     <|> when(get("/albums/:id", params: StringSlug.self) >=> ignoreBody()
-             >=> Effect.response { req in .html("Album slug: \(req.urlParams.id)") })
+             >=> .response { req in .html("Album slug: \(req.urlParams.id)") })
 ```
 
 ### Typed query parameters
@@ -644,7 +644,7 @@ struct Pagination: Decodable {
 let router = when(
     get("/items", query: Pagination.self)
     >=> ignoreBody()
-    >=> Effect.response { req in
+    >=> .response { req in
         let page  = req.queryParams.page  ?? 1
         let limit = req.queryParams.limit ?? 10
         return .plainText("page=\(page) limit=\(limit)")
@@ -665,7 +665,7 @@ struct Album: Codable {
 let router = when(
     get("/albums/1")
     >=> ignoreBody()
-    >=> Effect.response { _ in .json(Album(id: 1, title: "Kind of Blue"), encoder: JSONEncoder()) }
+    >=> .response { _ in .json(Album(id: 1, title: "Kind of Blue"), encoder: JSONEncoder()) }
 )
 ```
 
@@ -686,20 +686,35 @@ let prettyEncoder: JSONEncoder = {
 
 ### Body decoding
 
-Use `decodeBody(decoder)` as the middle step in the Kleisli chain. It runs the decoder only when the route matches; a decode failure returns 400 before the handler is called. Unlike `ignoreBody()`, it requires `B: Decodable`.
+Use `decodeBody(using:)` as the middle step in the Kleisli chain. The lens extracts the decoder from the environment, making the dependency explicit at the call site and letting different endpoints use different decoding strategies. A decode failure returns 400 before the handler is called.
 
 ```swift
 struct CreateAlbum: Decodable { let title: String }
 struct Album:       Codable   { let id: Int; let title: String }
 
-let albumDecoder: DataDecoder<CreateAlbum> = JSONDecoder().dataDecoder(for: CreateAlbum.self)
-let albumEncoder = JSONEncoder()
+struct AppEnv: HasDictionaryDecoderFactory, Sendable {
+    let decoder: JSONDecoder
+    var dictionaryDecoderFactory: DictionaryDecoderFactory { DefaultEnv().dictionaryDecoderFactory }
+}
 
 let router = when(
     post("/albums")
-    >=> decodeBody(albumDecoder)
-    >=> Effect.response { req in .json(Album(id: nextID(), title: req.body.title), encoder: albumEncoder, status: .created) }
+    >=> decodeBody(using: \.decoder)
+    >=> .response { (req: TypedRequest<Empty, Empty, CreateAlbum>) in
+        .json(Album(id: nextID(), title: req.body.title), encoder: JSONEncoder(), status: .created)
+    },
+    injecting: AppEnv.self
 )
+```
+
+The lens can also target a pre-built `DataDecoder<B>` stored on the environment (avoids re-building the decoder per request), or a `DataDecoderFactory` property for when the type must be inferred:
+
+```swift
+// DataDecoder<B> stored directly — zero allocation per request
+>=> decodeBody(using: \.albumDecoder)   // where albumDecoder: DataDecoder<CreateAlbum>
+
+// DataDecoderFactory stored on env — type B inferred from context
+>=> decodeBody(using: \.jsonDecoder)    // where jsonDecoder: JSONDecoder (or any DataDecoderFactory)
 ```
 
 Combine URL params, query params, and a body in one route:
@@ -711,10 +726,11 @@ struct CreatePhoto: Decodable { let caption: String; let data: String }
 
 let router = when(
     post("/albums/:id/photos", params: AlbumID.self, query: Format.self)
-    >=> decodeBody(JSONDecoder().dataDecoder(for: CreatePhoto.self))
-    >=> Effect.response { req in
+    >=> decodeBody(using: \.decoder)
+    >=> .response { (req: TypedRequest<AlbumID, Format, CreatePhoto>) in
         .html("Uploaded to album \(req.urlParams.id) as \(req.queryParams.format ?? "jpeg")")
-    }
+    },
+    injecting: AppEnv.self
 )
 ```
 
@@ -723,15 +739,21 @@ let router = when(
 `<|>` is the ordered-choice operator for routers. It tries the left side first; it falls through to the right only when the left returns 404.
 
 ```swift
-let router: Router<DefaultEnv> =
-    when(get("/ping")   >=> ignoreBody() >=> Effect.response { _ in .html("pong") })
-    <|> when(get("/health") >=> ignoreBody() >=> Effect.response { _ in .html("ok") })
+struct Env: HasDictionaryDecoderFactory, Sendable {
+    let decoder: JSONDecoder
+    var dictionaryDecoderFactory: DictionaryDecoderFactory { DefaultEnv().dictionaryDecoderFactory }
+}
+
+let router: Router<Env> =
+    when(get("/ping")   >=> ignoreBody() >=> .response { _ in .html("pong") }, injecting: Env.self)
+    <|> when(get("/health") >=> ignoreBody() >=> .response { _ in .html("ok") }, injecting: Env.self)
     <|> when(
         post("/echo")
-        >=> decodeBody(JSONDecoder().dataDecoder(for: [String: String].self))
-        >=> Effect.response { req in
+        >=> decodeBody(using: \.decoder)
+        >=> .response { (req: TypedRequest<Empty, Empty, [String: String]>) in
             .json(req.body, encoder: JSONEncoder())
-        }
+        },
+        injecting: Env.self
     )
 ```
 
@@ -742,19 +764,19 @@ let empty = Router<DefaultEnv>.empty
 // empty.handle.runReader(DefaultEnv())(request) always yields .failure(.notFound)
 ```
 
-### `Effect.response` — lifting closure variants
+### `.response` — lifting closure variants
 
-`Effect.response` is a static factory that lifts any of several closure shapes into an `Effect<TypedRequest<U,Q,B>, Env, Response, ResponseError>`, which composes directly with the preceding `>=>` chain:
+`.response` is a static factory on `Effect` that lifts any of several closure shapes into an `Effect<TypedRequest<U,Q,B>, Env, Response, ResponseError>`, which composes directly with the preceding `>=>` chain. Swift infers the `Effect` type from context, so the `Effect.` prefix is not needed:
 
 ```swift
 // Sync failable — returns Result<Response, ResponseError>
-Effect.response { req -> Result<Response, ResponseError> in
+.response { req -> Result<Response, ResponseError> in
     guard req.urlParams.id > 0 else { return .badRequest("id must be positive") }
     return .json(myAlbum, encoder: JSONEncoder())
 }
 
 // Async failable — returns DeferredTask<Result<Response, ResponseError>>
-Effect.response { req in
+.response { req in
     DeferredTask {
         guard let album = await db.fetchAlbum(req.urlParams.id) else { return .notFound }
         return .json(album, encoder: JSONEncoder())
@@ -762,7 +784,7 @@ Effect.response { req in
 }
 
 // Combine env-independent — encoder inline; mapError lifts EncodingError into ResponseError
-Effect.response { req in
+.response { req in
     fetchAlbumPublisher(req.urlParams.id)      // AnyPublisher<Album, ResponseError>
         .encode(using: JSONEncoder(), mapError: { ResponseError.serverError($0.localizedDescription) })
         .map { Response(status: .ok, headers: [("Content-Type", "application/json")], body: $0) }
@@ -770,7 +792,7 @@ Effect.response { req in
 }
 
 // Combine env-dependent — encoder comes from the environment
-Effect.response { req, env in
+.response { req, env in
     fetchAlbumPublisher(req.urlParams.id)      // AnyPublisher<Album, ResponseError>
         .encode(using: env.encoder, mapError: { ResponseError.serverError($0.localizedDescription) })
         .map { Response(status: .ok, headers: [("Content-Type", "application/json")], body: $0) }
@@ -794,7 +816,7 @@ struct AlbumID: Decodable { let id: Int }
 let router: Router<AppEnv> = when(
     get("/albums/:id", params: AlbumID.self)
     >=> ignoreBody()
-    >=> Effect.response { req, env in
+    >=> .response { req, env in
         DeferredTask {
             guard let album = await env.db.fetchAlbum(id: req.urlParams.id) else {
                 return .notFound
@@ -820,7 +842,7 @@ struct ConfigEnv: HasDictionaryDecoderFactory, Sendable {
 let router: Router<ConfigEnv> = when(
     get("/hello")
     >=> ignoreBody()
-    >=> Effect.response { _, env in .html(env.greeting) },
+    >=> .response { _, env in .html(env.greeting) },
     injecting: ConfigEnv.self
 )
 
@@ -908,6 +930,7 @@ struct CreateAlbum: Decodable { let title: String; let year: Int }
 
 struct AppEnv: HasDictionaryDecoderFactory, Sendable {
     var albums: [Album]
+    let decoder: JSONDecoder
     let encoder: DataEncoderFactory
     var dictionaryDecoderFactory: DictionaryDecoderFactory { DefaultEnv().dictionaryDecoderFactory }
 
@@ -917,13 +940,10 @@ struct AppEnv: HasDictionaryDecoderFactory, Sendable {
             Album(id: 2, title: "A Love Supreme",  year: 1964),
             Album(id: 3, title: "In a Silent Way", year: 1969),
         ],
+        decoder: JSONDecoder(),
         encoder: JSONEncoder()
     )
 }
-
-// MARK: - Decoders
-
-let albumDecoder: DataDecoder<CreateAlbum> = JSONDecoder().dataDecoder(for: CreateAlbum.self)
 
 // MARK: - Route params
 
@@ -938,7 +958,7 @@ let router: Router<AppEnv> =
     when(
         get("/albums", query: YearQuery.self)
         >=> ignoreBody()
-        >=> Effect.response { req, env in
+        >=> .response { req, env in
             let albums = req.queryParams.year.map { y in env.albums.filter { $0.year == y } }
                          ?? env.albums
             return .json(albums, encoder: env.encoder)
@@ -950,7 +970,7 @@ let router: Router<AppEnv> =
     <|> when(
         get("/albums/:id", params: AlbumID.self)
         >=> ignoreBody()
-        >=> Effect.response { req, env in
+        >=> .response { req, env in
             guard let album = env.albums.first(where: { $0.id == req.urlParams.id }) else {
                 return .notFound
             }
@@ -962,8 +982,8 @@ let router: Router<AppEnv> =
     // POST /albums — create a new album from a JSON body
     <|> when(
         post("/albums")
-        >=> decodeBody(albumDecoder)
-        >=> Effect.response { req, env in
+        >=> decodeBody(using: \.decoder)
+        >=> .response { (req: TypedRequest<Empty, Empty, CreateAlbum>, env: AppEnv) in
             let newAlbum = Album(id: env.albums.count + 1, title: req.body.title, year: req.body.year)
             return .json(newAlbum, encoder: env.encoder, status: .created)
         },
@@ -991,7 +1011,7 @@ struct WebEnv: HasDictionaryDecoderFactory, Sendable {
 let router: Router<WebEnv> = when(
     get("/")
     >=> ignoreBody()
-    >=> Effect.response { _, env in
+    >=> .response { _, env in
         let ctx: Context = [
             "title":  .string("Albums"),
             "albums": .list(env.db.allAlbums().map { ["title": .string($0.title)] }),

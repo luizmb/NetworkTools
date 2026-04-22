@@ -15,7 +15,7 @@ import NIOHTTP1
 /// Route<Empty, Empty>(.GET, "/ping")
 /// Route<UserParams, Empty>(.GET, "/users/:id")
 /// ```
-public struct Route<URLParams: Decodable, QueryParams: Decodable>: Sendable {
+public struct Route<URLParams: Decodable & Sendable, QueryParams: Decodable & Sendable>: Sendable {
     public let method: HTTPMethod
     public let pattern: String
 
