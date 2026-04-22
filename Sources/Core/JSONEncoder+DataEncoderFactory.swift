@@ -1,13 +1,15 @@
 import Foundation
 import FP
 
-public protocol EncoderResultFactory {
-    func encoderResult<E: Encodable>(for type: E.Type) -> EncoderResult<E>
+public typealias DataEncoder<Input: Encodable> = Convert<Input, Data, EncodingError>
+
+public protocol DataEncoderFactory {
+    func dataEncoder<Input: Encodable>(for type: Input.Type) -> DataEncoder<Input>
 }
 
-extension JSONEncoder: EncoderResultFactory {
-    public func encoderResult<E: Encodable>(for _: E.Type = E.self) -> EncoderResult<E> {
-        EncoderResult { [self] value in
+extension JSONEncoder: DataEncoderFactory {
+    public func dataEncoder<Input: Encodable>(for _: Input.Type = Input.self) -> DataEncoder<Input> {
+        Convert { [self] value in
             Result { try encode(value) }
                 .mapError {
                     $0 as? EncodingError

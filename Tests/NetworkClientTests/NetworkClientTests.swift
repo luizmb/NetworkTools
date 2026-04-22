@@ -54,36 +54,36 @@ private func run<A>(_ p: RequestPublisher<A>) -> Result<A, HTTPError>? {
 }
 #endif
 
-// MARK: - DecoderResult: Functor
+// MARK: - DataDecoder: Functor
 
-@Suite("DecoderResult — Functor")
-struct DecoderResultFunctorTests {
+@Suite("DataDecoder — Functor")
+struct DataDecoderFunctorTests {
     @Test func pure() {
-        #expect(DecoderResult<Int>.pure(42).run(Data()).successValue == 42)
+        #expect(DataDecoder<Int>.pure(42).run(Data()).successValue == 42)
     }
 
     @Test func map_transformsSuccess() {
-        #expect(DecoderResult<Int>.pure(3).map { $0 * 7 }.run(Data()).successValue == 21)
+        #expect(DataDecoder<Int>.pure(3).map { $0 * 7 }.run(Data()).successValue == 21)
     }
 
     @Test func map_passesFailureThrough() {
         let err = DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: ""))
-        #expect(DecoderResult<Int> { _ in .failure(err) }.map { $0 + 1 }.run(Data()).isFailure)
+        #expect(DataDecoder<Int> { _ in .failure(err) }.map { $0 + 1 }.run(Data()).isFailure)
     }
 
     @Test func fmap_curried() {
-        let lift = DecoderResult<Int>.fmap { $0 * 2 }
-        #expect(lift(DecoderResult.pure(5)).run(Data()).successValue == 10)
+        let lift = DataDecoder<Int>.fmap { $0 * 2 }
+        #expect(lift(DataDecoder.pure(5)).run(Data()).successValue == 10)
     }
 
     @Test func replace() {
-        #expect(DecoderResult<Int>.pure(99).replace(with: "x").run(Data()).successValue == "x")
+        #expect(DataDecoder<Int>.pure(99).replace(with: "x").run(Data()).successValue == "x")
     }
 
     @Test func mapError_transformsFailure() {
         let original = DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "orig"))
         let replaced = DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "new"))
-        let result = DecoderResult<Int> { _ in .failure(original) }
+        let result = DataDecoder<Int> { _ in .failure(original) }
             .mapError { _ in replaced }
             .run(Data())
         guard case .failure(let e) = result, case .dataCorrupted(let ctx) = e else {
@@ -94,133 +94,159 @@ struct DecoderResultFunctorTests {
     }
 }
 
-// MARK: - DecoderResult: Applicative
+// Convert<Data, _, DecodingError> is used below instead of DataDecoder<_> because
+// DataDecoder constrains Output: Decodable, but these tests use function types as Output.
+private typealias AnyDataConvert<T> = Convert<Data, T, DecodingError>
 
-@Suite("DecoderResult — Applicative")
-struct DecoderResultApplicativeTests {
+// MARK: - DataDecoder: Applicative
+
+@Suite("DataDecoder — Applicative")
+struct DataDecoderApplicativeTests {
     @Test func apply_combinesFunctionAndValue() {
-        let f = DecoderResult<(Int) -> String>.pure(String.init)
-        let a = DecoderResult<Int>.pure(42)
-        #expect(DecoderResult.apply(f, a).run(Data()).successValue == "42")
+        let f = AnyDataConvert<(Int) -> String>.pure(String.init)
+        let a = AnyDataConvert<Int>.pure(42)
+        #expect(AnyDataConvert.apply(f, a).run(Data()).successValue == "42")
     }
 
     @Test func apply_propagatesLeftFailure() {
         let err = DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: ""))
-        let f   = DecoderResult<(Int) -> Int> { _ in .failure(err) }
-        #expect(DecoderResult.apply(f, .pure(1)).run(Data()).isFailure)
+        let f   = AnyDataConvert<(Int) -> Int> { _ in .failure(err) }
+        #expect(AnyDataConvert.apply(f, .pure(1)).run(Data()).isFailure)
     }
 
     @Test func apply_propagatesRightFailure() {
         let err = DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: ""))
-        let f   = DecoderResult<(Int) -> Int>.pure { $0 + 1 }
-        let a   = DecoderResult<Int> { _ in .failure(err) }
-        #expect(DecoderResult.apply(f, a).run(Data()).isFailure)
+        let f   = AnyDataConvert<(Int) -> Int>.pure { $0 + 1 }
+        let a   = AnyDataConvert<Int> { _ in .failure(err) }
+        #expect(AnyDataConvert.apply(f, a).run(Data()).isFailure)
     }
 
     @Test func seqRight_discardsLeft() {
-        #expect(DecoderResult<Int>.pure(1).seqRight(DecoderResult.pure("kept")).run(Data()).successValue == "kept")
+        #expect(AnyDataConvert<Int>.pure(1).seqRight(AnyDataConvert.pure("kept")).run(Data()).successValue == "kept")
     }
 
     @Test func seqLeft_discardsRight() {
-        #expect(DecoderResult<Int>.pure(99).seqLeft(DecoderResult<String>.pure("x")).run(Data()).successValue == 99)
+        #expect(AnyDataConvert<Int>.pure(99).seqLeft(AnyDataConvert<String>.pure("x")).run(Data()).successValue == 99)
     }
 }
 
-// MARK: - DecoderResult: Monad
+// MARK: - DataDecoder: Monad
 
-@Suite("DecoderResult — Monad")
-struct DecoderResultMonadTests {
+@Suite("DataDecoder — Monad")
+struct DataDecoderMonadTests {
     @Test func flatMap_chains() {
-        let dr = DecoderResult<Int>.pure(5).flatMap { n in DecoderResult.pure("\(n)!") }
+        let dr = AnyDataConvert<Int>.pure(5).flatMap { n in AnyDataConvert.pure("\(n)!") }
         #expect(dr.run(Data()).successValue == "5!")
     }
 
     @Test func flatMap_propagatesUpstreamFailure() {
         let err = DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: ""))
-        let dr  = DecoderResult<Int> { _ in .failure(err) }.flatMap { n in DecoderResult.pure("\(n)") }
+        let dr  = AnyDataConvert<Int> { _ in .failure(err) }.flatMap { n in AnyDataConvert.pure("\(n)") }
         #expect(dr.run(Data()).isFailure)
     }
 
     @Test func bind_curried() {
-        let f = DecoderResult<Int>.bind { n in DecoderResult.pure(n * 2) }
-        #expect(f(DecoderResult.pure(6)).run(Data()).successValue == 12)
+        let f = AnyDataConvert<Int>.bind { n in AnyDataConvert.pure(n * 2) }
+        #expect(f(AnyDataConvert.pure(6)).run(Data()).successValue == 12)
     }
 
     @Test func kleisli_composes() {
-        let f: (String) -> DecoderResult<Int> = { s in .pure(s.count) }
-        let g: (Int) -> DecoderResult<String> = { n in .pure("\(n)") }
-        #expect(DecoderResult.kleisli(f, g)("hello").run(Data()).successValue == "5")
+        let f: (String) -> AnyDataConvert<Int> = { s in .pure(s.count) }
+        let g: (Int) -> AnyDataConvert<String> = { n in .pure("\(n)") }
+        #expect(AnyDataConvert.kleisli(f, g)("hello").run(Data()).successValue == "5")
     }
 
     @Test func kleisliBack_composes() {
-        let f: (String) -> DecoderResult<Int> = { s in .pure(s.count) }
-        let g: (Int) -> DecoderResult<String> = { n in .pure("\(n)") }
-        #expect(DecoderResult.kleisliBack(g, f)("hello").run(Data()).successValue == "5")
+        let f: (String) -> AnyDataConvert<Int> = { s in .pure(s.count) }
+        let g: (Int) -> AnyDataConvert<String> = { n in .pure("\(n)") }
+        #expect(AnyDataConvert.kleisliBack(g, f)("hello").run(Data()).successValue == "5")
     }
 
     @Test func flatMapError_recovers() {
         let err = DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: ""))
-        let dr  = DecoderResult<Int> { _ in .failure(err) }.flatMapError { _ in .pure(0) }
+        let dr: AnyDataConvert<Int> = AnyDataConvert { _ in .failure(err) }.flatMapError { _ in .pure(0) }
         #expect(dr.run(Data()).successValue == 0)
     }
 
     @Test func flatMapError_passesSuccessThrough() {
-        #expect(DecoderResult<Int>.pure(42).flatMapError { _ in .pure(0) }.run(Data()).successValue == 42)
+        let dr: AnyDataConvert<Int> = AnyDataConvert.pure(42).flatMapError { _ in .pure(0) }
+        #expect(dr.run(Data()).successValue == 42)
     }
 }
 
-// MARK: - DecoderResult: Operators
+// MARK: - DataDecoder: Operators
 
-@Suite("DecoderResult — Operators")
-struct DecoderResultOperatorTests {
-    @Test func fmapOp() { #expect(({ $0 * 2 } <£> DecoderResult<Int>.pure(5)).run(Data()).successValue == 10) }
-    @Test func flippedFmapOp() { #expect((DecoderResult<Int>.pure(5) <&> { $0 * 2 }).run(Data()).successValue == 10) }
-    @Test func replaceRightOp() { #expect((DecoderResult<Int>.pure(5) £> "r").run(Data()).successValue == "r") }
-    @Test func replaceLeftOp() { #expect(("r" <£ DecoderResult<Int>.pure(5)).run(Data()).successValue == "r") }
+@Suite("DataDecoder — Operators")
+struct DataDecoderOperatorTests {
+    @Test func fmapOp() { #expect(({ $0 * 2 } <£> AnyDataConvert<Int>.pure(5)).run(Data()).successValue == 10) }
+    @Test func flippedFmapOp() { #expect((AnyDataConvert<Int>.pure(5) <&> { $0 * 2 }).run(Data()).successValue == 10) }
+    @Test func replaceRightOp() { #expect((AnyDataConvert<Int>.pure(5) £> "r").run(Data()).successValue == "r") }
+    @Test func replaceLeftOp() { #expect(("r" <£ AnyDataConvert<Int>.pure(5)).run(Data()).successValue == "r") }
 
     @Test func applyOp() {
-        let f = DecoderResult<(Int) -> Int>.pure { $0 + 1 }
-        #expect((f <*> DecoderResult<Int>.pure(41)).run(Data()).successValue == 42)
+        let f = AnyDataConvert<(Int) -> Int>.pure { $0 + 1 }
+        #expect((f <*> AnyDataConvert<Int>.pure(41)).run(Data()).successValue == 42)
     }
-    @Test func seqRightOp() { #expect((DecoderResult<Int>.pure(1) *> DecoderResult<String>.pure("k")).run(Data()).successValue == "k") }
-    @Test func seqLeftOp() { #expect((DecoderResult<Int>.pure(9) <* DecoderResult<String>.pure("d")).run(Data()).successValue == 9) }
+    @Test func seqRightOp() { #expect((AnyDataConvert<Int>.pure(1) *> AnyDataConvert<String>.pure("k")).run(Data()).successValue == "k") }
+    @Test func seqLeftOp() { #expect((AnyDataConvert<Int>.pure(9) <* AnyDataConvert<String>.pure("d")).run(Data()).successValue == 9) }
 
-    @Test func bindOp() { #expect((DecoderResult<Int>.pure(3) >>- { n in .pure(n * n) }).run(Data()).successValue == 9) }
+    @Test func bindOp() { #expect((AnyDataConvert<Int>.pure(3) >>- { n in .pure(n * n) }).run(Data()).successValue == 9) }
     @Test func flippedBindOp() {
-        #expect(({ n in DecoderResult<Int>.pure(n * n) } -<< DecoderResult<Int>.pure(3)).run(Data()).successValue == 9)
+        #expect(({ n in AnyDataConvert<Int>.pure(n * n) } -<< AnyDataConvert<Int>.pure(3)).run(Data()).successValue == 9)
     }
 
     @Test func kleisliOp() {
-        let f: (Int) -> DecoderResult<Int> = { n in .pure(n + 1) }
-        let g: (Int) -> DecoderResult<String> = { n in .pure("\(n)") }
+        let f: (Int) -> AnyDataConvert<Int> = { n in .pure(n + 1) }
+        let g: (Int) -> AnyDataConvert<String> = { n in .pure("\(n)") }
         #expect((f >=> g)(41).run(Data()).successValue == "42")
     }
     @Test func kleisliBackOp() {
-        let f: (Int) -> DecoderResult<Int> = { n in .pure(n + 1) }
-        let g: (Int) -> DecoderResult<String> = { n in .pure("\(n)") }
+        let f: (Int) -> AnyDataConvert<Int> = { n in .pure(n + 1) }
+        let g: (Int) -> AnyDataConvert<String> = { n in .pure("\(n)") }
         #expect((g <=< f)(41).run(Data()).successValue == "42")
     }
 }
 
-// MARK: - JSONDecoder + DecoderResultFactory
+// MARK: - Convert: generic input/output
 
-@Suite("JSONDecoder — DecoderResultFactory")
-struct JSONDecoderDecoderResultTests {
+@Suite("Convert — generic")
+struct ConvertGenericTests {
+    @Test func intToString() {
+        let c = Convert<Int, String, Never> { .success(String($0)) }
+        #expect(c.run(42).successValue == "42")
+    }
+
+    @Test func contramap_preProcessesInput() {
+        let countDigits = Convert<Int, Int, Never> { .success(String($0).count) }
+        let fromString  = countDigits.contramap { (s: String) in s.count }
+        #expect(fromString.run("hello").successValue == 1) // count("hello") = 5, digits in 5 = 1
+    }
+
+    @Test func map_chainedTransformation() {
+        let base: Convert<Int, Int, Never> = .pure(7)
+        #expect(base.map { $0 * $0 }.map(String.init).run(0).successValue == "49")
+    }
+}
+
+// MARK: - JSONDecoder + DataDecoderFactory
+
+@Suite("JSONDecoder — DataDecoderFactory")
+struct JSONDecoderDataDecoderTests {
     @Test func decodesValidJSON() {
-        #expect(JSONDecoder().decoderResult(for: Person.self).run(personJSON).successValue == Person(id: 1, name: "Alice"))
+        #expect(JSONDecoder().dataDecoder(for: Person.self).run(personJSON).successValue == Person(id: 1, name: "Alice"))
     }
 
     @Test func failsOnInvalidJSON() {
-        #expect(JSONDecoder().decoderResult(for: Person.self).run(invalidJSON).isFailure)
+        #expect(JSONDecoder().dataDecoder(for: Person.self).run(invalidJSON).isFailure)
     }
 
     @Test func failsOnMissingField() {
         let json = Data(#"{"id":1}"#.utf8)
-        #expect(JSONDecoder().decoderResult(for: Person.self).run(json).isFailure)
+        #expect(JSONDecoder().dataDecoder(for: Person.self).run(json).isFailure)
     }
 
     @Test func mapTransformsDecodedValue() {
-        let name = JSONDecoder().decoderResult(for: Person.self).map(\.name).run(personJSON).successValue
+        let name = JSONDecoder().dataDecoder(for: Person.self).map(\.name).run(personJSON).successValue
         #expect(name == "Alice")
     }
 }
@@ -397,7 +423,7 @@ struct ValidateStatusCodeTests {
 
 @Suite("RequestPublisher — decode")
 struct RequestPublisherDecodeTests {
-    private let decoder = JSONDecoder().decoderResult(for: Person.self)
+    private let decoder = JSONDecoder().dataDecoder(for: Person.self)
 
     @Test func decodesValidJSON() {
         let p = just(personJSON).decode(using: decoder)
@@ -431,7 +457,7 @@ struct RequestPublisherDecodeTests {
 @Suite("AnyPublisher — encode")
 struct AnyPublisherEncodeTests {
     private let person  = Person(id: 1, name: "Alice")
-    private let encoder = JSONEncoder().encoderResult(for: Person.self)
+    private let encoder = JSONEncoder().dataEncoder(for: Person.self)
 
     private func personPublisher(failure: EncodingError.Type = EncodingError.self) -> AnyPublisher<Person, EncodingError> {
         Just(person).setFailureType(to: EncodingError.self).eraseToAnyPublisher()

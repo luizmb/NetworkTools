@@ -4,28 +4,25 @@ import Foundation
 import FP
 
 public extension AnyPublisher where Output: Encodable, Failure == EncodingError {
-    func encode(using encoder: EncoderResult<Output>) -> AnyPublisher<Data, EncodingError> {
+    func encode(using factory: DataEncoderFactory) -> AnyPublisher<Data, EncodingError> {
+        encode(using: factory.dataEncoder(for: Output.self))
+    }
+}
+
+public extension AnyPublisher where Output: Encodable {
+    func encode(using encoder: Convert<Output, Data, Failure>) -> AnyPublisher<Data, Failure> {
         flatMap { value in
              encoder(value).publisher.eraseToAnyPublisher()
         }
         .eraseToAnyPublisher()
     }
 
-    func encode(using factory: EncoderResultFactory) -> AnyPublisher<Data, EncodingError> {
-        encode(using: factory.encoderResult(for: Output.self))
-    }
-}
-
-public extension AnyPublisher where Output: Encodable {
-    func encode(using encoder: EncoderResult<Output>, mapError errorTransform: @escaping (EncodingError) -> Failure) -> AnyPublisher<Data, Failure> {
-        flatMap { value in
-             encoder(value).publisher.mapError(errorTransform).eraseToAnyPublisher()
-        }
-        .eraseToAnyPublisher()
+    func encode(using factory: DataEncoderFactory, mapError errorTransform: @escaping (EncodingError) -> Failure) -> AnyPublisher<Data, Failure> {
+        encode(using: factory.dataEncoder(for: Output.self).mapError(errorTransform))
     }
 
-    func encode(using factory: EncoderResultFactory, mapError errorTransform: @escaping (EncodingError) -> Failure) -> AnyPublisher<Data, Failure> {
-        encode(using: factory.encoderResult(for: Output.self), mapError: errorTransform)
+    func encode(using encoder: Convert<Output, Data, EncodingError>, mapError errorTransform: @escaping (EncodingError) -> Failure) -> AnyPublisher<Data, Failure> {
+        encode(using: encoder.mapError(errorTransform))
     }
 }
 #endif

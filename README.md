@@ -250,25 +250,38 @@ All IO is fully contained in the environment — `render` never touches the file
 
 Shared building blocks used by all three packages. The most broadly useful surface is the codec layer and its Combine extensions.
 
-### `DecoderResult` / `EncoderResult`
+### `Convert<Input, Output, Failure>`
 
-`DecoderResult<D>` is a `FunctionWrapper<Data, Result<D, DecodingError>>`. `EncoderResult<E>` is a `FunctionWrapper<E, Result<Data, EncodingError>>`. Both are composable values — they support the full Functor / Applicative / Monad hierarchy.
+`Convert<Input, Output, Failure>` is a `FunctionWrapper` around `(Input) -> Result<Output, Failure>`. It is a reusable, composable fallible conversion as a first-class value, supporting the full Functor / Applicative / Monad hierarchy.
+
+Concrete typealiases pin the type parameters for common uses:
 
 ```swift
-let userDecoder: DecoderResult<User>    = JSONDecoder().decoderResult(for: User.self)
-let albumEncoder: EncoderResult<Album>  = JSONEncoder().encoderResult(for: Album.self)
+// Data -> Result<D, DecodingError>
+public typealias DataDecoder<D: Decodable> = Convert<Data, D, DecodingError>
+
+// I -> Result<Data, EncodingError>
+public typealias DataEncoder<I: Encodable> = Convert<I, Data, EncodingError>
+
+// [String: String] -> Result<D, DecodingError>  (used by NetworkServer routing)
+public typealias DictionaryDecoder<D: Decodable> = Convert<[String: String], D, DecodingError>
+```
+
+```swift
+let userDecoder: DataDecoder<User>   = JSONDecoder().dataDecoder(for: User.self)
+let albumEncoder: DataEncoder<Album> = JSONEncoder().dataEncoder(for: Album.self)
 
 // Call directly:
 let result: Result<User, DecodingError>  = userDecoder(jsonData)
 let encoded: Result<Data, EncodingError> = albumEncoder(myAlbum)
 ```
 
-### `DecoderResultFactory` / `EncoderResultFactory`
+### `DataDecoderFactory` / `DataEncoderFactory`
 
 Protocols satisfied by `JSONDecoder` / `JSONEncoder` (and any custom codec). They let you inject the codec as a dependency rather than constructing it inline.
 
 ```swift
-func makeDecoder() -> DecoderResultFactory {
+func makeDecoder() -> DataDecoderFactory {
     let d = JSONDecoder()
     d.keyDecodingStrategy = .convertFromSnakeCase
     return d
@@ -283,7 +296,7 @@ Static factory that lifts a `Data` value into a typed decoded publisher, for use
 // AnyPublisher<User, DecodingError>
 let pub: AnyPublisher<User, DecodingError> = .decoding(jsonData, using: JSONDecoder())
 
-// With a pre-built DecoderResult:
+// With a pre-built DataDecoder:
 let pub2 = AnyPublisher<User, DecodingError>.decoding(jsonData, using: userDecoder)
 ```
 
@@ -300,7 +313,7 @@ let dataPublisher: AnyPublisher<Data, EncodingError> =
 let dataPublisher2: AnyPublisher<Data, MyError> =
     someAlbumPublisher.encode(using: JSONEncoder(), mapError: MyError.encoding)
 
-// Both overloads also accept a pre-built EncoderResult<Output>:
+// Both overloads also accept a pre-built DataEncoder<Output>:
 someAlbumPublisher.encode(using: albumEncoder)
 someAlbumPublisher.encode(using: albumEncoder, mapError: MyError.encoding)
 ```
@@ -322,8 +335,12 @@ public struct RequestPublisher<A>: FunctionWrapper
 // Alias for the raw response pair before status/decoding.
 public typealias Requester = RequestPublisher<(Data, HTTPURLResponse)>
 
-// A reusable decoding function: Data -> Result<D, DecodingError>.
-public struct DecoderResult<D>: FunctionWrapper
+// A reusable fallible conversion function: Input -> Result<Output, Failure>.
+public struct Convert<Input, Output, Failure: Error>: FunctionWrapper
+
+// Specialised typealiases from Core:
+public typealias DataDecoder<D: Decodable> = Convert<Data, D, DecodingError>
+public typealias DataEncoder<E: Encodable> = Convert<E, Data, EncodingError>
 
 public enum HTTPError: Error {
     case network(Error)         // URLSession-level failure
@@ -372,24 +389,24 @@ getUser(request)
     )
 ```
 
-### `DecoderResult` — reusable decoders
+### `DataDecoder` — reusable decoders
 
-`DecoderResult<D>` is a `FunctionWrapper<Data, Result<D, DecodingError>>`. A `JSONDecoder` produces one via `decoderResult(for:)`:
+`DataDecoder<D>` is `Convert<Data, D, DecodingError>`. A `JSONDecoder` produces one via `dataDecoder(for:)`:
 
 ```swift
 let decoder = JSONDecoder()
 decoder.keyDecodingStrategy = .convertFromSnakeCase
 
-let userDecoder: DecoderResult<User> = decoder.decoderResult(for: User.self)
+let userDecoder: DataDecoder<User> = decoder.dataDecoder(for: User.self)
 
 // Use directly:
 let result: Result<User, DecodingError> = userDecoder(jsonData)
 
 // Post-process with map to extract a field:
-let nameDecoder: DecoderResult<String> = userDecoder.map(\.name)
+let nameDecoder: DataDecoder<String> = userDecoder.map(\.name)
 ```
 
-`DecoderResult` supports the full Functor / Applicative / Monad hierarchy.
+`DataDecoder` (and `Convert` in general) supports the full Functor / Applicative / Monad hierarchy.
 
 ### Functor — transforming responses
 
@@ -502,15 +519,15 @@ post / put / patch / delete   — other HTTP verbs; same signature
 >=> ignoreBody()              — no body; imposes no Decodable constraint
  or decodeBody(decoder)       — decode body as B (requires B: Decodable)
 
->=> handle { req in … }       — lift closure into Reader<Env, DeferredTask<Result<Response, ResponseError>>>
+>=> Effect.response { req in … } — lift closure into Effect<TypedRequest, Env, Response, ResponseError>
 
-when(chain)                   — wrap into Router<Void>
-when(chain, injecting: T.self) — wrap into Router<T> for non-Void environments
+when(chain)                   — wrap into Router<DefaultEnv>
+when(chain, injecting: T.self) — wrap into Router<T> for custom environments
 ```
 
 Multiple routers combine with `<|>`. The operator tries the left router first and falls through to the right only on a 404 (unmatched route). Query-param errors (400) and body-decode errors (400) stop immediately without trying the next router.
 
-The environment is injected **once at startup** via `runReader`. Every `>=>` step and every call to `handle` is pure — no side effects, no env access — until `startServer(…).runReader(env)` is called.
+The environment is injected **once at startup** via `runReader`. Every `>=>` step and every call to `Effect.response` is pure — no side effects, no env access — until `startServer(…).runReader(env)` is called.
 
 ### Core types
 
@@ -561,11 +578,11 @@ Thread.detachNewThread {
 
 ```swift
 let router = when(
-    get("/ping") >=> ignoreBody() >=> handle { _ in .html("pong") }
+    get("/ping") >=> ignoreBody() >=> Effect.response { _ in .html("pong") }
 )
 
 Thread.detachNewThread {
-    _ = startServer(port: 8080, router: router).runReader(())
+    _ = startServer(port: 8080, router: router).runReader(DefaultEnv())
 }
 ```
 
@@ -579,7 +596,7 @@ struct AlbumID: Decodable { let id: String }
 let router = when(
     get("/albums/:id", params: AlbumID.self)
     >=> ignoreBody()
-    >=> handle { req in .html("Album: \(req.urlParams.id)") }
+    >=> Effect.response { req in .html("Album: \(req.urlParams.id)") }
 )
 ```
 
@@ -594,7 +611,7 @@ struct PhotoPath: Decodable {
 let router = when(
     get("/albums/:albumId/photos/:photoId", params: PhotoPath.self)
     >=> ignoreBody()
-    >=> handle { req in .html("Album \(req.urlParams.albumId), photo \(req.urlParams.photoId)") }
+    >=> Effect.response { req in .html("Album \(req.urlParams.albumId), photo \(req.urlParams.photoId)") }
 )
 ```
 
@@ -608,9 +625,9 @@ struct StringSlug: Decodable { let id: String }
 // GET /albums/jazz → falls through (404)   → matched by String route → "Album slug: jazz"
 let router =
     when(get("/albums/:id", params: NumericID.self) >=> ignoreBody()
-         >=> handle { req in .html("Numeric album: \(req.urlParams.id)") })
+         >=> Effect.response { req in .html("Numeric album: \(req.urlParams.id)") })
     <|> when(get("/albums/:id", params: StringSlug.self) >=> ignoreBody()
-             >=> handle { req in .html("Album slug: \(req.urlParams.id)") })
+             >=> Effect.response { req in .html("Album slug: \(req.urlParams.id)") })
 ```
 
 ### Typed query parameters
@@ -627,7 +644,7 @@ struct Pagination: Decodable {
 let router = when(
     get("/items", query: Pagination.self)
     >=> ignoreBody()
-    >=> handle { req in
+    >=> Effect.response { req in
         let page  = req.queryParams.page  ?? 1
         let limit = req.queryParams.limit ?? 10
         return .plainText("page=\(page) limit=\(limit)")
@@ -637,7 +654,7 @@ let router = when(
 
 ### Returning JSON
 
-Use `.json(_:encoder:)` — pass the value and any `EncoderResultFactory` (e.g. a `JSONEncoder`). The factory is typically injected from a `Reader` environment or captured from an outer scope:
+Use `.json(_:encoder:)` — pass the value and any `DataEncoderFactory` (e.g. a `JSONEncoder`). The factory is typically injected from a `Reader` environment or captured from an outer scope:
 
 ```swift
 struct Album: Codable {
@@ -648,7 +665,7 @@ struct Album: Codable {
 let router = when(
     get("/albums/1")
     >=> ignoreBody()
-    >=> handle { _ in .json(Album(id: 1, title: "Kind of Blue"), encoder: JSONEncoder()) }
+    >=> Effect.response { _ in .json(Album(id: 1, title: "Kind of Blue"), encoder: JSONEncoder()) }
 )
 ```
 
@@ -675,13 +692,13 @@ Use `decodeBody(decoder)` as the middle step in the Kleisli chain. It runs the d
 struct CreateAlbum: Decodable { let title: String }
 struct Album:       Codable   { let id: Int; let title: String }
 
-let albumDecoder: DecoderResult<CreateAlbum> = JSONDecoder().decoderResult(for: CreateAlbum.self)
+let albumDecoder: DataDecoder<CreateAlbum> = JSONDecoder().dataDecoder(for: CreateAlbum.self)
 let albumEncoder = JSONEncoder()
 
 let router = when(
     post("/albums")
     >=> decodeBody(albumDecoder)
-    >=> handle { req in .json(Album(id: nextID(), title: req.body.title), encoder: albumEncoder, status: .created) }
+    >=> Effect.response { req in .json(Album(id: nextID(), title: req.body.title), encoder: albumEncoder, status: .created) }
 )
 ```
 
@@ -694,8 +711,8 @@ struct CreatePhoto: Decodable { let caption: String; let data: String }
 
 let router = when(
     post("/albums/:id/photos", params: AlbumID.self, query: Format.self)
-    >=> decodeBody(JSONDecoder().decoderResult(for: CreatePhoto.self))
-    >=> handle { req in
+    >=> decodeBody(JSONDecoder().dataDecoder(for: CreatePhoto.self))
+    >=> Effect.response { req in
         .html("Uploaded to album \(req.urlParams.id) as \(req.queryParams.format ?? "jpeg")")
     }
 )
@@ -706,13 +723,13 @@ let router = when(
 `<|>` is the ordered-choice operator for routers. It tries the left side first; it falls through to the right only when the left returns 404.
 
 ```swift
-let router: Router<Void> =
-    when(get("/ping")   >=> ignoreBody() >=> handle { _ in .html("pong") })
-    <|> when(get("/health") >=> ignoreBody() >=> handle { _ in .html("ok") })
+let router: Router<DefaultEnv> =
+    when(get("/ping")   >=> ignoreBody() >=> Effect.response { _ in .html("pong") })
+    <|> when(get("/health") >=> ignoreBody() >=> Effect.response { _ in .html("ok") })
     <|> when(
         post("/echo")
-        >=> decodeBody(JSONDecoder().decoderResult(for: [String: String].self))
-        >=> handle { req in
+        >=> decodeBody(JSONDecoder().dataDecoder(for: [String: String].self))
+        >=> Effect.response { req in
             .json(req.body, encoder: JSONEncoder())
         }
     )
@@ -721,35 +738,23 @@ let router: Router<Void> =
 `Router.empty` is the identity — a router that always returns 404:
 
 ```swift
-let empty = Router<Void>.empty
-// empty.handle.runReader(())(request) always yields .failure(.notFound)
+let empty = Router<DefaultEnv>.empty
+// empty.handle.runReader(DefaultEnv())(request) always yields .failure(.notFound)
 ```
 
-### `handle` — lifting closure variants
+### `Effect.response` — lifting closure variants
 
-`handle` is a free function that lifts any of several closure shapes into the Kleisli step `(TypedRequest<U,Q,B>) -> Reader<Env, DeferredTask<Result<Response, ResponseError>>>`:
+`Effect.response` is a static factory that lifts any of several closure shapes into an `Effect<TypedRequest<U,Q,B>, Env, Response, ResponseError>`, which composes directly with the preceding `>=>` chain:
 
 ```swift
-// Sync — returns Response
-handle { req -> Response in Response(status: .ok) }
-
 // Sync failable — returns Result<Response, ResponseError>
-handle { req -> Result<Response, ResponseError> in
+Effect.response { req -> Result<Response, ResponseError> in
     guard req.urlParams.id > 0 else { return .badRequest("id must be positive") }
     return .json(myAlbum, encoder: JSONEncoder())
 }
 
-// Sync throwing — typed throws(ResponseError)
-handle { req throws(ResponseError) -> Response in
-    guard let album = find(req.urlParams.id) else { throw .notFound }
-    return try Result<Response, ResponseError>.json(album, encoder: JSONEncoder()).get()
-}
-
-// Async — returns DeferredTask<Response>
-handle { req in DeferredTask { await fetchAlbum(req.urlParams.id) } }
-
 // Async failable — returns DeferredTask<Result<Response, ResponseError>>
-handle { req in
+Effect.response { req in
     DeferredTask {
         guard let album = await db.fetchAlbum(req.urlParams.id) else { return .notFound }
         return .json(album, encoder: JSONEncoder())
@@ -757,15 +762,15 @@ handle { req in
 }
 
 // Combine env-independent — encoder inline; mapError lifts EncodingError into ResponseError
-handle { req in
+Effect.response { req in
     fetchAlbumPublisher(req.urlParams.id)      // AnyPublisher<Album, ResponseError>
         .encode(using: JSONEncoder(), mapError: { ResponseError.serverError($0.localizedDescription) })
         .map { Response(status: .ok, headers: [("Content-Type", "application/json")], body: $0) }
         .eraseToAnyPublisher()
 }
 
-// Combine env-dependent — encoder comes from the environment via Reader
-handle { req, env in
+// Combine env-dependent — encoder comes from the environment
+Effect.response { req, env in
     fetchAlbumPublisher(req.urlParams.id)      // AnyPublisher<Album, ResponseError>
         .encode(using: env.encoder, mapError: { ResponseError.serverError($0.localizedDescription) })
         .map { Response(status: .ok, headers: [("Content-Type", "application/json")], body: $0) }
@@ -775,12 +780,13 @@ handle { req, env in
 
 ### Environment-dependent handlers
 
-When the handler needs values from the server's environment (database connections, config, auth tokens), return a `Reader` from the closure. `Env` is only constrained by what your closure returns — no protocol conformance required by `ignoreBody` or `decodeBody` themselves.
+When the handler needs values from the server's environment (database connections, config, auth tokens), return a `Reader` from the closure. Custom environments must conform to `HasDictionaryDecoderFactory` for route parameter decoding — delegate to `DefaultEnv` for the default implementation:
 
 ```swift
-struct AppEnv: Sendable {
+struct AppEnv: HasDictionaryDecoderFactory, Sendable {
     let db:     Database
     let config: Config
+    var dictionaryDecoderFactory: DictionaryDecoderFactory { DefaultEnv().dictionaryDecoderFactory }
 }
 
 struct AlbumID: Decodable { let id: Int }
@@ -788,7 +794,7 @@ struct AlbumID: Decodable { let id: Int }
 let router: Router<AppEnv> = when(
     get("/albums/:id", params: AlbumID.self)
     >=> ignoreBody()
-    >=> handle { req, env in
+    >=> Effect.response { req, env in
         DeferredTask {
             guard let album = await env.db.fetchAlbum(id: req.urlParams.id) else {
                 return .notFound
@@ -806,12 +812,15 @@ startServer(port: 8080, router: router).runReader(AppEnv(db: db, config: config)
 For synchronous env access:
 
 ```swift
-struct ConfigEnv: Sendable { let greeting: String }
+struct ConfigEnv: HasDictionaryDecoderFactory, Sendable {
+    let greeting: String
+    var dictionaryDecoderFactory: DictionaryDecoderFactory { DefaultEnv().dictionaryDecoderFactory }
+}
 
 let router: Router<ConfigEnv> = when(
     get("/hello")
     >=> ignoreBody()
-    >=> handle { _, env in .html(env.greeting) },
+    >=> Effect.response { _, env in .html(env.greeting) },
     injecting: ConfigEnv.self
 )
 
@@ -823,12 +832,14 @@ startServer(port: 8080, router: router).runReader(ConfigEnv(greeting: "Hi there!
 `pullback` adapts a `Router<SmallEnv>` to work inside a larger environment by providing a function `(World) -> SmallEnv`. This lets you build modular routers that know only about their own slice of the environment, then assemble them at the top level:
 
 ```swift
-struct AppEnv: Sendable {
+// Each sub-env must conform to HasDictionaryDecoderFactory.
+struct AppEnv: HasDictionaryDecoderFactory, Sendable {
     let auth: AuthEnv
     let data: DataEnv
+    var dictionaryDecoderFactory: DictionaryDecoderFactory { DefaultEnv().dictionaryDecoderFactory }
 }
 
-// Each sub-module declares only what it needs.
+// Each sub-module declares only what it needs (also conforming to HasDictionaryDecoderFactory).
 let authRouter: Router<AuthEnv> = /* login/logout routes */
 let dataRouter: Router<DataEnv> = /* resource routes */
 
@@ -895,9 +906,10 @@ struct CreateAlbum: Decodable { let title: String; let year: Int }
 
 // MARK: - Environment
 
-struct AppEnv: Sendable {
+struct AppEnv: HasDictionaryDecoderFactory, Sendable {
     var albums: [Album]
-    let encoder: EncoderResultFactory
+    let encoder: DataEncoderFactory
+    var dictionaryDecoderFactory: DictionaryDecoderFactory { DefaultEnv().dictionaryDecoderFactory }
 
     static let live = AppEnv(
         albums: [
@@ -911,7 +923,7 @@ struct AppEnv: Sendable {
 
 // MARK: - Decoders
 
-let albumDecoder: DecoderResult<CreateAlbum> = JSONDecoder().decoderResult(for: CreateAlbum.self)
+let albumDecoder: DataDecoder<CreateAlbum> = JSONDecoder().dataDecoder(for: CreateAlbum.self)
 
 // MARK: - Route params
 
@@ -926,7 +938,7 @@ let router: Router<AppEnv> =
     when(
         get("/albums", query: YearQuery.self)
         >=> ignoreBody()
-        >=> handle { req, env in
+        >=> Effect.response { req, env in
             let albums = req.queryParams.year.map { y in env.albums.filter { $0.year == y } }
                          ?? env.albums
             return .json(albums, encoder: env.encoder)
@@ -938,7 +950,7 @@ let router: Router<AppEnv> =
     <|> when(
         get("/albums/:id", params: AlbumID.self)
         >=> ignoreBody()
-        >=> handle { req, env in
+        >=> Effect.response { req, env in
             guard let album = env.albums.first(where: { $0.id == req.urlParams.id }) else {
                 return .notFound
             }
@@ -951,7 +963,7 @@ let router: Router<AppEnv> =
     <|> when(
         post("/albums")
         >=> decodeBody(albumDecoder)
-        >=> handle { req, env in
+        >=> Effect.response { req, env in
             let newAlbum = Album(id: env.albums.count + 1, title: req.body.title, year: req.body.year)
             return .json(newAlbum, encoder: env.encoder, status: .created)
         },
@@ -970,15 +982,16 @@ Thread.detachNewThread {
 `NetworkServer` and `HTMLTemplating` compose naturally — run the `Reader` from `render` inside an env-aware handler:
 
 ```swift
-struct WebEnv: Sendable {
+struct WebEnv: HasDictionaryDecoderFactory, Sendable {
     let templates: HTMLEnvironment
     let db: Database
+    var dictionaryDecoderFactory: DictionaryDecoderFactory { DefaultEnv().dictionaryDecoderFactory }
 }
 
 let router: Router<WebEnv> = when(
     get("/")
     >=> ignoreBody()
-    >=> handle { _, env in
+    >=> Effect.response { _, env in
         let ctx: Context = [
             "title":  .string("Albums"),
             "albums": .list(env.db.allAlbums().map { ["title": .string($0.title)] }),
@@ -1005,6 +1018,6 @@ All three packages follow the same functional conventions via [`FP`](https://git
 - **`Reader`** for dependency injection (template environment, server environment, request threading). No `init` injection, no stored globals.
 - **`Result`** instead of `throws` at all public API boundaries. Errors are values.
 - **`DeferredTask`** for async work in the server (lazy, nothing runs until `.run()` is called). **`Publisher`** (Combine) for the HTTP client (composable, cancellable, backpressure-aware).
-- **`FunctionWrapper`** for any `(A) -> B` that should be composable — `RequestPublisher`, `DecoderResult`, `EncoderResult` all conform.
+- **`FunctionWrapper`** for any `(A) -> B` that should be composable — `RequestPublisher`, `DataDecoder`, `DataEncoder` all conform.
 - **Alternative (`<|>`)** for router composition — tries left then right (only 404 falls through), identity is `Router.empty`.
 - **No crashing operations** — no force-unwrap, no `fatalError`, no `try!`. All failure paths return `Result` or publisher errors.

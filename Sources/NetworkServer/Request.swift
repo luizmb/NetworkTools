@@ -7,18 +7,15 @@ public struct Request: Sendable {
     public let method: HTTPMethod
     public let uri: String
     public let body: Data
-    public var pathParams: [String: String]
 
     public init(
         method: HTTPMethod,
         uri: String,
-        body: Data,
-        pathParams: [String: String] = [:]
+        body: Data
     ) {
         self.method     = method
         self.uri        = uri
         self.body       = body
-        self.pathParams = pathParams
     }
 
     public var path: String {
@@ -41,7 +38,7 @@ public struct Request: Sendable {
     }
 
     /// Decodes the request body using the given factory into the given `Decodable` type.
-    public func decodeBody<T: Decodable>(as _: T.Type = T.self) -> Reader<DecoderResultFactory, Result<T, DecodingError>> {
-        Reader { factory in factory.decoderResult(for: T.self).run(body) }
+    public func decodeBody<T: Decodable>(as _: T.Type = T.self) -> Reader<DataDecoderFactory, Result<T, DecodingError>> {
+        Reader { factory in factory.dataDecoder(for: T.self).run(body) }
     }
 }

@@ -1,13 +1,15 @@
 import Foundation
 import FP
 
-public protocol DecoderResultFactory {
-    func decoderResult<D: Decodable>(for type: D.Type) -> DecoderResult<D>
+public typealias DataDecoder<Output: Decodable> = Convert<Data, Output, DecodingError>
+
+public protocol DataDecoderFactory {
+    func dataDecoder<Output: Decodable>(for type: Output.Type) -> DataDecoder<Output>
 }
 
-extension JSONDecoder: DecoderResultFactory {
-    public func decoderResult<D: Decodable>(for type: D.Type) -> DecoderResult<D> {
-        DecoderResult { [self] data in
+extension JSONDecoder: DataDecoderFactory {
+    public func dataDecoder<Output: Decodable>(for type: Output.Type = Output.self) -> DataDecoder<Output> {
+        Convert { [self] data in
             Result { try decode(type, from: data) }
                 .mapError {
                     $0 as? DecodingError

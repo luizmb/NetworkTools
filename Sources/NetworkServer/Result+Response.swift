@@ -5,8 +5,8 @@ import NIOHTTP1
 // MARK: - Success factories
 
 public extension Result where Success == Response, Failure == ResponseError {
-    static func json<E: Encodable>(_ entity: E, encoder: EncoderResultFactory, status: HTTPResponseStatus = .ok) -> Self {
-        encoder.encoderResult(for: E.self).run(entity)
+    static func json<E: Encodable>(_ entity: E, encoder: DataEncoderFactory, status: HTTPResponseStatus = .ok) -> Self {
+        encoder.dataEncoder(for: E.self).run(entity)
             .map { Response(status: status, headers: [("Content-Type", "application/json")], body: $0) }
             .mapError { ResponseError(status: .internalServerError, body: Data($0.localizedDescription.utf8)) }
     }

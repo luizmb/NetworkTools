@@ -7,7 +7,7 @@ import Foundation
 
 public extension RequestPublisher where A == Data {
     /// Decodes the raw `Data` output using the provided `DecoderResult` function.
-    func decode<D: Decodable>(using decoder: DecoderResult<D>) -> RequestPublisher<D> {
+    func decode<D: Decodable>(using decoder: DataDecoder<D>) -> RequestPublisher<D> {
         RequestPublisher<D> { request in
             run(request).flatMap { data in
                 AnyPublisher.decoding(data, using: decoder).mapError(HTTPError.decoding)
@@ -17,8 +17,8 @@ public extension RequestPublisher where A == Data {
     }
 
     /// Decodes the raw `Data` output using the provided `DecoderResultFactory`.
-    func decode<D: Decodable>(using factory: DecoderResultFactory, type: D.Type = D.self) -> RequestPublisher<D> {
-        decode(using: factory.decoderResult(for: D.self))
+    func decode<D: Decodable>(using factory: DataDecoderFactory, type: D.Type = D.self) -> RequestPublisher<D> {
+        decode(using: factory.dataDecoder(for: D.self))
     }
 }
 #endif

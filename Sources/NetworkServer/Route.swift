@@ -1,6 +1,6 @@
+import FP
 import Foundation
 import NIOHTTP1
-
 /// Matches an incoming request and decodes its URL and query parameters into typed values.
 ///
 /// - `URLParams` is decoded from path segments (`:id`, `:name`, …) using `URLParamsDecoder`.
@@ -24,17 +24,19 @@ public struct Route<URLParams: Decodable, QueryParams: Decodable>: Sendable {
         self.pattern = pattern
     }
 
-    public func match(_ raw: Request) -> Result<MatchedRoute<URLParams, QueryParams>, ResponseError> {
-        guard raw.method == method,
-              let pathParams = matchPath(raw.path, against: pattern),
-              case .success(let urlParams) = URLParamsDecoder.decode(URLParams.self, from: pathParams)
-        else { return .failure(.notFound) }
+    public func match(_ raw: Request) -> Reader<DictionaryDecoderFactory, Result<MatchedRoute<URLParams, QueryParams>, ResponseError>> {
+        Reader { env in
+            guard raw.method == method,
+                let pathParams = matchPath(raw.path, against: pattern),
+                case .success(let urlParams) = env.dictionaryDecoder(for: URLParams.self).run(pathParams)
+            else { return .failure(.notFound) }
 
-        switch QueryParamsDecoder.decode(QueryParams.self, from: raw.queryParams) {
-        case .success(let queryParams):
-            return .success(MatchedRoute(urlParams: urlParams, queryParams: queryParams, raw: raw))
-        case .failure(let error):
-            return .failure(.badRequest(error.localizedDescription))
+            switch env.dictionaryDecoder(for: QueryParams.self).run(raw.queryParams) {
+            case .success(let queryParams):
+                return .success(MatchedRoute(urlParams: urlParams, queryParams: queryParams, raw: raw))
+            case .failure(let error):
+                return .failure(.badRequest(error.localizedDescription))
+            }
         }
     }
 }

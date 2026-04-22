@@ -72,12 +72,6 @@ struct RequestTests {
         #expect(params["q"] == "hello world")
     }
 
-    @Test func pathParamsMutable() {
-        var req = Request(method: .GET, uri: "/albums/7", body: Data())
-        req.pathParams = ["id": "7"]
-        #expect(req.pathParams["id"] == "7")
-    }
-
     @Test func decodeBody_success() throws {
         struct Item: Codable, Equatable { let name: String }
         let body = Data(#"{"name":"test"}"#.utf8)
@@ -231,18 +225,24 @@ struct RouteTests {
         Request(method: method, uri: uri, body: Data())
     }
 
+    private let factory: DictionaryDecoderFactory = StringKeyValueDecoder(params: [:])
+
+    private func match<U: Decodable, Q: Decodable>(_ route: Route<U, Q>, _ request: Request) -> Result<MatchedRoute<U, Q>, ResponseError> {
+        route.match(request).runReader(factory)
+    }
+
     @Test func matchesMethodAndPath() {
-        #expect(Route<Empty, Empty>(.GET, "/ping").match(req(.GET, "/ping")).isSuccess)
+        #expect(match(Route<Empty, Empty>(.GET, "/ping"), req(.GET, "/ping")).isSuccess)
     }
 
     @Test func rejectsWrongMethod() {
-        let result = Route<Empty, Empty>(.GET, "/ping").match(req(.POST, "/ping"))
+        let result = match(Route<Empty, Empty>(.GET, "/ping"), req(.POST, "/ping"))
         guard case .failure(let e) = result else { Issue.record("Expected .failure"); return }
         #expect(e.status == .notFound)
     }
 
     @Test func rejectsWrongPath() {
-        let result = Route<Empty, Empty>(.GET, "/ping").match(req(.GET, "/pong"))
+        let result = match(Route<Empty, Empty>(.GET, "/ping"), req(.GET, "/pong"))
         guard case .failure(let e) = result else { Issue.record("Expected .failure"); return }
         #expect(e.status == .notFound)
     }
@@ -250,7 +250,7 @@ struct RouteTests {
     @Test func decodesURLParams() {
         struct UserParams: Decodable { let id: String }
         let route = Route<UserParams, Empty>(.GET, "/users/:id")
-        guard case .success(let mr) = route.match(req(.GET, "/users/42")) else {
+        guard case .success(let mr) = match(route, req(.GET, "/users/42")) else {
             Issue.record("Expected .success"); return
         }
         #expect(mr.urlParams.id == "42")
@@ -258,14 +258,14 @@ struct RouteTests {
 
     @Test func returnsNotFoundOnURLParamTypeMismatch() {
         struct UserParams: Decodable { let id: Int }
-        let result = Route<UserParams, Empty>(.GET, "/users/:id").match(req(.GET, "/users/abc"))
+        let result = match(Route<UserParams, Empty>(.GET, "/users/:id"), req(.GET, "/users/abc"))
         guard case .failure(let e) = result else { Issue.record("Expected .failure"); return }
         #expect(e.status == .notFound)
     }
 
     @Test func returnsErrorOnMissingRequiredQueryParam() {
         struct Q: Decodable { let page: Int }
-        guard case .failure(let e) = Route<Empty, Q>(.GET, "/items").match(req(.GET, "/items")) else {
+        guard case .failure(let e) = match(Route<Empty, Q>(.GET, "/items"), req(.GET, "/items")) else {
             Issue.record("Expected .failure"); return
         }
         #expect(e.status == .badRequest)
@@ -273,7 +273,7 @@ struct RouteTests {
 
     @Test func decodesOptionalQueryParam() {
         struct Q: Decodable { let page: Int? }
-        #expect(Route<Empty, Q>(.GET, "/items").match(req(.GET, "/items")).isSuccess)
+        #expect(match(Route<Empty, Q>(.GET, "/items"), req(.GET, "/items")).isSuccess)
     }
 }
 
@@ -286,23 +286,23 @@ struct RouterTests {
     }
 
     @Test func notFoundForEmptyRouter() async {
-        #expect(await Router<Void>.empty.handle.runReader(())(req(.GET, "/anything")).run().response.status == .notFound)
+        #expect(await Router<DefaultEnv>.empty.handle.runReader(DefaultEnv())(req(.GET, "/anything")).run().response.status == .notFound)
     }
 
     @Test func matchesRegisteredRoute() async {
-        let router = when(get("/ping") >=> ignoreBody() >=> handle { _ in .html("pong") })
-        #expect(await router.handle.runReader(())(req(.GET, "/ping")).run().response.status == .ok)
+        let router = when(get("/ping") >=> ignoreBody() >=> Effect.response { _ in .html("pong") })
+        #expect(await router.handle.runReader(DefaultEnv())(req(.GET, "/ping")).run().response.status == .ok)
     }
 
     @Test func returnsNotFoundForUnregisteredPath() async {
-        let router = when(get("/ping") >=> ignoreBody() >=> handle { _ in .html("pong") })
-        #expect(await router.handle.runReader(())(req(.GET, "/other")).run().response.status == .notFound)
+        let router = when(get("/ping") >=> ignoreBody() >=> Effect.response { _ in .html("pong") })
+        #expect(await router.handle.runReader(DefaultEnv())(req(.GET, "/other")).run().response.status == .notFound)
     }
 
     @Test func matchesFirstMatchingRoute() async {
-        let routerA = when(get("/a") >=> ignoreBody() >=> handle { _ in .html("A") })
-        let routerB = when(get("/b") >=> ignoreBody() >=> handle { _ in .html("B") })
-        let run = (routerA <|> routerB).handle.runReader(())
+        let routerA = when(get("/a") >=> ignoreBody() >=> Effect.response { _ in .html("A") })
+        let routerB = when(get("/b") >=> ignoreBody() >=> Effect.response { _ in .html("B") })
+        let run = (routerA <|> routerB).handle.runReader(DefaultEnv())
         #expect(String(data: (await run(req(.GET, "/a")).run()).response.body, encoding: .utf8) == "A")
         #expect(String(data: (await run(req(.GET, "/b")).run()).response.body, encoding: .utf8) == "B")
     }
@@ -314,12 +314,12 @@ struct RouterTests {
         let router = when(
             get("/users/:id", params: UserParams.self)
             >=> ignoreBody()
-            >=> handle { (typedReq: TypedRequest<UserParams, Empty, Empty>) -> Result<Response, ResponseError> in
+            >=> Effect.response { (typedReq: TypedRequest<UserParams, Empty, Empty>) -> Result<Response, ResponseError> in
                 box.value = typedReq.urlParams.id
                 return .html("ok")
             }
         )
-        _ = await router.handle.runReader(())(req(.GET, "/users/42")).run()
+        _ = await router.handle.runReader(DefaultEnv())(req(.GET, "/users/42")).run()
         #expect(box.value == "42")
     }
 
@@ -328,18 +328,18 @@ struct RouterTests {
         struct Resp: Codable { let echo: String }
         let router = when(
             post("/echo")
-            >=> decodeBody(JSONDecoder().decoderResult(for: Body.self))
-            >=> handle { typedReq in .json(Resp(echo: typedReq.body.name), encoder: JSONEncoder()) }
+            >=> decodeBody(JSONDecoder().dataDecoder(for: Body.self))
+            >=> Effect.response { typedReq in .json(Resp(echo: typedReq.body.name), encoder: JSONEncoder()) }
         )
-        let response = await router.handle.runReader(())(req(.POST, "/echo", body: Data(#"{"name":"hello"}"#.utf8))).run().response
+        let response = await router.handle.runReader(DefaultEnv())(req(.POST, "/echo", body: Data(#"{"name":"hello"}"#.utf8))).run().response
         let decoded  = try? JSONDecoder().decode(Resp.self, from: response.body)
         #expect(decoded?.echo == "hello")
     }
 
     @Test func asyncHandlerViaDeferredTask() async {
-        let router = when(get("/async") >=> ignoreBody() >=> handle { _ in DeferredTask { .html("async") } })
+        let router = when(get("/async") >=> ignoreBody() >=> Effect.response { _ in DeferredTask { .html("async") } })
         #expect(
-            String(data: (await router.handle.runReader(())(req(.GET, "/async")).run()).response.body, encoding: .utf8) == "async"
+            String(data: (await router.handle.runReader(DefaultEnv())(req(.GET, "/async")).run()).response.body, encoding: .utf8) == "async"
         )
     }
 
@@ -348,22 +348,25 @@ struct RouterTests {
         let router = when(
             get("/pub")
             >=> ignoreBody()
-            >=> handle { (_: TypedRequest<Empty, Empty, Empty>) in
+            >=> Effect.response { (_: TypedRequest<Empty, Empty, Empty>) in
                 Just(Result<Response, ResponseError>.html("pub").response)
                     .setFailureType(to: ResponseError.self)
                     .eraseToAnyPublisher()
             }
         )
         #expect(
-            String(data: (await router.handle.runReader(())(req(.GET, "/pub")).run()).response.body, encoding: .utf8) == "pub"
+            String(data: (await router.handle.runReader(DefaultEnv())(req(.GET, "/pub")).run()).response.body, encoding: .utf8) == "pub"
         )
     }
     #endif
 
     @Test func handlerReceivesEnvironment() async {
-        struct Env: Sendable { let greeting: String }
+        struct Env: HasDictionaryDecoderFactory, Sendable {
+            let greeting: String
+            var dictionaryDecoderFactory: DictionaryDecoderFactory { DefaultEnv().dictionaryDecoderFactory }
+        }
         let router = when(
-            get("/hello") >=> ignoreBody() >=> handle { _, env in .html(env.greeting) },
+            get("/hello") >=> ignoreBody() >=> Effect.response { _, env in .html(env.greeting) },
             injecting: Env.self
         )
         let response = await router.handle.runReader(Env(greeting: "hi there"))(req(.GET, "/hello")).run().response
@@ -376,8 +379,8 @@ struct RouterTests {
 @Suite("NIOServer")
 struct NIOServerTests {
     @Test func startServer_returnsReaderOverEnv() {
-        let reader: Reader<Void, Result<Void, Error>> = startServer(port: 0, router: Router<Void>.empty)
-        let _: (()) -> Result<Void, Error> = reader.runReader
+        let reader: Reader<DefaultEnv, Result<Void, Error>> = startServer(port: 0, router: Router<DefaultEnv>.empty)
+        let _: (DefaultEnv) -> Result<Void, Error> = reader.runReader
         #expect(Bool(true))
     }
 
@@ -385,7 +388,7 @@ struct NIOServerTests {
     // tests that call runReader (and thus spin up an EventLoopGroup) on Linux.
     #if !os(Linux)
     @Test func startServer_failsOnOutOfRangePort() {
-        #expect(startServer(host: "127.0.0.1", port: 99_999, router: Router<Void>.empty).runReader(()).isFailure)
+        #expect(startServer(host: "127.0.0.1", port: 99_999, router: Router<DefaultEnv>.empty).runReader(DefaultEnv()).isFailure)
     }
 
     // URLSession on Linux (FoundationNetworking) ignores timeoutInterval and hangs forever;
@@ -394,10 +397,10 @@ struct NIOServerTests {
     func startServer_respondsToRequest() async throws {
         let port = 18_091
         let frozenRouter = when(
-            get("/hello") >=> ignoreBody() >=> handle { req in .html("OK:\(req.raw.path)") }
+            get("/hello") >=> ignoreBody() >=> Effect.response { req in .html("OK:\(req.raw.path)") }
         )
         Thread.detachNewThread {
-            _ = startServer(port: port, router: frozenRouter).runReader(())
+            _ = startServer(port: port, router: frozenRouter).runReader(DefaultEnv())
         }
         try await Task.sleep(for: .milliseconds(300))
 
@@ -416,14 +419,14 @@ struct NIOServerTests {
         struct EchoResp: Codable { let message: String }
 
         let frozenRouter =
-            when(get("/ping") >=> ignoreBody() >=> handle { _ in .html("pong") })
+            when(get("/ping") >=> ignoreBody() >=> Effect.response { _ in .html("pong") })
             <|> when(
                 post("/echo")
-                >=> decodeBody(JSONDecoder().decoderResult(for: EchoBody.self))
-                >=> handle { req in .json(EchoResp(message: req.body.message), encoder: JSONEncoder()) }
+                >=> decodeBody(JSONDecoder().dataDecoder(for: EchoBody.self))
+                >=> Effect.response { req in .json(EchoResp(message: req.body.message), encoder: JSONEncoder()) }
             )
         Thread.detachNewThread {
-            _ = startServer(port: port, router: frozenRouter).runReader(())
+            _ = startServer(port: port, router: frozenRouter).runReader(DefaultEnv())
         }
         try await Task.sleep(for: .milliseconds(300))
 
