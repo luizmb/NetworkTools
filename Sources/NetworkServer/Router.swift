@@ -3,21 +3,21 @@ import Foundation
 import FP
 
 public struct Router<Env: Sendable>: @unchecked Sendable {
-    /// The entire router as a `Reader`: inject the environment once at server startup,
-    /// receive back a concrete `(Request) -> DeferredTask<…>` that never needs the env again.
-    public let handle: Reader<Env, (Request) -> DeferredTask<Result<Response, ResponseError>>>
+    public let handle: RoutePipeline<Env>
 
-    public init(_ handle: Reader<Env, (Request) -> DeferredTask<Result<Response, ResponseError>>>) {
+    public init(_ handle: RoutePipeline<Env>) {
         self.handle = handle
     }
 
     /// The empty router — always returns 404. Identity for `<|>`.
     public static var empty: Router<Env> {
-        Router(Reader { _ in { _ in DeferredTask { .failure(.notFound) } } })
+        Router(RoutePipeline { _ in ZIO { _ in DeferredTask { .failure(.notFound) } } })
     }
 
-    public func pullback<World: Sendable>(_ f: @escaping (World) -> Env) -> Router<World> {
-        Router<World>(handle.contramapEnvironment(f))
+    public func contramap<World: Sendable>(_ f: @escaping @Sendable (World) -> Env) -> Router<World> {
+        Router<World>(RoutePipeline { [handle] request in
+            ZIO { world in handle.run(request).run(f(world)) }
+        })
     }
 }
 
@@ -30,17 +30,16 @@ struct SendableHandler: @unchecked Sendable {
 
 extension Router {
     /// Ordered choice: try `lhs`; fall through to `rhs` only on `.failure(.notFound)`.
-    /// Both sub-routers are materialised once inside the Reader — at server-start time, not per request.
     public static func alt(_ lhs: Router<Env>, _ rhs: @autoclosure () -> Router<Env>) -> Router<Env> {
         let rhs = rhs()
-        return Router(Reader { env in
-            let l = SendableHandler(call: lhs.handle.runReader(env))
-            let r = SendableHandler(call: rhs.handle.runReader(env))
-            return { request in
+        return Router(RoutePipeline { [lh = lhs.handle, rh = rhs.handle] request in
+            let l = lh.run(request)
+            let r = rh.run(request)
+            return ZIO { env in
                 DeferredTask {
-                    let result = await l(request).run()
+                    let result = await l.run(env).run()
                     if case .failure(let e) = result, e.status == .notFound {
-                        return await r(request).run()
+                        return await r.run(env).run()
                     }
                     return result
                 }

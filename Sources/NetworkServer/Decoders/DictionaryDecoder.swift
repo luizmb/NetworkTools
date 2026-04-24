@@ -26,17 +26,4 @@ extension StringKeyValueDecoder: DictionaryDecoderFactory {
     }
 }
 
-/// The default router environment for routers that need no custom state.
-/// Provides `StringKeyValueDecoder` as the `DictionaryDecoderFactory` for route
-/// parameter and query-string decoding.
-///
-/// Use this when building `Router<DefaultEnv>` with `when(_:)`:
-/// ```swift
-/// let router = when(get("/ping") >=> ignoreBody() >=> .response { _ in .html("pong") })
-/// startServer(port: 8080, router: router).runReader(DefaultEnv())
-/// ```
-public struct DefaultEnv: HasDictionaryDecoderFactory, Sendable {
-    public var dictionaryDecoderFactory: DictionaryDecoderFactory { StringKeyValueDecoder(params: [:]) }
-    public init() {}
-}
 

@@ -14,7 +14,7 @@ import NIOPosix
 public func startServer<Env: Sendable>(host: String = "127.0.0.1", port: Int, router: Router<Env>) -> Reader<Env, Result<Void, Error>> {
     Reader { env in
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-        let requestHandler = SendableHandler(call: router.handle.runReader(env))
+        let requestHandler = SendableHandler(call: { router.handle.run($0).run(env) })
 
         let result = Result<Void, Error> {
             let bootstrap = ServerBootstrap(group: group)
