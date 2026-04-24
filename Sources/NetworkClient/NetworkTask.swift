@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import FP
 
 /// HTTP response task: uses a `URLRequest` as environment to produce a typed async result.
