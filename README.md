@@ -318,13 +318,37 @@ someAlbumPublisher.encode(using: albumEncoder)
 someAlbumPublisher.encode(using: albumEncoder, mapError: MyError.encoding)
 ```
 
+### `Convert` — contravariant functor
+
+`contramap` maps over the *input* type, adapting a `Convert<Input, Output, Failure>` to accept a different input by pre-processing it before the conversion runs:
+
+```swift
+let userDecoder: DataDecoder<User> = JSONDecoder().dataDecoder(for: User.self)
+
+// Adapt to accept String instead of Data:
+let stringDecoder: Convert<String, User, DecodingError> =
+    userDecoder.contramap { Data($0.utf8) }
+```
+
+### `AnyPublisher` — bridging to `DeferredTask` (Combine)
+
+Two extension overloads convert a Combine publisher into a `DeferredTask`, bridging into async/await contexts:
+
+```swift
+// Infallible publisher — DeferredTask<Output>:
+let task: DeferredTask<Int> = someIntPublisher.asDeferredTask()
+
+// Failable publisher — DeferredTask<Result<Output, Failure>>:
+let task: DeferredTask<Result<User, HTTPError>> = somePublisher.asDeferredTask()
+```
+
 ---
 
 ## NetworkClient
 
-A composable HTTP client. The core type `RequestPublisher<A>` is a `FunctionWrapper` around `(URLRequest) -> AnyPublisher<A, HTTPError>`, forming a Reader + Publisher monad stack. Every step in a request pipeline — sending, validating, decoding — is a composable value.
+A composable HTTP client with two parallel APIs: `RequestPublisher<A>` (Combine) and `NetworkTask<A>` (async/await). Both model the same abstraction — a `URLRequest` environment threaded through a typed result pipeline — using different concurrency primitives.
 
-> **Note:** `NetworkClient` requires Combine and is available on macOS 10.15+, iOS 13+, tvOS 13+, watchOS 6+.
+> **Note:** `RequestPublisher` and its operators require Combine (macOS 10.15+, iOS 13+, tvOS 13+, watchOS 6+). `NetworkTask` and `URLSession.taskRequester` use `DeferredTask` and are available on all supported platforms without Combine.
 
 ### Core types
 
@@ -504,11 +528,46 @@ let resilient: RequestPublisher<User> =
 | `f >=> g` | Kleisli left-to-right composition |
 | `g <=< f` | Kleisli right-to-left composition |
 
+### `NetworkTask` — async/await variant
+
+`NetworkTask<A>` is the async/await counterpart to `RequestPublisher<A>`. It is a `ZIO<URLRequest, A, HTTPError>` — a `FunctionWrapper` around `(URLRequest) -> DeferredTask<Result<A, HTTPError>>`. No Combine required.
+
+```swift
+// NetworkTask<A> = ZIO<URLRequest, A, HTTPError>
+//   = (URLRequest) -> DeferredTask<Result<A, HTTPError>>
+public typealias NetworkTask<A: Sendable> = ZIO<URLRequest, A, HTTPError>
+
+// Raw HTTP response pair — counterpart to Requester
+public typealias TaskRequester = NetworkTask<(Data, HTTPURLResponse)>
+```
+
+`URLSession` gains a `.taskRequester` property parallel to `.requester`:
+
+```swift
+let taskRequester: TaskRequester = URLSession.shared.taskRequester
+```
+
+The same pipeline steps are available via `validateStatusCode()` and `decode(using:)`:
+
+```swift
+struct User: Decodable, Sendable { let id: Int; let name: String }
+
+let getUser: NetworkTask<User> =
+    URLSession.shared.taskRequester
+        .validateStatusCode()
+        .decode(using: JSONDecoder())
+
+let request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
+let result: Result<User, HTTPError> = await getUser(request).run()
+```
+
+Because `NetworkTask` is a `ZIO` (`FunctionWrapper`), it participates in the same Functor / Monad / Applicative hierarchy as `RequestPublisher` through the FP operators.
+
 ---
 
 ## NetworkServer
 
-An embedded HTTP server backed by SwiftNIO. Routes are built by Kleisli-composing (`>=>`) a series of lifting functions, then wrapping the result with `when(…)`. Routers are values — they combine with `<|>`, transform their environment with `pullback`, and are injected into the server via `Reader`.
+An embedded HTTP server backed by SwiftNIO. Routes are built by Kleisli-composing (`>=>`) a series of lifting functions, then wrapping the result with `when(…)`. Routers are values — they combine with `<|>`, adapt their environment with `contramap`, and are injected into the server via `Reader`.
 
 ### Mental model
 
@@ -849,9 +908,9 @@ let router: Router<ConfigEnv> = when(
 startServer(port: 8080, router: router).runReader(ConfigEnv(greeting: "Hi there!"))
 ```
 
-### `pullback` — composing routers with different environments
+### `contramap` — composing routers with different environments
 
-`pullback` adapts a `Router<SmallEnv>` to work inside a larger environment by providing a function `(World) -> SmallEnv`. This lets you build modular routers that know only about their own slice of the environment, then assemble them at the top level:
+`contramap` adapts a `Router<SmallEnv>` to work inside a larger environment by providing a function `(World) -> SmallEnv`. This lets you build modular routers that know only about their own slice of the environment, then assemble them at the top level:
 
 ```swift
 // Each sub-env must conform to HasDictionaryDecoderFactory.
@@ -867,8 +926,8 @@ let dataRouter: Router<DataEnv> = /* resource routes */
 
 // Combine at the app level, mapping each router to its env slice.
 let appRouter: Router<AppEnv> =
-    authRouter.pullback(\.auth)
-    <|> dataRouter.pullback(\.data)
+    authRouter.contramap(\.auth)
+    <|> dataRouter.contramap(\.data)
 
 startServer(port: 8080, router: appRouter).runReader(AppEnv(auth: authEnv, data: dataEnv))
 ```
