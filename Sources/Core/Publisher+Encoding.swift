@@ -17,11 +17,18 @@ public extension AnyPublisher where Output: Encodable {
         .eraseToAnyPublisher()
     }
 
-    func encode(using factory: DataEncoderFactory, mapError errorTransform: @escaping (EncodingError) -> Failure) -> AnyPublisher<Data, Failure> {
+    func encode(
+        using factory: DataEncoderFactory,
+        mapError errorTransform: @escaping (EncodingError) -> Failure
+    ) -> AnyPublisher<Data, Failure> {
         encode(using: factory.dataEncoder(for: Output.self).mapError(errorTransform))
     }
 
-    func encode(using encoder: Convert<Output, Data, EncodingError>, mapError errorTransform: @escaping (EncodingError) -> Failure) -> AnyPublisher<Data, Failure> {
+    func encode(
+        using encoder: Convert<Output,
+        Data, EncodingError>,
+        mapError errorTransform: @escaping (EncodingError) -> Failure
+    ) -> AnyPublisher<Data, Failure> {
         encode(using: encoder.mapError(errorTransform))
     }
 }

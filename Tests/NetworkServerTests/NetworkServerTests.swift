@@ -339,7 +339,12 @@ struct RouterTests {
             },
             injecting: Env.self
         )
-        let response = await router.handle(req(.POST, "/echo", body: Data(#"{"name":"hello"}"#.utf8))).provide(Env(decoder: JSONDecoder())).run().response
+        let response = await router.handle(
+            req(.POST, "/echo", body: Data(#"{"name":"hello"}"#.utf8))
+        )
+        .provide(Env(decoder: JSONDecoder()))
+        .run()
+        .response
         let decoded = try? JSONDecoder().decode(Resp.self, from: response.body)
         #expect(decoded?.echo == "hello")
     }

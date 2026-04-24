@@ -60,39 +60,109 @@ public func receive<Q: Decodable & Sendable, Env: Sendable>(
 // MARK: - HTTP verb shortcuts
 
 public func get<Env: Sendable>(_ path: String) -> RouteMatcher<Empty, Empty, Env> { receive(.GET, path) }
-public func get<U: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>) -> RouteMatcher<U, Empty, Env> { receive(.GET, path, params: params) }
-public func get<Q: Decodable & Sendable, Env: Sendable>(_ path: String, query: RouteParam<Q, Env>) -> RouteMatcher<Empty, Q, Env> { receive(.GET, path, query: query) }
-public func get<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>, query: RouteParam<Q, Env>) -> RouteMatcher<U, Q, Env> { receive(.GET, path, params: params, query: query) }
+public func get<U: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>) -> RouteMatcher<U, Empty, Env> {
+    receive(.GET, path, params: params)
+}
+public func get<Q: Decodable & Sendable, Env: Sendable>(_ path: String, query: RouteParam<Q, Env>) -> RouteMatcher<Empty, Q, Env> {
+    receive(.GET, path, query: query)
+}
+public func get<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Sendable>(
+    _ path: String,
+    params: RouteParam<U, Env>,
+    query: RouteParam<Q, Env>
+) -> RouteMatcher<U, Q, Env> {
+    receive(.GET, path, params: params, query: query)
+}
 
 public func post<Env: Sendable>(_ path: String) -> RouteMatcher<Empty, Empty, Env> { receive(.POST, path) }
-public func post<U: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>) -> RouteMatcher<U, Empty, Env> { receive(.POST, path, params: params) }
-public func post<Q: Decodable & Sendable, Env: Sendable>(_ path: String, query: RouteParam<Q, Env>) -> RouteMatcher<Empty, Q, Env> { receive(.POST, path, query: query) }
-public func post<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>, query: RouteParam<Q, Env>) -> RouteMatcher<U, Q, Env> { receive(.POST, path, params: params, query: query) }
+public func post<U: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>) -> RouteMatcher<U, Empty, Env> {
+    receive(.POST, path, params: params)
+}
+public func post<Q: Decodable & Sendable, Env: Sendable>(_ path: String, query: RouteParam<Q, Env>) -> RouteMatcher<Empty, Q, Env> {
+    receive(.POST, path, query: query)
+}
+public func post<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Sendable>(
+    _ path: String,
+    params: RouteParam<U, Env>,
+    query: RouteParam<Q, Env>
+) -> RouteMatcher<U, Q, Env> {
+    receive(.POST, path, params: params, query: query)
+}
 
 public func put<Env: Sendable>(_ path: String) -> RouteMatcher<Empty, Empty, Env> { receive(.PUT, path) }
-public func put<U: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>) -> RouteMatcher<U, Empty, Env> { receive(.PUT, path, params: params) }
-public func put<Q: Decodable & Sendable, Env: Sendable>(_ path: String, query: RouteParam<Q, Env>) -> RouteMatcher<Empty, Q, Env> { receive(.PUT, path, query: query) }
-public func put<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>, query: RouteParam<Q, Env>) -> RouteMatcher<U, Q, Env> { receive(.PUT, path, params: params, query: query) }
+public func put<U: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>) -> RouteMatcher<U, Empty, Env> {
+    receive(.PUT, path, params: params)
+}
+public func put<Q: Decodable & Sendable, Env: Sendable>(_ path: String, query: RouteParam<Q, Env>) -> RouteMatcher<Empty, Q, Env> {
+    receive(.PUT, path, query: query)
+}
+public func put<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Sendable>(
+    _ path: String,
+    params: RouteParam<U, Env>,
+    query: RouteParam<Q, Env>
+) -> RouteMatcher<U, Q, Env> {
+    receive(.PUT, path, params: params, query: query)
+}
 
 public func patch<Env: Sendable>(_ path: String) -> RouteMatcher<Empty, Empty, Env> { receive(.PATCH, path) }
-public func patch<U: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>) -> RouteMatcher<U, Empty, Env> { receive(.PATCH, path, params: params) }
-public func patch<Q: Decodable & Sendable, Env: Sendable>(_ path: String, query: RouteParam<Q, Env>) -> RouteMatcher<Empty, Q, Env> { receive(.PATCH, path, query: query) }
-public func patch<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>, query: RouteParam<Q, Env>) -> RouteMatcher<U, Q, Env> { receive(.PATCH, path, params: params, query: query) }
+public func patch<U: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>) -> RouteMatcher<U, Empty, Env> {
+    receive(.PATCH, path, params: params)
+}
+public func patch<Q: Decodable & Sendable, Env: Sendable>(_ path: String, query: RouteParam<Q, Env>) -> RouteMatcher<Empty, Q, Env> {
+    receive(.PATCH, path, query: query)
+}
+public func patch<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Sendable>(
+    _ path: String,
+    params: RouteParam<U, Env>,
+    query: RouteParam<Q, Env>
+) -> RouteMatcher<U, Q, Env> {
+    receive(.PATCH, path, params: params, query: query)
+}
 
 public func delete<Env: Sendable>(_ path: String) -> RouteMatcher<Empty, Empty, Env> { receive(.DELETE, path) }
-public func delete<U: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>) -> RouteMatcher<U, Empty, Env> { receive(.DELETE, path, params: params) }
-public func delete<Q: Decodable & Sendable, Env: Sendable>(_ path: String, query: RouteParam<Q, Env>) -> RouteMatcher<Empty, Q, Env> { receive(.DELETE, path, query: query) }
-public func delete<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>, query: RouteParam<Q, Env>) -> RouteMatcher<U, Q, Env> { receive(.DELETE, path, params: params, query: query) }
+public func delete<U: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>) -> RouteMatcher<U, Empty, Env> {
+    receive(.DELETE, path, params: params)
+}
+public func delete<Q: Decodable & Sendable, Env: Sendable>(_ path: String, query: RouteParam<Q, Env>) -> RouteMatcher<Empty, Q, Env> {
+    receive(.DELETE, path, query: query)
+}
+public func delete<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Sendable>(
+    _ path: String,
+    params: RouteParam<U, Env>,
+    query: RouteParam<Q, Env>
+) -> RouteMatcher<U, Q, Env> {
+    receive(.DELETE, path, params: params, query: query)
+}
 
 public func head<Env: Sendable>(_ path: String) -> RouteMatcher<Empty, Empty, Env> { receive(.HEAD, path) }
-public func head<U: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>) -> RouteMatcher<U, Empty, Env> { receive(.HEAD, path, params: params) }
-public func head<Q: Decodable & Sendable, Env: Sendable>(_ path: String, query: RouteParam<Q, Env>) -> RouteMatcher<Empty, Q, Env> { receive(.HEAD, path, query: query) }
-public func head<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>, query: RouteParam<Q, Env>) -> RouteMatcher<U, Q, Env> { receive(.HEAD, path, params: params, query: query) }
+public func head<U: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>) -> RouteMatcher<U, Empty, Env> {
+    receive(.HEAD, path, params: params)
+}
+public func head<Q: Decodable & Sendable, Env: Sendable>(_ path: String, query: RouteParam<Q, Env>) -> RouteMatcher<Empty, Q, Env> {
+    receive(.HEAD, path, query: query)
+}
+public func head<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Sendable>(
+    _ path: String,
+    params: RouteParam<U, Env>,
+    query: RouteParam<Q, Env>
+) -> RouteMatcher<U, Q, Env> {
+    receive(.HEAD, path, params: params, query: query)
+}
 
 public func options<Env: Sendable>(_ path: String) -> RouteMatcher<Empty, Empty, Env> { receive(.OPTIONS, path) }
-public func options<U: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>) -> RouteMatcher<U, Empty, Env> { receive(.OPTIONS, path, params: params) }
-public func options<Q: Decodable & Sendable, Env: Sendable>(_ path: String, query: RouteParam<Q, Env>) -> RouteMatcher<Empty, Q, Env> { receive(.OPTIONS, path, query: query) }
-public func options<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>, query: RouteParam<Q, Env>) -> RouteMatcher<U, Q, Env> { receive(.OPTIONS, path, params: params, query: query) }
+public func options<U: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>) -> RouteMatcher<U, Empty, Env> {
+    receive(.OPTIONS, path, params: params)
+}
+public func options<Q: Decodable & Sendable, Env: Sendable>(_ path: String, query: RouteParam<Q, Env>) -> RouteMatcher<Empty, Q, Env> {
+    receive(.OPTIONS, path, query: query)
+}
+public func options<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Sendable>(
+    _ path: String,
+    params: RouteParam<U, Env>,
+    query: RouteParam<Q, Env>
+) -> RouteMatcher<U, Q, Env> {
+    receive(.OPTIONS, path, params: params, query: query)
+}
 
 // MARK: - when — Router wrapper
 

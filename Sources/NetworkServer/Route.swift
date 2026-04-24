@@ -1,5 +1,5 @@
-import FP
 import Foundation
+import FP
 import NIOHTTP1
 /// Matches an incoming request and decodes its URL and query parameters into typed values.
 ///

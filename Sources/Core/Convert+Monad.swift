@@ -9,7 +9,9 @@ public extension Convert {
     }
 
     /// Curried bind for point-free composition.
-    static func bind<B>(_ f: @escaping (Output) -> Convert<Input, B, Failure>) -> (Convert<Input, Output, Failure>) -> Convert<Input, B, Failure> {
+    static func bind<B>(
+        _ f: @escaping (Output) -> Convert<Input, B, Failure>
+    ) -> (Convert<Input, Output, Failure>) -> Convert<Input, B, Failure> {
         { $0.flatMap(f) }
     }
 

@@ -1,5 +1,5 @@
-import Foundation
 import Core
+import Foundation
 
 public typealias DictionaryDecoder<Output: Decodable> = Convert<[String: String], Output, DecodingError>
 
@@ -25,5 +25,3 @@ extension StringKeyValueDecoder: DictionaryDecoderFactory {
         }
     }
 }
-
-

@@ -4,19 +4,24 @@ import FP
 // MARK: - Domain typealiases for the HTTP routing pipeline
 
 /// A step in the HTTP request-processing pipeline.
-public typealias RouteStep<I: Sendable, Env: Sendable, O: Sendable> = ZIOKleisli<I, Env, O, ResponseError>
+public typealias RouteStep<I: Sendable, Env: Sendable, O: Sendable> =
+    ZIOKleisli<I, Env, O, ResponseError>
 
 /// Route matching step: dispatches a raw `Request` to a `MatchedRoute<U, Q>`.
-public typealias RouteMatcher<U: Sendable, Q: Sendable, Env: Sendable> = RouteStep<Request, Env, MatchedRoute<U, Q>>
+public typealias RouteMatcher<U: Sendable, Q: Sendable, Env: Sendable> =
+    RouteStep<Request, Env, MatchedRoute<U, Q>>
 
 /// Body decoding step: promotes a `MatchedRoute` to a fully typed `TypedRequest<U, Q, B>`.
-public typealias BodyDecoder<U: Sendable, Q: Sendable, B: Sendable, Env: Sendable> = RouteStep<MatchedRoute<U, Q>, Env, TypedRequest<U, Q, B>>
+public typealias BodyDecoder<U: Sendable, Q: Sendable, B: Sendable, Env: Sendable> =
+    RouteStep<MatchedRoute<U, Q>, Env, TypedRequest<U, Q, B>>
 
 /// Terminal handler: produces a `Response` from a fully typed `TypedRequest<U, Q, B>`.
-public typealias ResponseHandler<U: Sendable, Q: Sendable, B: Sendable, Env: Sendable> = RouteStep<TypedRequest<U, Q, B>, Env, Response>
+public typealias ResponseHandler<U: Sendable, Q: Sendable, B: Sendable, Env: Sendable> =
+    RouteStep<TypedRequest<U, Q, B>, Env, Response>
 
 /// Full pipeline: maps a `Request` directly to a `Response` within `Env`.
-public typealias RoutePipeline<Env: Sendable> = RouteStep<Request, Env, Response>
+public typealias RoutePipeline<Env: Sendable> =
+    RouteStep<Request, Env, Response>
 
 // MARK: - ZIOKleisli.response — NetworkServer entry points
 
