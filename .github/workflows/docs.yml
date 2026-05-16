@@ -35,6 +35,7 @@ jobs:
             --target HTMLTemplating \
             --target NetworkClient \
             --target NetworkServer \
+            --enable-experimental-combined-documentation \
             --output-path .docs \
             --transform-for-static-hosting \
             --hosting-base-path NetworkTools
