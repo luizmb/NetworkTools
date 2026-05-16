@@ -12,6 +12,7 @@ let package = Package(
     products: [
         .library(name: "Core",            targets: ["Core"]),
         .library(name: "HTMLTemplating",  targets: ["HTMLTemplating"]),
+        .library(name: "Multipeer",       targets: ["Multipeer"]),
         .library(name: "NetworkClient",   targets: ["NetworkClient"]),
         .library(name: "NetworkServer",   targets: ["NetworkServer"]),
     ],
@@ -29,6 +30,12 @@ let package = Package(
         ),
         .target(
             name: "HTMLTemplating",
+            dependencies: [
+                .product(name: "FP", package: "FP"),
+            ]
+        ),
+        .target(
+            name: "Multipeer",
             dependencies: [
                 .product(name: "FP", package: "FP"),
             ]
@@ -53,6 +60,13 @@ let package = Package(
         .testTarget(
             name: "HTMLTemplatingTests",
             dependencies: ["HTMLTemplating"]
+        ),
+        .testTarget(
+            name: "MultipeerTests",
+            dependencies: [
+                "Multipeer",
+                .product(name: "FP", package: "FP"),
+            ]
         ),
         .testTarget(
             name: "NetworkClientTests",

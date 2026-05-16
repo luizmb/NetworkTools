@@ -10,6 +10,7 @@ A suite of Swift packages for HTML templating, HTTP client networking, and HTTP 
 
 - [Core](#core) — codec layer, `Loading` lifecycle enum, and Combine helpers shared by the other packages
 - [HTMLTemplating](#htmltemplating) — file-based HTML template engine with `{{}}` directives
+- [Multipeer](#multipeer) — `MultipeerConnectivity` wrapper exposing Combine and `DeferredTask`/`DeferredStream` APIs side by side
 - [NetworkClient](#networkclient) — composable HTTP client built on `URLSession` and Combine
 - [NetworkServer](#networkserver) — embedded NIO-backed HTTP server with a typed functional routing DSL
 
@@ -1163,6 +1164,271 @@ startServer(port: 8080, router: router).runReader(
     WebEnv(templates: .live(path: "/app/templates"), db: myDB)
 )
 ```
+
+---
+
+## Multipeer
+
+A wrapper around `MultipeerConnectivity` exposing **both a Combine API and a `DeferredTask`/`DeferredStream` API side by side**, implemented independently so the deferred-concurrency path stays Combine-free (and portable as a shape to non-Apple transports — see [Cross-platform notes](#cross-platform-notes-multipeer)).
+
+> **Platform availability:** the whole target is gated on `#if canImport(MultipeerConnectivity)`. On watchOS and Linux the target compiles to an empty module — using any of these symbols requires iOS / macOS / tvOS / visionOS.
+
+### Architecture
+
+Every event source has two parallel surfaces — advertising, browsing, and session traffic each ship a `Publisher` form and a `DeferredStream` form, fed by independent delegate plumbing. The session's one-shot operations (`invite`, `send`, `sendToAll`) ship in both flavours too.
+
+| Concept                | Combine                                         | Deferred concurrency                                  |
+| ---------------------- | ----------------------------------------------- | ----------------------------------------------------- |
+| Advertising            | `MultipeerAdvertiserPublisher`                  | `multipeerAdvertiserStream(...)`                      |
+| Browsing               | `MultipeerBrowserPublisher`                     | `multipeerBrowserStream(...)`                         |
+| Connection events      | `MultipeerSession.connections`                  | `MultipeerSession.connectionsStream`                  |
+| Incoming traffic       | `MultipeerSession.messages`                     | `MultipeerSession.messagesStream`                     |
+| Invite a peer          | `session.invite(peer:browser:context:timeout:)` | `session.inviteTask(peer:browser:context:timeout:)`   |
+| Send to one peer       | `session.send(_:to:reliable:)`                  | `session.sendTask(_:to:reliable:)`                    |
+| Send to all peers      | `session.sendToAll(_:reliable:)`                | `session.sendToAllTask(_:reliable:)`                  |
+
+The Combine side uses `PassthroughSubject`s; the deferred side uses an `AsyncMulticaster<Element>` (a lock-protected fan-out of `AsyncStream` continuations). Delegate methods feed both, so subscribing to one surface never costs anything on the other.
+
+### Setting up a session
+
+```swift
+import Combine
+import Multipeer
+import MultipeerConnectivity
+
+let me = MCPeerID(displayName: "device-A")
+let session = MultipeerSession(myselfAsPeer: me)
+```
+
+### Advertising
+
+#### Combine
+
+`MultipeerAdvertiserPublisher` creates a fresh `MCNearbyServiceAdvertiser` per subscription and stops it on cancel.
+
+```swift
+let advertising = MultipeerAdvertiserPublisher(
+    myselfAsPeer: me,
+    serviceType: "ms-chat",
+    discoveryInfo: ["role": "host"]
+)
+.sink(
+    receiveCompletion: { print("advertiser stopped: \($0)") },
+    receiveValue: { event in
+        if case let .didReceiveInvitationFromPeer(_, _, accept) = event {
+            accept(true, session.session)   // accept every invitation
+        }
+    }
+)
+// advertising.cancel() stops advertising
+```
+
+#### DeferredStream
+
+`multipeerAdvertiserStream(...)` returns a `DeferredStream<Result<MultipeerAdvertiserEvent, Error>>`. A fresh advertiser is created on each `for await` iteration; advertising stops when the iterator terminates.
+
+```swift
+let stream = multipeerAdvertiserStream(myselfAsPeer: me, serviceType: "ms-chat")
+
+let task = Task {
+    for await event in stream {
+        switch event {
+        case .success(.didReceiveInvitationFromPeer(_, _, let accept)):
+            accept(true, session.session)
+        case .failure(let error):
+            print("advertiser failed: \(error)")
+        }
+    }
+}
+// task.cancel() stops advertising
+```
+
+### Browsing
+
+#### Combine
+
+```swift
+let browsing = MultipeerBrowserPublisher(myselfAsPeer: me, serviceType: "ms-chat")
+    .sink(
+        receiveCompletion: { _ in },
+        receiveValue: { event in
+            switch event {
+            case let .foundPeer(remote, info, browser):
+                print("found \(remote.displayName) info=\(info ?? [:])")
+                browser.invitePeer(remote, to: session.session, withContext: nil, timeout: 10)
+            case let .lostPeer(remote):
+                print("lost \(remote.displayName)")
+            }
+        }
+    )
+```
+
+#### DeferredStream
+
+```swift
+Task {
+    for await event in multipeerBrowserStream(myselfAsPeer: me, serviceType: "ms-chat") {
+        switch event {
+        case .success(.foundPeer(let remote, _, let browser)):
+            browser.invitePeer(remote, to: session.session, withContext: nil, timeout: 10)
+        case .success(.lostPeer(let remote)):
+            print("lost \(remote.displayName)")
+        case .failure(let error):
+            print("browser failed: \(error)")
+        }
+    }
+}
+```
+
+### Session lifecycle (connections + traffic)
+
+#### Combine
+
+```swift
+let connectionsToken = session.connections.sink { event in
+    switch event {
+    case .peerIsConnecting(let p, _): print("connecting: \(p.displayName)")
+    case .peerConnected(let p, _):    print("connected: \(p.displayName)")
+    case .peerDisconnected(let p, _): print("disconnected: \(p.displayName)")
+    }
+}
+
+let messagesToken = session.messages.sink { msg in
+    if case .data(let payload, let from, _) = msg {
+        print("\(from.displayName) sent \(payload.count) bytes")
+    }
+}
+```
+
+#### DeferredStream
+
+```swift
+Task {
+    for await event in session.connectionsStream {
+        switch event {
+        case .peerIsConnecting(let p, _): print("connecting: \(p.displayName)")
+        case .peerConnected(let p, _):    print("connected: \(p.displayName)")
+        case .peerDisconnected(let p, _): print("disconnected: \(p.displayName)")
+        }
+    }
+}
+
+Task {
+    for await msg in session.messagesStream {
+        if case .data(let payload, let from, _) = msg {
+            print("\(from.displayName) sent \(payload.count) bytes")
+        }
+    }
+}
+```
+
+Both `messagesStream` and `connectionsStream` are multicast — every `for await` registers a fresh continuation, so multiple consumers can read the same session independently.
+
+### Inviting a peer
+
+#### Combine
+
+`invite` returns a `Publisher` that emits the peer each time it becomes connected (the invitation is sent on subscription).
+
+```swift
+let inviteToken = session
+    .invite(peer: remote, browser: browser, context: nil, timeout: 10)
+    .first()
+    .sink { joined in print("\(joined.displayName) joined the session") }
+```
+
+#### DeferredTask
+
+`inviteTask` returns a `DeferredTask<MCPeerID?>` that suspends until the peer first becomes connected, returning `nil` if the session ends first. The continuation is registered **before** the invite is sent, so the connect event can never race past it.
+
+```swift
+let joined = await session
+    .inviteTask(peer: remote, browser: browser, context: nil, timeout: 10)
+    .run()
+
+if let joined {
+    print("\(joined.displayName) joined the session")
+}
+```
+
+### Sending data
+
+The synchronous Combine flavour returns `Result<Void, Error>` immediately; the deferred flavour wraps the same call in a `DeferredTask` for composition with the rest of the FP toolkit.
+
+```swift
+// Sync (Combine-friendly):
+let result = session.send(Data("ping".utf8), to: remote, reliable: true)
+let broadcast = session.sendToAll(Data("hello all".utf8))
+
+// DeferredTask:
+let resultTask     = session.sendTask(Data("ping".utf8), to: remote, reliable: true)
+let broadcastTask  = session.sendToAllTask(Data("hello all".utf8))
+
+let result    = await resultTask.run()
+let broadcast = await broadcastTask.run()
+```
+
+### FP composition
+
+Because `sendTask` returns a `DeferredTask<Result<Void, Error>>`, it slots into the FP toolkit (`flatMap`, `>=>`, `ZIO`, etc.). Example: chain three sends as one referentially-transparent task and run it lazily.
+
+```swift
+import FP
+
+let send: (String, MCPeerID) -> DeferredTask<Result<Void, Error>> = { text, peer in
+    session.sendTask(Data(text.utf8), to: peer)
+}
+
+let handshake = send("hello", remote)
+    .flatMap { _ in send("world", remote) }
+    .flatMap { _ in send("done",  remote) }
+
+_ = await handshake.run()
+```
+
+### Mixing both surfaces
+
+The Combine and deferred-concurrency surfaces share a single underlying `MCSession` — pick the one that fits each callsite without paying for the other. A SwiftUI binding can subscribe through `messages`, while a long-running domain task reads `messagesStream`.
+
+```swift
+final class ChatViewModel: ObservableObject {
+    @Published var transcript: [String] = []
+    private var cancellables = Set<AnyCancellable>()
+
+    init(session: MultipeerSession) {
+        // UI path: Combine -> @Published
+        session.messages
+            .compactMap { msg -> String? in
+                guard case .data(let data, let from, _) = msg else { return nil }
+                return "\(from.displayName): \(String(data: data, encoding: .utf8) ?? "?")"
+            }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] line in self?.transcript.append(line) }
+            .store(in: &cancellables)
+
+        // Persistence path: DeferredStream -> background task
+        Task.detached {
+            for await msg in session.messagesStream {
+                if case .data(let data, let from, _) = msg {
+                    await ChatStore.shared.append(data, from: from)
+                }
+            }
+        }
+    }
+}
+```
+
+### Cross-platform notes (Multipeer)
+
+`MultipeerConnectivity` is an Apple framework — it has no Linux port and isn't expected to get one. Every Multipeer source file is wrapped in `#if canImport(MultipeerConnectivity)`, so the package itself **still builds on Linux** with the Multipeer target compiled to an empty module; you just can't construct any of its symbols there.
+
+The deferred-concurrency surface (`DeferredStream`, `DeferredTask`, `AsyncMulticaster`) is intentionally Combine-free. To run the **same shape** of API on Linux, the path is:
+
+1. Define a transport-agnostic protocol that abstracts the three pieces — advertise, browse, session — leaving the existing MC types as the Apple implementation.
+2. Provide a Linux implementation (e.g. Bonjour / DNS-SD via `swift-nio` or `libavahi`, or a UDP-multicast + TCP layer of your own).
+3. The `DeferredStream` / `DeferredTask` plumbing carries over unchanged — it depends only on `Foundation` and `AsyncStream`, both available on Linux.
+
+Until that protocol exists, treat the Multipeer target as Apple-only and rely on the `canImport` guard to keep cross-platform consumers compiling.
 
 ---
 
