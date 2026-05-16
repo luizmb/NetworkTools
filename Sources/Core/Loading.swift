@@ -59,7 +59,7 @@ public enum Loading<Success: Sendable, Failure: Error & Sendable>: Sendable {
     ///     state.detail = movie
     /// }
     /// ```
-    public enum prism {
+    public enum prism { // swiftlint:disable:this type_name
         /// Prism for `.idle`.
         public static var idle: CoreFP.Prism<Loading, Void> {
             CoreFP.prism(
@@ -168,7 +168,7 @@ extension Loading {
         case .idle:                          .idle
         case .loading(let prev):             .loading(previous: prev.map(f))
         case .loaded(let value):             .loaded(f(value))
-        case .failed(let err, let prev):     .failed(err, previous: prev.map(f))
+        case let .failed(err, prev):         .failed(err, previous: prev.map(f))
         }
     }
 }
@@ -193,14 +193,14 @@ extension Loading {
         switch (left, right) {
         case (.failed(let err, _), _),
              (_, .failed(let err, _)):
-            .failed(err, previous: Optional<(Left, Right)>.zip(left.loadedOrPrevious, right.loadedOrPrevious))
+            .failed(err, previous: (Left, Right)?.zip(left.loadedOrPrevious, right.loadedOrPrevious))
         case (.idle, _), (_, .idle):
             .idle
         case (.loading(let l), _):
-            .loading(previous: Optional<(Left, Right)>.zip(l, right.loadedOrPrevious))
+            .loading(previous: (Left, Right)?.zip(l, right.loadedOrPrevious))
         case (_, .loading(let r)):
-            .loading(previous: Optional<(Left, Right)>.zip(left.loadedOrPrevious, r))
-        case (.loaded(let l), .loaded(let r)):
+            .loading(previous: (Left, Right)?.zip(left.loadedOrPrevious, r))
+        case let (.loaded(l), .loaded(r)):
             .loaded((l, r))
         }
     }
@@ -219,7 +219,7 @@ extension Loading {
             .loading(previous: prev.flatMap { f($0).loadedOrPrevious })
         case .loaded(let value):
             f(value)
-        case .failed(let err, let prev):
+        case let .failed(err, prev):
             .failed(err, previous: prev.flatMap { f($0).loadedOrPrevious })
         }
     }
