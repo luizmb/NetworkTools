@@ -334,15 +334,21 @@ let stringDecoder: Convert<String, User, DecodingError> =
 
 ### `AnyPublisher` — bridging to `DeferredTask` (Combine)
 
-Two extension overloads convert a Combine publisher into a `DeferredTask`, bridging into async/await contexts:
+The bridge from Combine into `DeferredTask` lives in `FP` (`AnyPublisher.toDeferredTask()`), not in `Core` — `Core` simply re-exports `FP`. Two overloads:
 
 ```swift
-// Infallible publisher — DeferredTask<Output>:
-let task: DeferredTask<Int> = someIntPublisher.asDeferredTask()
+// Infallible publisher — DeferredTask<Output?> (nil if the publisher
+// completes without emitting):
+let task: DeferredTask<Int?> = someIntPublisher.toDeferredTask()
 
-// Failable publisher — DeferredTask<Result<Output, Failure>>:
-let task: DeferredTask<Result<User, HTTPError>> = somePublisher.asDeferredTask()
+// Failable publisher — DeferredTask<Result<Output, any Error>>:
+//   value emitted          → .success(value)
+//   publisher fails        → .failure(originalError) as any Error
+//   completes with nothing → .failure(EmptyPublisherError())
+let task: DeferredTask<Result<User, any Error>> = somePublisher.toDeferredTask()
 ```
+
+The failure type widens to `any Error` so the bridge can synthesize `EmptyPublisherError` when a failable publisher completes without ever emitting. Callers needing the original typed failure back can downcast with `as?` inside `.mapError`.
 
 ### `Loading<Success, Failure>`
 
