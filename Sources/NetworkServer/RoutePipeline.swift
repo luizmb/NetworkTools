@@ -50,15 +50,30 @@ public extension ZIOKleisli {
 #if canImport(Combine)
 import Combine
 
+private extension AnyPublisher where Output: Sendable, Failure == ResponseError {
+    // FP's failable `toDeferredTask` widens Failure to `any Error` so it can synthesize
+    // `EmptyPublisherError` on no-emit completion. Here the publisher's `Failure` is
+    // already `ResponseError`, so the downcast always succeeds for genuine failures —
+    // only an `EmptyPublisherError` falls through, and a handler that produces no
+    // response is a server-side bug, hence the 500.
+    func toResponseTask() -> DeferredTask<Result<Output, ResponseError>> {
+        toDeferredTask().map { result in
+            result.mapError { e in
+                (e as? ResponseError) ?? .serverError("Publisher completed without emitting a response")
+            }
+        }
+    }
+}
+
 public extension ZIOKleisli {
     static func response<U, Q, B>(_ handler: @escaping @Sendable (Input, Env) -> any Publisher<Success, Failure>)
     -> ZIOKleisli where Input == TypedRequest<U, Q, B>, Success == Response, Failure == ResponseError, Env: Sendable {
-        ZIOKleisli { req in ZIO { env in handler(req, env).eraseToAnyPublisher().asDeferredTask() } }
+        ZIOKleisli { req in ZIO { env in handler(req, env).eraseToAnyPublisher().toResponseTask() } }
     }
 
     static func response<U, Q, B>(_ handler: @escaping @Sendable (Input) -> any Publisher<Success, Failure>)
     -> ZIOKleisli where Input == TypedRequest<U, Q, B>, Success == Response, Failure == ResponseError, Env: Sendable {
-        ZIOKleisli { req in ZIO { _ in handler(req).eraseToAnyPublisher().asDeferredTask() } }
+        ZIOKleisli { req in ZIO { _ in handler(req).eraseToAnyPublisher().toResponseTask() } }
     }
 }
 #endif
