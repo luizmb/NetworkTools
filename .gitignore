@@ -2,6 +2,7 @@
 .build/
 *.resolved
 .swiftpm/
+.docs/
 
 # Claude Code
 .claude/settings.local.json
