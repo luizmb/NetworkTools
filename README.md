@@ -8,7 +8,7 @@ A suite of Swift packages for HTML templating, HTTP client networking, and HTTP 
 
 ## Packages
 
-- [Core](#core) — codec layer, `Loading` lifecycle enum, and Combine helpers shared by the other packages
+- [Core](#core) — codec layer and Combine helpers shared by the other packages
 - [HTMLTemplating](#htmltemplating) — file-based HTML template engine with `{{}}` directives
 - [Multipeer](#multipeer) — `MultipeerConnectivity` wrapper exposing Combine and `DeferredTask`/`DeferredStream` APIs side by side
 - [NetworkClient](#networkclient) — composable HTTP client built on `URLSession` and Combine
@@ -251,7 +251,7 @@ All IO is fully contained in the environment — `render` never touches the file
 
 ## Core
 
-Shared building blocks used by all three packages. The most broadly useful surfaces are the codec layer (with its Combine extensions) and the `Loading` lifecycle enum.
+Shared building blocks used by all three packages — the codec layer (with its Combine extensions) and the `Convert` function-wrapper. The `Loading<Success, Failure>` lifecycle enum used to live here; it now lives in [FP's `DataStructure` module](https://github.com/luizmb/FP/blob/main/docs/types/Loading.md) (from `v1.7.0` onwards) so any project can use it. Add `import DataStructure` to access it.
 
 ### `Convert<Input, Output, Failure>`
 
@@ -350,76 +350,6 @@ let task: DeferredTask<Result<User, any Error>> = somePublisher.toDeferredTask()
 ```
 
 The failure type widens to `any Error` so the bridge can synthesize `EmptyPublisherError` when a failable publisher completes without ever emitting. Callers needing the original typed failure back can downcast with `as?` inside `.mapError`.
-
-### `Loading<Success, Failure>`
-
-A four-state lifecycle for async operations — `idle`, `loading`, `loaded`, `failed` — that doubles as a UI-friendly state machine. The `loading` and `failed` cases carry an optional `previous` value so views can keep displaying stale data while refreshing or after an error.
-
-```swift
-public enum Loading<Success: Sendable, Failure: Error & Sendable>: Sendable {
-    case idle
-    case loading(previous: Success?)
-    case loaded(Success)
-    case failed(Failure, previous: Success?)
-}
-```
-
-Typical drive-it-with-a-`Result` flow:
-
-```swift
-var state: Loading<[Movie], NetworkError> = .idle
-
-state = state.startLoading()
-// .loading(previous: nil)
-
-state = state.applying(.success([movie1, movie2]))
-// .loaded([movie1, movie2])
-
-let rows = state.loadedOrPrevious ?? []
-```
-
-#### Transitions and accessors
-
-```swift
-state.startLoading()                  // → .loading(previous: loadedOrPrevious)
-state.applying(.success(value))       // → .loaded(value)
-state.applying(.failure(error))       // → .failed(error, previous: loadedOrPrevious)
-Loading.from(result)                  // build from a Result, with no prior context
-
-state.loadedOrPrevious                // Success?  — current loaded or last-known value
-state.isLoading                       // Bool
-state.error                           // Failure?  — error if .failed, else nil
-```
-
-#### Functor / Applicative / Monad / Catch
-
-```swift
-loading.map { $0.uppercased() }                            // transform Success, preserving previous
-Loading<(L, R), E>.zip(left: Loading<L, E>, right: …)      // combine two Loadings sharing Failure
-loading.flatMap { value in someOtherLoading(value) }       // chain; non-loaded states pass through
-loading.catch { error in .loaded(fallback) }               // recover from .failed
-```
-
-`zip` precedence: any `.failed` wins (carrying the first error and pairing both sides' `loadedOrPrevious` into the result's `previous`); otherwise `.idle` wins; otherwise `.loading` wins; otherwise both sides are `.loaded` and the result is a pair.
-
-#### Prisms
-
-Each case exposes a `CoreFP.Prism` for SwiftRex receive assertions and FP composition. The namespace mirrors what FP's `@Prisms` macro generates, but is hand-written here because Swift forbids static stored properties on generic types:
-
-```swift
-Loading<Movie, NetworkError>.prism.idle      // Prism<Loading<…>, Void>
-Loading<Movie, NetworkError>.prism.loading   // Prism<Loading<…>, Movie?>
-Loading<Movie, NetworkError>.prism.loaded    // Prism<Loading<…>, Movie>
-Loading<Movie, NetworkError>.prism.failed    // Prism<Loading<…>, (NetworkError, Movie?)>
-
-store.receive(Loading<Movie, NetworkError>.prism.loaded) { movie, state in
-    state.detail = movie
-}
-```
-
-`Loading` conforms to `Equatable` and `Hashable` when `Success` and `Failure` do.
-
----
 
 ## NetworkClient
 
