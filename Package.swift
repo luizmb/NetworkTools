@@ -17,7 +17,7 @@ let package = Package(
         .library(name: "NetworkServer",   targets: ["NetworkServer"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/luizmb/FP.git", from: "1.7.0"),
+        .package(url: "https://github.com/luizmb/FP.git", from: "1.8.1"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.4.0"),
     ],

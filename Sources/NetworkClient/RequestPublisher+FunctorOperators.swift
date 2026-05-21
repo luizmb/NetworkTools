@@ -6,23 +6,23 @@ import FP
 // MARK: - RequestPublisher Functor Operators
 
 // (<$>) :: (a -> b) -> RequestPublisher<a> -> RequestPublisher<b>
-public func <£> <A, B>(_ f: @escaping (A) -> B, _ r: RequestPublisher<A>) -> RequestPublisher<B> {
+public func <£> <A, B: Sendable>(_ f: @escaping @Sendable (A) -> B, _ r: RequestPublisher<A>) -> RequestPublisher<B> {
     r.map(f)
 }
 
 // (<&>) :: RequestPublisher<a> -> (a -> b) -> RequestPublisher<b>
-public func <&> <A, B>(_ r: RequestPublisher<A>, _ f: @escaping (A) -> B) -> RequestPublisher<B> {
+public func <&> <A, B: Sendable>(_ r: RequestPublisher<A>, _ f: @escaping @Sendable (A) -> B) -> RequestPublisher<B> {
     r.map(f)
 }
 
 // ($>) :: RequestPublisher<a> -> b -> RequestPublisher<b>
 // swiftlint:disable:next identifier_name
-public func £> <A, B>(_ r: RequestPublisher<A>, _ value: B) -> RequestPublisher<B> {
+public func £> <A, B: Sendable>(_ r: RequestPublisher<A>, _ value: B) -> RequestPublisher<B> {
     r.replace(with: value)
 }
 
 // (<$) :: b -> RequestPublisher<a> -> RequestPublisher<b>
-public func <£ <A, B>(_ value: B, _ r: RequestPublisher<A>) -> RequestPublisher<B> {
+public func <£ <A, B: Sendable>(_ value: B, _ r: RequestPublisher<A>) -> RequestPublisher<B> {
     r £> value
 }
 #endif

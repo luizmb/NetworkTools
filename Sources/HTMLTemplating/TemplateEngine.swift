@@ -62,7 +62,7 @@ public struct HTMLEnvironment {
 
 public typealias Context = [String: TemplateValue]
 
-public indirect enum TemplateValue {
+public indirect enum TemplateValue: Sendable {
     case string(String)
     case list([Context])
     case bool(Bool)

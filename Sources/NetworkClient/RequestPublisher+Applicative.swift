@@ -6,7 +6,7 @@ import Foundation
 
 public extension RequestPublisher {
     /// Lifts a pure value into `RequestPublisher`, ignoring the `URLRequest`.
-    static func pure(_ value: A) -> RequestPublisher<A> {
+    static func pure(_ value: A) -> RequestPublisher<A> where A: Sendable {
         RequestPublisher { _ in
             Just(value).setFailureType(to: HTTPError.self).eraseToAnyPublisher()
         }
@@ -14,7 +14,7 @@ public extension RequestPublisher {
 
     /// Applies a request-dependent function to a request-dependent value.
     /// Both are run against the same `URLRequest` and zipped.
-    static func apply<B>(_ f: RequestPublisher<(A) -> B>, _ r: RequestPublisher<A>) -> RequestPublisher<B> {
+    static func apply<B>(_ f: RequestPublisher<@Sendable (A) -> B>, _ r: RequestPublisher<A>) -> RequestPublisher<B> {
         RequestPublisher<B> { request in
             f.run(request)
                 .zip(r.run(request))

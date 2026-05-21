@@ -44,7 +44,7 @@ private func firstResult<O, E: Error>(of publisher: AnyPublisher<O, E>) -> Resul
 
 // MARK: - RequestPublisher builders
 
-private func just<A>(_ value: A) -> RequestPublisher<A> {
+private func just<A: Sendable>(_ value: A) -> RequestPublisher<A> {
     RequestPublisher { _ in Just(value).setFailureType(to: HTTPError.self).eraseToAnyPublisher() }
 }
 
@@ -284,17 +284,17 @@ struct RequestPublisherFunctorTests {
 @Suite("RequestPublisher — Applicative")
 struct RequestPublisherApplicativeTests {
     @Test func apply_combinesFunctionAndValue() {
-        let f = RequestPublisher<(Int) -> String>.pure(String.init)
+        let f = RequestPublisher<@Sendable (Int) -> String>.pure(String.init)
         #expect(run(RequestPublisher.apply(f, just(42)))?.successValue == "42")
     }
 
     @Test func apply_propagatesLeftFailure() {
-        let f = fail(.badStatus(500, Data())) as RequestPublisher<(Int) -> Int>
+        let f = fail(.badStatus(500, Data())) as RequestPublisher<@Sendable (Int) -> Int>
         #expect(run(RequestPublisher.apply(f, just(1)))?.isFailure == true)
     }
 
     @Test func apply_propagatesRightFailure() {
-        let f = just { (n: Int) in n + 1 }
+        let f = just({ @Sendable (n: Int) in n + 1 } as @Sendable (Int) -> Int)
         let a = fail(.badStatus(500, Data())) as RequestPublisher<Int>
         #expect(run(RequestPublisher.apply(f, a))?.isFailure == true)
     }
@@ -326,14 +326,14 @@ struct RequestPublisherMonadTests {
     }
 
     @Test func kleisli_composes() {
-        let f: (String) -> RequestPublisher<Int> = { s in just(s.count) }
-        let g: (Int) -> RequestPublisher<String> = { n in just("\(n)") }
+        let f: @Sendable (String) -> RequestPublisher<Int> = { s in just(s.count) }
+        let g: @Sendable (Int) -> RequestPublisher<String> = { n in just("\(n)") }
         #expect(run(RequestPublisher.kleisli(f, g)("hello"))?.successValue == "5")
     }
 
     @Test func kleisliBack_composes() {
-        let f: (String) -> RequestPublisher<Int> = { s in just(s.count) }
-        let g: (Int) -> RequestPublisher<String> = { n in just("\(n)") }
+        let f: @Sendable (String) -> RequestPublisher<Int> = { s in just(s.count) }
+        let g: @Sendable (Int) -> RequestPublisher<String> = { n in just("\(n)") }
         #expect(run(RequestPublisher.kleisliBack(g, f)("hello"))?.successValue == "5")
     }
 
@@ -356,7 +356,7 @@ struct RequestPublisherOperatorTests {
     @Test func replaceLeftOp() { #expect(run("r" <£ just(5))?.successValue == "r") }
 
     @Test func applyOp() {
-        let f = just { (n: Int) in n + 1 }
+        let f = just({ @Sendable (n: Int) in n + 1 } as @Sendable (Int) -> Int)
         #expect(run(f <*> just(41))?.successValue == 42)
     }
     @Test func seqRightOp() { #expect(run(just(1) *> just("k"))?.successValue == "k") }
@@ -366,13 +366,13 @@ struct RequestPublisherOperatorTests {
     @Test func flippedBindOp() { #expect(run({ n in just(n * n) } -<< just(3))?.successValue == 9) }
 
     @Test func kleisliOp() {
-        let f: (Int) -> RequestPublisher<Int> = { n in just(n + 1) }
-        let g: (Int) -> RequestPublisher<String> = { n in just("\(n)") }
+        let f: @Sendable (Int) -> RequestPublisher<Int> = { n in just(n + 1) }
+        let g: @Sendable (Int) -> RequestPublisher<String> = { n in just("\(n)") }
         #expect(run((f >=> g)(41))?.successValue == "42")
     }
     @Test func kleisliBackOp() {
-        let f: (Int) -> RequestPublisher<Int> = { n in just(n + 1) }
-        let g: (Int) -> RequestPublisher<String> = { n in just("\(n)") }
+        let f: @Sendable (Int) -> RequestPublisher<Int> = { n in just(n + 1) }
+        let g: @Sendable (Int) -> RequestPublisher<String> = { n in just("\(n)") }
         #expect(run((g <=< f)(41))?.successValue == "42")
     }
 }
