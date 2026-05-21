@@ -6,22 +6,22 @@ import Foundation
 
 public extension RequestPublisher {
     /// Transforms the output value; the same `URLRequest` is threaded through unchanged.
-    func map<B>(_ f: @escaping (A) -> B) -> RequestPublisher<B> {
+    func map<B: Sendable>(_ f: @escaping @Sendable (A) -> B) -> RequestPublisher<B> {
         RequestPublisher<B> { request in run(request).map(f).eraseToAnyPublisher() }
     }
 
     /// Curried fmap for point-free composition.
-    static func fmap<B>(_ f: @escaping (A) -> B) -> (RequestPublisher<A>) -> RequestPublisher<B> {
+    static func fmap<B: Sendable>(_ f: @escaping @Sendable (A) -> B) -> @Sendable (RequestPublisher<A>) -> RequestPublisher<B> {
         { $0.map(f) }
     }
 
     /// Replaces the output with a constant value.
-    func replace<B>(with value: B) -> RequestPublisher<B> {
-        map { _ in value }
+    func replace<B: Sendable>(with value: B) -> RequestPublisher<B> {
+        map { @Sendable _ in value }
     }
 
     /// Maps the failure side of the underlying publisher.
-    func mapError(_ f: @escaping (HTTPError) -> HTTPError) -> RequestPublisher<A> {
+    func mapError(_ f: @escaping @Sendable (HTTPError) -> HTTPError) -> RequestPublisher<A> {
         RequestPublisher { request in run(request).mapError(f).eraseToAnyPublisher() }
     }
 }

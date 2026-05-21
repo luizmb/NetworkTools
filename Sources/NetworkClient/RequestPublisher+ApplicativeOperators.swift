@@ -6,7 +6,7 @@ import FP
 // MARK: - RequestPublisher Applicative Operators
 
 // (<*>) :: RequestPublisher<(a -> b)> -> RequestPublisher<a> -> RequestPublisher<b>
-public func <*> <A, B>(_ f: RequestPublisher<(A) -> B>, _ r: RequestPublisher<A>) -> RequestPublisher<B> {
+public func <*> <A, B>(_ f: RequestPublisher<@Sendable (A) -> B>, _ r: RequestPublisher<A>) -> RequestPublisher<B> {
     RequestPublisher.apply(f, r)
 }
 
