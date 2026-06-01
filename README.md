@@ -8,11 +8,13 @@ A suite of Swift packages for HTML templating, HTTP client networking, and HTTP 
 
 ## Packages
 
-- [Core](#core) — codec layer and Combine helpers shared by the other packages
+- [Core](#core) — codec layer, `DemandBuffer`, and Combine helpers shared by the other packages
 - [HTMLTemplating](#htmltemplating) — file-based HTML template engine with `{{}}` directives
 - [Multipeer](#multipeer) — `MultipeerConnectivity` wrapper exposing Combine and `DeferredTask`/`DeferredStream` APIs side by side
 - [NetworkClient](#networkclient) — composable HTTP client built on `URLSession` and Combine
 - [NetworkServer](#networkserver) — embedded NIO-backed HTTP server with a typed functional routing DSL
+- [WebSocketClient](#websocketclient) — full-duplex WebSocket client with Combine (`WebSocket`) and async (`WebSocketConnection`) APIs
+- [BonjourService](#bonjourservice) — Bonjour discovery and advertising with Combine publishers and `DeferredStream` on both sides
 
 ---
 
@@ -26,10 +28,12 @@ A suite of Swift packages for HTML templating, HTTP client networking, and HTTP 
 Add individual products to your targets as needed:
 
 ```swift
-.product(name: "Core",           package: "NetworkTools"),
-.product(name: "HTMLTemplating", package: "NetworkTools"),
-.product(name: "NetworkClient",  package: "NetworkTools"),
-.product(name: "NetworkServer",  package: "NetworkTools"),
+.product(name: "Core",            package: "NetworkTools"),
+.product(name: "HTMLTemplating",  package: "NetworkTools"),
+.product(name: "NetworkClient",   package: "NetworkTools"),
+.product(name: "NetworkServer",   package: "NetworkTools"),
+.product(name: "WebSocketClient", package: "NetworkTools"),
+.product(name: "BonjourService",  package: "NetworkTools"),
 ```
 
 ---
@@ -1359,6 +1363,370 @@ The deferred-concurrency surface (`DeferredStream`, `DeferredTask`, `AsyncMultic
 3. The `DeferredStream` / `DeferredTask` plumbing carries over unchanged — it depends only on `Foundation` and `AsyncStream`, both available on Linux.
 
 Until that protocol exists, treat the Multipeer target as Apple-only and rely on the `canImport` guard to keep cross-platform consumers compiling.
+
+---
+
+## WebSocketClient
+
+Full-duplex WebSocket client with **two parallel APIs**: a Combine `WebSocket` class and a
+lazy `WebSocketConnection` value for `DeferredTask` / `DeferredStream` composition.
+
+### Combine API
+
+```swift
+import Combine
+import WebSocketClient
+
+var cancellables = Set<AnyCancellable>()
+
+let socket = URLSession.shared.webSocket(with: URL(string: "wss://echo.example.com")!)
+
+// Receive — task starts on first subscriber demand
+socket.publisher
+    .sink(
+        receiveCompletion: { print("closed:", $0) },
+        receiveValue: { message in
+            if case .string(let text) = message { print("←", text) }
+        }
+    )
+    .store(in: &cancellables)
+
+// Send — lazy: write fires only when subscribed
+socket.send("hello")
+    .sink(receiveCompletion: { _ in }, receiveValue: { print("sent") })
+    .store(in: &cancellables)
+
+// Periodic health-check
+socket.startPinging(every: 30)
+    .sink(receiveCompletion: { _ in }, receiveValue: { _ in })
+    .store(in: &cancellables)
+```
+
+Custom headers (auth):
+
+```swift
+var req = URLRequest(url: URL(string: "wss://api.example.com/ws")!)
+req.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+let socket = URLSession.shared.webSocket(with: req)
+```
+
+Echo round-trip:
+
+```swift
+socket.publisher
+    .compactMap { if case .string(let t) = $0 { return t } else { return nil } }
+    .flatMap(maxPublishers: .max(1)) { socket.send("echo: \($0)") }
+    .sink(receiveCompletion: { _ in }, receiveValue: { })
+    .store(in: &cancellables)
+```
+
+### Async API (DeferredTask / DeferredStream)
+
+`webSocketConnection(with:)` returns `DeferredTask<WebSocketConnection>` — nothing touches
+the network until `.run()` is called, making connections safe to pass as pure values.
+
+```swift
+import FP
+import WebSocketClient
+
+let connectionTask = URLSession.shared.webSocketConnection(
+    with: URL(string: "wss://echo.example.com")!
+)
+
+// Open the connection (TCP + WebSocket upgrade happen here)
+let conn = await connectionTask.run()
+
+// Send immediately after opening
+_ = await conn.send(.string("hello")).run()
+
+// Stream incoming messages
+for await result in conn.receive {
+    switch result {
+    case .success(.string(let text)): print("←", text)
+    case .success(.data(let bytes)):  print("← \(bytes.count) bytes")
+    case .failure(let err):           print("error:", err); break
+    default: break
+    }
+}
+
+// Close cleanly
+await conn.close.run()
+```
+
+Inside a SwiftRex `Behavior`:
+
+```swift
+import SwiftRex
+import WebSocketClient
+
+let chatBehavior = Behavior<AppAction, AppState, AppEnvironment> { action, _ in
+    guard case .connectChat(let url) = action else { return .doNothing }
+
+    return .produce { ctx in
+        Effect.task {
+            let conn = await ctx.environment.openWebSocket(url).run()
+            // Long-running receive loop
+            for await result in conn.receive {
+                if case .success(.string(let msg)) = result {
+                    return .chatMessageReceived(msg)
+                }
+            }
+            return .chatDisconnected
+        }
+    }
+}
+```
+
+### Testability
+
+`URLSessionWebSocketTaskProtocol` lets you inject a mock:
+
+```swift
+final class MockWebSocketTask: URLSessionWebSocketTaskProtocol {
+    var sentMessages: [URLSessionWebSocketTask.Message] = []
+    var nextResult: Result<URLSessionWebSocketTask.Message, Error>?
+
+    func resume() {}
+    func cancel(with code: URLSessionWebSocketTask.CloseCode, reason: Data?) {}
+    func sendPing(pongReceiveHandler: @escaping @Sendable (Error?) -> Void) { pongReceiveHandler(nil) }
+
+    func send(_ message: URLSessionWebSocketTask.Message,
+              completionHandler: @escaping @Sendable (Error?) -> Void) {
+        sentMessages.append(message); completionHandler(nil)
+    }
+
+    func receive(completionHandler: @escaping @Sendable (Result<URLSessionWebSocketTask.Message, Error>) -> Void) {
+        nextResult.map(completionHandler)
+    }
+}
+```
+
+---
+
+## BonjourService
+
+Bonjour service **discovery** and **advertising** with both Combine publishers and
+`DeferredStream` async APIs. All four combinations are provided:
+
+| Direction | Combine | Async |
+|-----------|---------|-------|
+| Browse    | `NWBrowserPublisher` | `bonjourBrowserStream(...)` |
+| Advertise | `NWListenerPublisher` | `bonjourListenerStream(...)` |
+
+### Browse — Combine
+
+```swift
+import Combine
+import BonjourService
+
+var cancellables = Set<AnyCancellable>()
+
+NWBrowserPublisher(serviceType: "_myapp._tcp.", domain: nil)
+    .sink(
+        receiveCompletion: { completion in
+            switch completion {
+            case .finished: print("stopped")
+            case .failure(.bonjourPermissionDenied): print("need local-network permission")
+            case .failure(.didNotSearch(let err)):   print("error:", err)
+            }
+        },
+        receiveValue: { event in
+            switch event {
+            case .didFind(let endpoint, let txt):
+                print("found:", endpoint, "txt:", txt ?? [:])
+            case .didRemove(let endpoint, _):
+                print("gone:", endpoint)
+            case .didUpdate(_, let new, let txt, _):
+                print("updated to:", new, "txt:", txt ?? [:])
+            }
+        }
+    )
+    .store(in: &cancellables)
+```
+
+Track live service set:
+
+```swift
+NWBrowserPublisher(serviceType: "_http._tcp.", domain: nil)
+    .scan([NWEndpoint]()) { set, event in
+        switch event {
+        case .didFind(let ep, _):             return set + [ep]
+        case .didRemove(let ep, _):           return set.filter { $0 != ep }
+        case .didUpdate(let old, let new, _, _): return set.map { $0 == old ? new : $0 }
+        }
+    }
+    .sink { print("services:", $0) }
+    .store(in: &cancellables)
+```
+
+### Browse — Async
+
+```swift
+import FP
+import BonjourService
+
+Task {
+    for await result in bonjourBrowserStream(serviceType: "_myapp._tcp.") {
+        switch result {
+        case .success(.didFind(let endpoint, let txt)):
+            print("found:", endpoint, "txt:", txt ?? [:])
+        case .success(.didRemove(let endpoint, _)):
+            print("gone:", endpoint)
+        case .failure(let err):
+            print("error:", err)
+        default: break
+        }
+    }
+}
+```
+
+### Advertise — Combine
+
+```swift
+// throws if the port is already in use
+let publisher = try NWListenerPublisher(
+    serviceType: "_myapp._tcp.",
+    serviceName: "My Device",
+    port: .any           // OS assigns; check the .ready event for the actual port
+)
+
+publisher
+    .sink(
+        receiveCompletion: { print("stopped:", $0) },
+        receiveValue: { event in
+            switch event {
+            case .ready(let port):
+                print("advertising on port", port ?? 0)
+            case .newConnection(let connection):
+                connection.start(queue: .main)
+                // set up receive / send on `connection`
+            case .serviceRegistrationChanged(let change):
+                print("registration:", change)
+            }
+        }
+    )
+    .store(in: &cancellables)
+```
+
+With TXT record metadata:
+
+```swift
+var txt = NWTXTRecord()
+txt["version"] = "1.0"
+txt["platform"] = "iOS"
+
+let publisher = try NWListenerPublisher(
+    serviceType: "_myapp._tcp.",
+    serviceName: "My iPhone",
+    txtRecord: txt
+)
+```
+
+### Advertise — Async
+
+```swift
+Task {
+    for await result in bonjourListenerStream(serviceType: "_myapp._tcp.", serviceName: "My Device") {
+        switch result {
+        case .success(.ready(let port)):
+            print("advertising on port", port ?? 0)
+        case .success(.newConnection(let connection)):
+            connection.start(queue: .main)
+            handleIncomingConnection(connection)
+        case .failure(let err):
+            print("error:", err)
+        default: break
+        }
+    }
+}
+```
+
+Inside a SwiftRex `Behavior`:
+
+```swift
+let advertiserBehavior = Behavior<AppAction, AppState, AppEnvironment> { action, _ in
+    guard case .startAdvertising(let name) = action else { return .doNothing }
+    return .produce { _ in
+        Effect.stream {
+            bonjourListenerStream(serviceType: "_myapp._tcp.", serviceName: name)
+                .compactMap { result -> AppAction? in
+                    switch result {
+                    case .success(.ready(let port)):     return .advertisingStarted(port: port)
+                    case .success(.newConnection(let c)): return .clientConnected(c)
+                    case .failure(let err):              return .advertisingFailed(err)
+                    default:                             return nil
+                    }
+                }
+        }
+    }
+}
+```
+
+### Resolve endpoints
+
+```swift
+// Resolve a host/port to a concrete address
+NWEndpoint.hostPort(host: "api.example.com", port: 443)
+    .publisher()
+    .sink(receiveCompletion: { _ in }, receiveValue: { resolved in
+        print("host:", resolved.hostname ?? "?", "port:", resolved.port ?? 0)
+    })
+    .store(in: &cancellables)
+
+// Resolve a Bonjour service endpoint
+NWEndpoint.service(name: "My Server", type: "_http._tcp.", domain: "local.", interface: nil)
+    .publisher()
+    .sink(receiveCompletion: { _ in }, receiveValue: { resolved in
+        if case .service(let ns, _, _) = resolved {
+            print("IPs:", ns.parsedAddresses(), "port:", ns.port)
+        }
+    })
+    .store(in: &cancellables)
+```
+
+### Legacy NetService API
+
+```swift
+// Browse with NetServiceBrowser
+NetServiceBrowser()
+    .publisher(serviceOfType: "_ssh._tcp.", inDomain: "local.")
+    .sink(receiveCompletion: { _ in }, receiveValue: { event in
+        if case .didFind(let service, _) = event.type {
+            service.publisher(monitorDevice: .doNotMonitorTXTUpdates, timeout: 5)
+                .compactMap { e -> [String]? in
+                    guard case .didResolveAddress = e.type else { return nil }
+                    return e.netService.parsedAddresses()
+                }
+                .first()
+                .sink { print("SSH IPs:", $0) }
+                .store(in: &cancellables)
+        }
+    })
+    .store(in: &cancellables)
+
+// Monitor TXT record changes
+NetService(domain: "local.", type: "_airplay._tcp.", name: "Apple TV")
+    .publisher(monitorDevice: .keepMonitoringTXTUpdates)
+    .compactMap { e -> [String: Data]? in
+        guard case let .didUpdateTXTRecord(txt) = e.type else { return nil }
+        return txt
+    }
+    .sink { print("AirPlay TXT updated:", $0) }
+    .store(in: &cancellables)
+```
+
+### IP address helper
+
+```swift
+let addr = IP("192.168.1.100")   // .ipv4
+let v6   = IP("::1")             // .ipv6
+
+print(addr?.ipString)    // "192.168.1.100"
+print(v6?.ipUrlString)   // "[::1]"   ← brackets for URL use
+
+// Prefer IPv6 over IPv4 in a list
+let preferred = [IP("192.168.1.1")!, IP("::1")!].preferredAddress // → .ipv6(::1)
+```
 
 ---
 
