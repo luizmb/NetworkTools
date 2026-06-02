@@ -5,30 +5,17 @@ import FP
 // MARK: - URLSession factory (Apple platforms only)
 
 extension URLSession {
-    /// Returns a lazy task that, when run, opens a WebSocket to `url` and
-    /// produces a fully-wired ``WebSocketConnection``.
-    ///
-    /// The TCP handshake + WebSocket upgrade happen inside the `DeferredTask`
-    /// body — nothing touches the network until the Store calls `.run()`.
+    /// Returns a lazy task that, when run, opens a WebSocket to `url`.
     ///
     /// ```swift
-    /// let connectionTask = URLSession.shared.webSocketConnection(
-    ///     with: URL(string: "wss://echo.example.com")!
-    /// )
-    ///
-    /// // Open the connection
-    /// let conn = await connectionTask.run()
-    ///
-    /// // Send a greeting
+    /// let conn = await URLSession.shared
+    ///     .webSocketConnection(with: URL(string: "wss://echo.example.com")!)
+    ///     .run()
     /// _ = await conn.send(.text("hello")).run()
-    ///
-    /// // Stream incoming messages
-    /// for await result in conn.receive {
-    ///     if case .success(.text(let msg)) = result { print("←", msg) }
-    /// }
+    /// // conn goes out of scope → deinit → normal-closure frame sent
     /// ```
     public func webSocketConnection(with url: URL) -> DeferredTask<WebSocketConnection> {
-        webSocketConnection(with: URLRequest(url: url))
+        makeConnection(webSocketTask(with: url))
     }
 
     /// Returns a lazy task that, when run, opens a WebSocket for `request`.
@@ -41,8 +28,25 @@ extension URLSession {
     /// let conn = await URLSession.shared.webSocketConnection(with: req).run()
     /// ```
     public func webSocketConnection(with request: URLRequest) -> DeferredTask<WebSocketConnection> {
+        makeConnection(webSocketTask(with: request))
+    }
+
+    /// Returns a lazy task that, when run, opens a WebSocket advertising the given subprotocols.
+    ///
+    /// ```swift
+    /// let conn = await URLSession.shared
+    ///     .webSocketConnection(with: URL(string: "wss://chat.example.com")!, protocols: ["chat", "v2"])
+    ///     .run()
+    /// ```
+    public func webSocketConnection(with url: URL, protocols: [String]) -> DeferredTask<WebSocketConnection> {
+        makeConnection(webSocketTask(with: url, protocols: protocols))
+    }
+
+    // MARK: - Private factory
+
+    private func makeConnection(_ task: URLSessionWebSocketTask) -> DeferredTask<WebSocketConnection> {
         DeferredTask {
-            let box = WebSocketTaskBox(self.webSocketTask(with: request))
+            let box = WebSocketTaskBox(task)
             box.task.resume()
             return WebSocketConnection(
                 receive: DeferredStream {
@@ -68,9 +72,7 @@ extension URLSession {
                         }
                     }
                 },
-                close: DeferredTask {
-                    box.task.cancel(with: .normalClosure, reason: nil)
-                }
+                cancel: { box.task.cancel(with: .normalClosure, reason: nil) }
             )
         }
     }
@@ -122,14 +124,13 @@ private final class WebSocketReceiveDelegate: @unchecked Sendable {
     }
 
     func start() { receiveNext() }
-    func stop() { box.task.cancel(with: .normalClosure, reason: nil) }
+    func stop()  { box.task.cancel(with: .normalClosure, reason: nil) }
 
     private func receiveNext() {
         box.task.receive { [weak self] result in
             guard let self else { return }
             switch result {
             case let .success(message):
-                // Skip any unknown future message types silently and keep reading.
                 if let msg = message.asWebSocketMessage {
                     continuation.yield(.success(msg))
                 }

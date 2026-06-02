@@ -8,16 +8,8 @@ import FP
 extension NWConnection {
     /// Starts this connection and wraps it as a ``BonjourConnection``.
     ///
-    /// Call this inside a ``bonjourListenerStream`` handler when a new connection arrives:
-    ///
-    /// ```swift
-    /// for await result in bonjourListenerStream(serviceType: "_myapp._tcp.") {
-    ///     if case .success(.newConnection(let conn)) = result {
-    ///         // conn is already a BonjourConnection — ready to use
-    ///         _ = await conn.send(Data("hello".utf8)).run()
-    ///     }
-    /// }
-    /// ```
+    /// Called automatically by ``bonjourListenerStream`` for every inbound connection;
+    /// you should not normally need to call this directly.
     func asBonjourConnection(startOn queue: DispatchQueue = .main) -> BonjourConnection {
         start(queue: queue)
         let box = NWConnectionBox(self)
@@ -38,9 +30,7 @@ extension NWConnection {
                     }
                 }
             },
-            close: DeferredTask {
-                box.connection.cancel()
-            }
+            cancel: { box.connection.cancel() }
         )
     }
 }

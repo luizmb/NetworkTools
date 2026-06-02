@@ -1,44 +1,47 @@
 import Foundation
 import FP
 
-/// A platform-agnostic Bonjour (TCP) connection described as pure lazy values.
+/// A live Bonjour (TCP) connection with ARC-based lifetime management.
 ///
-/// `BonjourConnection` mirrors the shape of `WebSocketConnection` for raw TCP streams
-/// accepted via ``bonjourListenerStream``. It holds three closures over `Data`,
-/// `DeferredTask`, and `DeferredStream`, with no reference to `NWConnection` or any
-/// other Apple-specific type.
+/// `BonjourConnection` is a **class** — the underlying `NWConnection` stays open
+/// exactly as long as at least one reference to this object exists. When the last
+/// reference is released, `deinit` cancels the connection automatically.
 ///
-/// The Apple implementation is wired up in `BonjourConnection+Darwin.swift`;
-/// a future Linux/NIO implementation would produce the same struct from a
-/// different factory.
+/// Call ``close()`` to close explicitly before the last reference is released.
 ///
-/// All operations are **lazy** — nothing runs until explicitly executed:
+/// The Apple implementation is produced inside ``bonjourListenerStream`` when a
+/// client connects; a future Linux/NIO implementation would produce the same class
+/// from a different factory.
 ///
-/// - ``receive``: iterate to start reading; terminates when the remote end closes.
-/// - ``send(_:)``: call to get a `DeferredTask`; run it to write one chunk.
-/// - ``close``: run to cancel the connection.
+/// ## Lifecycle
+///
+/// ```
+/// bonjourListenerStream emits .newConnection(conn)
+///   └─ hold reference → NWConnection stays open
+///         └─ last reference released (deinit) OR close() called → cancel
+/// ```
 ///
 /// ## Usage
 ///
 /// ```swift
 /// for await result in bonjourListenerStream(serviceType: "_myapp._tcp.") {
 ///     if case .success(.newConnection(let conn)) = result {
-///         // Read incoming data
+///         // Read in a background task — conn stays alive as long as this Task runs
 ///         Task {
 ///             for await dataResult in conn.receive {
 ///                 if case .success(let data) = dataResult {
 ///                     print("received \(data.count) bytes")
+///                     _ = await conn.send(data).run()   // echo back
 ///                 }
 ///             }
 ///         }
-///         // Send a response
-///         _ = await conn.send(Data("hello".utf8)).run()
 ///     }
 /// }
 /// ```
-public struct BonjourConnection: Sendable {
-    /// A lazy stream of inbound data chunks. Iterate to start receiving;
-    /// stream completes when the remote end closes the connection.
+public final class BonjourConnection: @unchecked Sendable {
+
+    /// A lazy stream of inbound data chunks. Iterating starts reading;
+    /// terminating the iteration (or `deinit`) cancels the connection.
     public let receive: DeferredStream<Result<Data, Error>>
 
     /// Returns a lazy task that, when run, sends one chunk of data.
@@ -48,16 +51,23 @@ public struct BonjourConnection: Sendable {
     /// ```
     public let send: @Sendable (Data) -> DeferredTask<Result<Void, Error>>
 
-    /// A lazy task that cancels the connection immediately.
-    public let close: DeferredTask<Void>
+    private let cancelAction: () -> Void
 
     public init(
         receive: DeferredStream<Result<Data, Error>>,
         send: @escaping @Sendable (Data) -> DeferredTask<Result<Void, Error>>,
-        close: DeferredTask<Void>
+        cancel: @escaping () -> Void
     ) {
         self.receive = receive
         self.send = send
-        self.close = close
+        self.cancelAction = cancel
     }
+
+    /// Cancels the connection immediately.
+    ///
+    /// Safe to call multiple times. The connection also cancels automatically
+    /// when this object is deallocated.
+    public func close() { cancelAction() }
+
+    deinit { cancelAction() }
 }

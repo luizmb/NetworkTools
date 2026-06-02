@@ -1450,7 +1450,7 @@ for await result in conn.receive {
 }
 
 // Close cleanly
-await conn.close.run()
+conn.close()
 ```
 
 Inside a SwiftRex `Behavior`:

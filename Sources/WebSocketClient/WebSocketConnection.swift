@@ -1,40 +1,48 @@
 import FP
 
-/// A live, full-duplex WebSocket connection described as pure lazy values.
+/// A live, full-duplex WebSocket connection with ARC-based lifetime management.
 ///
-/// `WebSocketConnection` is platform-agnostic: it holds four closures over
-/// ``WebSocketMessage`` and `DeferredTask` / ``DeferredStream``, with no reference
-/// to any Apple-specific type. The Apple implementation is wired up in
-/// `WebSocketConnection+Darwin.swift`; a future Linux/NIO implementation would
-/// produce the same struct from a different factory.
+/// `WebSocketConnection` is a **class** — the underlying socket stays open exactly
+/// as long as at least one reference to this object exists. When the last reference
+/// is released, `deinit` sends a normal-closure frame automatically, mirroring how
+/// the Combine `WebSocket` closes when its subscription is cancelled.
 ///
-/// All four operations are **lazy** — nothing runs until the Store (or caller)
-/// explicitly executes the task or iterates the stream:
+/// Call ``close()`` to close explicitly before the last reference is released.
 ///
-/// - ``receive``: iterate to start reading; cancels the underlying transport on termination.
-/// - ``send(_:)``: call to obtain a `DeferredTask`; run it to write one message.
-/// - ``ping``: run to send a health-check frame and await the response.
-/// - ``close``: run to send a normal-closure frame and cancel the transport.
+/// The Apple implementation is produced by `URLSession.webSocketConnection(with:)`,
+/// which itself returns a `DeferredTask<WebSocketConnection>` so the TCP handshake
+/// and WebSocket upgrade remain lazy until the Store runs the task.
 ///
-/// ## Obtaining a connection
+/// ## Lifecycle
 ///
-/// On Apple platforms, use `URLSession.webSocketConnection(with:)` which itself
-/// returns a `DeferredTask<WebSocketConnection>` — the TCP handshake and WebSocket
-/// upgrade happen only when the task is run:
+/// ```
+/// DeferredTask<WebSocketConnection>   ← nothing happens until .run()
+///   └─ .run() → TCP + WebSocket upgrade, connection is live
+///         └─ hold reference → socket stays open
+///               └─ last reference released (deinit) OR close() called → normalClosure
+/// ```
+///
+/// ## Usage
 ///
 /// ```swift
 /// let connectionTask = URLSession.shared.webSocketConnection(
 ///     with: URL(string: "wss://echo.example.com")!
 /// )
-/// // Nothing has happened yet.
 ///
-/// let conn = await connectionTask.run()  // opens the connection
+/// // Open the connection — nothing happens before this
+/// let conn = await connectionTask.run()
 ///
+/// // Send immediately
 /// _ = await conn.send(.text("hello")).run()
 ///
+/// // Receive in a loop — breaks when server or deinit closes the connection
 /// for await result in conn.receive {
 ///     if case .success(.text(let msg)) = result { print("←", msg) }
 /// }
+/// // Exiting the for-await loop also closes the connection via onTermination.
+///
+/// // Or close explicitly before releasing the last reference:
+/// conn.close()
 /// ```
 ///
 /// ## Inside a SwiftRex Behavior
@@ -46,25 +54,24 @@ import FP
 ///         Effect.task {
 ///             let conn = await ctx.environment.openWebSocket(url).run()
 ///             for await result in conn.receive {
-///                 if case .success(let msg) = result {
-///                     return .messageReceived(msg)
-///                 }
+///                 if case .success(let msg) = result { return .messageReceived(msg) }
 ///             }
 ///             return .disconnected
 ///         }
 ///     }
 /// }
 /// ```
-public struct WebSocketConnection: Sendable {
+public final class WebSocketConnection: @unchecked Sendable {
+
     /// A lazy stream of inbound messages. Iterating starts the receive loop;
-    /// breaking out of the loop (or the task being cancelled) closes the connection.
+    /// terminating the iteration (or `deinit`) closes the connection.
     public let receive: DeferredStream<Result<WebSocketMessage, Error>>
 
     /// Returns a lazy task that, when run, sends one message to the server.
     ///
     /// ```swift
     /// _ = await conn.send(.text("ping")).run()
-    /// _ = await conn.send(.data(Data([0x01, 0x02]))).run()
+    /// _ = await conn.send(.data(Data([0x01]))).run()
     /// ```
     public let send: @Sendable (WebSocketMessage) -> DeferredTask<Result<Void, Error>>
 
@@ -75,22 +82,27 @@ public struct WebSocketConnection: Sendable {
     /// ```
     public let ping: DeferredTask<Result<Void, Error>>
 
-    /// A lazy task that sends a normal-closure frame and tears down the connection.
-    ///
-    /// ```swift
-    /// await conn.close.run()
-    /// ```
-    public let close: DeferredTask<Void>
+    private let cancelAction: () -> Void
 
     public init(
         receive: DeferredStream<Result<WebSocketMessage, Error>>,
         send: @escaping @Sendable (WebSocketMessage) -> DeferredTask<Result<Void, Error>>,
         ping: DeferredTask<Result<Void, Error>>,
-        close: DeferredTask<Void>
+        cancel: @escaping () -> Void
     ) {
         self.receive = receive
         self.send = send
         self.ping = ping
-        self.close = close
+        self.cancelAction = cancel
     }
+
+    /// Closes the connection immediately with a normal-closure frame.
+    ///
+    /// Safe to call multiple times; subsequent calls are no-ops on the underlying task.
+    /// The connection also closes automatically when this object is deallocated, so
+    /// explicit `close()` is only needed when you want to close before releasing the
+    /// last reference.
+    public func close() { cancelAction() }
+
+    deinit { cancelAction() }
 }
