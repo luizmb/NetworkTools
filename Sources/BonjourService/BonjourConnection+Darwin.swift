@@ -65,7 +65,7 @@ private final class NWConnectionReceiveDelegate: @unchecked Sendable {
     }
 
     func start() { receiveNext() }
-    func stop()  { box.connection.cancel() }
+    func stop() { box.connection.cancel() }
 
     private func receiveNext() {
         box.connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [weak self] data, _, isComplete, error in

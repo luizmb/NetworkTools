@@ -74,10 +74,18 @@ public struct NetServicePublisher {
         self.monitorDevice = monitorDevice
     }
 
-    public init(name: String, domain: String, type: String, timeout: TimeInterval,
-                monitorDevice: NetServiceTXTRecordsMonitorStrategy) {
-        self.init(netService: .init(domain: domain, type: type, name: name),
-                  timeout: timeout, monitorDevice: monitorDevice)
+    public init(
+        name: String,
+        domain: String,
+        type: String,
+        timeout: TimeInterval,
+        monitorDevice: NetServiceTXTRecordsMonitorStrategy
+    ) {
+        self.init(
+            netService: .init(domain: domain, type: type, name: name),
+            timeout: timeout,
+            monitorDevice: monitorDevice
+        )
     }
 }
 
@@ -105,8 +113,12 @@ extension NetServicePublisher {
         private let lock = NSRecursiveLock()
         private var started = false
 
-        init(subscriber: S, netService: NetService, timeout: TimeInterval,
-             monitorDevice: NetServiceTXTRecordsMonitorStrategy) {
+        init(
+            subscriber: S,
+            netService: NetService,
+            timeout: TimeInterval,
+            monitorDevice: NetServiceTXTRecordsMonitorStrategy
+        ) {
             self.netService = netService
             self.buffer = DemandBuffer(subscriber: subscriber)
             self.timeout = timeout
@@ -118,8 +130,13 @@ extension NetServicePublisher {
         func request(_ demand: Subscribers.Demand) {
             guard let buffer else { return }
             lock.lock()
-            if !started && demand > .none { started = true; lock.unlock(); start() }
-            else { lock.unlock() }
+            if !started && demand > .none {
+                started = true
+                lock.unlock()
+                start()
+            } else {
+                lock.unlock()
+            }
             _ = buffer.demand(demand)
         }
 

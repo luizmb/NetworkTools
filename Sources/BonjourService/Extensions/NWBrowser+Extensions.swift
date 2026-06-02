@@ -2,6 +2,7 @@
 import Foundation
 import Network
 
+// swiftlint:disable discouraged_optional_collection
 extension NWBrowser.Result.Metadata {
     /// Extracts the Bonjour TXT record as a `[String: String]` dictionary.
     ///
@@ -29,4 +30,5 @@ extension NWBrowser.Result.Metadata {
         }
     }
 }
+// swiftlint:enable discouraged_optional_collection
 #endif

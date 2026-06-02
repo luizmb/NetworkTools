@@ -162,8 +162,11 @@ extension NWEndpointPublisher.ResolvedEndpoint {
                 fatalError("NWEndpoint.Host case not implemented: \(host)")
             }
         case let .service(name, type, domain, interface):
-            return .service(service ?? NetService(domain: domain, type: type, name: name),
-                            interface: interface, txt: txt)
+            return .service(
+                service ?? NetService(domain: domain, type: type, name: name),
+                interface: interface,
+                txt: txt
+            )
         case let .unix(path):
             return .unix(path: path, txt: txt)
         case let .url(url):

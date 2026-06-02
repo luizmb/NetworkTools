@@ -28,7 +28,7 @@ import Network
 /// print(ip.ipString)    // "192.168.1.1"
 /// print(ip.ipUrlString) // "192.168.1.1" for v4, "[fe80::1]" for v6
 /// ```
-public enum IP: Codable, CustomStringConvertible, Equatable, Hashable { // swiftlint:disable:this type_name
+public enum IP: Codable, CustomStringConvertible, Equatable, Hashable {
     case ipv4(IPv4Address)
     case ipv6(IPv6Address)
 
@@ -72,9 +72,13 @@ public enum IP: Codable, CustomStringConvertible, Equatable, Hashable { // swift
 
     /// Parses an IP address string, trying IPv6 first then IPv4.
     public init?(_ ipString: String) {
-        if let a = IPv6Address(ipString) { self = .ipv6(a) }
-        else if let a = IPv4Address(ipString) { self = .ipv4(a) }
-        else { return nil }
+        if let a = IPv6Address(ipString) {
+            self = .ipv6(a)
+        } else if let a = IPv4Address(ipString) {
+            self = .ipv4(a)
+        } else {
+            return nil
+        }
     }
 
     public init(_ ipv4: IPv4Address) { self = .ipv4(ipv4) }
@@ -82,9 +86,13 @@ public enum IP: Codable, CustomStringConvertible, Equatable, Hashable { // swift
 
     /// Parses raw address bytes — 4 bytes for IPv4, 16 for IPv6.
     public init?(_ data: Data) {
-        if let a = IPv6Address(data) { self = .ipv6(a) }
-        else if let a = IPv4Address(data) { self = .ipv4(a) }
-        else { return nil }
+        if let a = IPv6Address(data) {
+            self = .ipv6(a)
+        } else if let a = IPv4Address(data) {
+            self = .ipv4(a)
+        } else {
+            return nil
+        }
     }
 
     // MARK: - Codable

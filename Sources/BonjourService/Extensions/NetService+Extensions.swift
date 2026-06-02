@@ -26,9 +26,15 @@ extension NetService {
             var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
             addressData.withUnsafeBytes { ptr in
                 guard let base = ptr.baseAddress?.assumingMemoryBound(to: sockaddr.self) else { return }
-                getnameinfo(base, socklen_t(base.pointee.sa_len),
-                            &hostname, socklen_t(hostname.count),
-                            nil, 0, NI_NUMERICHOST)
+                getnameinfo(
+                    base,
+                    socklen_t(base.pointee.sa_len),
+                    &hostname,
+                    socklen_t(hostname.count),
+                    nil,
+                    0,
+                    NI_NUMERICHOST
+                )
             }
             return String(cString: hostname)
         }

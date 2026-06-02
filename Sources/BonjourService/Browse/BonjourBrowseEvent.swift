@@ -1,5 +1,3 @@
-// nil TXT (no record) is semantically distinct from [:] (empty record).
-// swiftlint:disable discouraged_optional_collection
 import Foundation
 
 /// Events emitted by ``bonjourBrowserStream(serviceType:domain:params:)``.
@@ -37,4 +35,3 @@ public enum BonjourBrowseError: Error {
     /// The browser failed with an underlying error.
     case didNotSearch(error: Error)
 }
-// swiftlint:enable discouraged_optional_collection

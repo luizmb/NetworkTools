@@ -1,5 +1,3 @@
-// nil TXT (no record) is semantically distinct from [:] (empty record).
-// swiftlint:disable discouraged_optional_collection
 #if canImport(Network)
 import Foundation
 import FP
@@ -77,33 +75,35 @@ private final class NWBrowserStreamDelegate: @unchecked Sendable {
             }
         }
 
-        browser.browseResultsChangedHandler = { [continuation] _, changes in
-            for change in changes {
-                switch change {
-                case .identical:
-                    break
-                case let .added(result):
-                    if let info = BonjourServiceInfo(from: result) {
-                        continuation.yield(.success(.found(info)))
-                    }
-                case let .removed(result):
-                    if let info = BonjourServiceInfo(from: result) {
-                        continuation.yield(.success(.removed(info)))
-                    }
-                case let .changed(old, new, _):
-                    if let oldInfo = BonjourServiceInfo(from: old),
-                       let newInfo = BonjourServiceInfo(from: new) {
-                        continuation.yield(.success(.updated(from: oldInfo, to: newInfo)))
-                    }
-                @unknown default:
-                    break
-                }
+        browser.browseResultsChangedHandler = { [weak self] _, changes in
+            changes.forEach { self?.handle(change: $0) }
+        }
+    }
+
+    private func handle(change: NWBrowser.Result.Change) {
+        switch change {
+        case .identical:
+            break
+        case let .added(result):
+            if let info = BonjourServiceInfo(from: result) {
+                continuation.yield(.success(.found(info)))
             }
+        case let .removed(result):
+            if let info = BonjourServiceInfo(from: result) {
+                continuation.yield(.success(.removed(info)))
+            }
+        case let .changed(old, new, _):
+            if let oldInfo = BonjourServiceInfo(from: old),
+               let newInfo = BonjourServiceInfo(from: new) {
+                continuation.yield(.success(.updated(from: oldInfo, to: newInfo)))
+            }
+        @unknown default:
+            break
         }
     }
 
     func start() { browser.start(queue: .main) }
-    func stop()  { browser.cancel() }
+    func stop() { browser.cancel() }
 
     private func handleError(_ error: NWError) {
         if case let .dns(code) = error, code == kDNSServiceErr_PolicyDenied {
@@ -124,4 +124,3 @@ private extension BonjourServiceInfo {
     }
 }
 #endif
-// swiftlint:enable discouraged_optional_collection

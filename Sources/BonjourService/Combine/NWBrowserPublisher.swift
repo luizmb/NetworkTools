@@ -125,8 +125,11 @@ extension NWBrowserPublisher {
                         _ = buffer?.buffer(value: .didRemove(endpoint: r.endpoint, txt: r.metadata.txt))
                     case let .changed(old, new, flags):
                         _ = buffer?.buffer(value: .didUpdate(
-                            oldEndpoint: old.endpoint, newEndpoint: new.endpoint,
-                            txt: new.metadata.txt, flags: flags))
+                            oldEndpoint: old.endpoint,
+                            newEndpoint: new.endpoint,
+                            txt: new.metadata.txt,
+                            flags: flags
+                        ))
                     @unknown default: break
                     }
                 }
@@ -136,8 +139,13 @@ extension NWBrowserPublisher {
         func request(_ demand: Subscribers.Demand) {
             guard let buffer else { return }
             lock.lock()
-            if !started && demand > .none { started = true; lock.unlock(); start() }
-            else { lock.unlock() }
+            if !started && demand > .none {
+                started = true
+                lock.unlock()
+                start()
+            } else {
+                lock.unlock()
+            }
             _ = buffer.demand(demand)
         }
 

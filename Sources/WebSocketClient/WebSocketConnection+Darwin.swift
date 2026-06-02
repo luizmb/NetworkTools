@@ -122,7 +122,7 @@ private final class WebSocketReceiveDelegate: @unchecked Sendable {
     }
 
     func start() { receiveNext() }
-    func stop()  { box.task.cancel(with: .normalClosure, reason: nil) }
+    func stop() { box.task.cancel(with: .normalClosure, reason: nil) }
 
     private func receiveNext() {
         box.task.receive { [weak self] result in

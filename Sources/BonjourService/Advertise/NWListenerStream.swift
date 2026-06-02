@@ -113,7 +113,7 @@ private final class NWListenerStreamDelegate: @unchecked Sendable {
     }
 
     func start() { listener.start(queue: .main) }
-    func stop()  { listener.cancel() }
+    func stop() { listener.cancel() }
 
     private func handleError(_ error: NWError) {
         if case let .dns(code) = error, code == kDNSServiceErr_PolicyDenied {

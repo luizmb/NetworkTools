@@ -88,8 +88,13 @@ extension NetServiceBrowserPublisher {
         func request(_ demand: Subscribers.Demand) {
             guard let buffer else { return }
             lock.lock()
-            if !started && demand > .none { started = true; lock.unlock(); start() }
-            else { lock.unlock() }
+            if !started && demand > .none {
+                started = true
+                lock.unlock()
+                start()
+            } else {
+                lock.unlock()
+            }
             _ = buffer.demand(demand)
         }
 
