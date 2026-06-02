@@ -5,22 +5,23 @@ import FP
 
 /// Native ``DeferredStream`` wrapping `NWBrowser` for Bonjour service discovery.
 ///
-/// A fresh browser is created on each iteration; browsing stops when the iterator
-/// terminates. Emissions are `Result<BonjourBrowseEvent, Error>` — `.failure` is
-/// sent on permission denial or fatal browser error, followed by stream completion.
+/// A fresh browser is started on each iteration; browsing stops when the iterator
+/// terminates. Emissions are `Result<BonjourBrowseEvent, Error>`.
 ///
 /// Events carry ``BonjourServiceInfo`` values (name, type, domain, TXT record) rather
 /// than Apple-specific `NWEndpoint` types, so results can be processed on any platform.
 ///
 /// This implementation does not depend on Combine.
 ///
-/// ## Example
+/// ## Creating from a service type
 ///
 /// ```swift
 /// for await result in bonjourBrowserStream(serviceType: "_myapp._tcp.") {
 ///     switch result {
 ///     case .success(.found(let info)):
 ///         print("found:", info.name)
+///         let resolved = try await bonjourResolve(info).run().get()
+///         if let url = resolved.webSocketURL() { /* connect */ }
 ///     case .success(.removed(let info)):
 ///         print("gone:", info.name)
 ///     case .success(.updated(let old, let new)):
@@ -30,40 +31,55 @@ import FP
 ///     }
 /// }
 /// ```
+///
+/// ## Using a pre-configured browser
+///
+/// ```swift
+/// let browser = NWBrowser(
+///     for: .bonjourWithTXTRecord(type: "_myapp._tcp.", domain: nil),
+///     using: .tcp
+/// )
+/// for await result in bonjourBrowserStream(browser: browser) { ... }
+/// ```
 public func bonjourBrowserStream(
     serviceType: String,
     domain: String? = nil,
     params: NWParameters = .tcp
 ) -> DeferredStream<Result<BonjourBrowseEvent, Error>> {
+    bonjourBrowserStream(browser: NWBrowser(
+        for: .bonjourWithTXTRecord(type: serviceType, domain: domain),
+        using: params
+    ))
+}
+
+/// Variant for when an `NWBrowser` has already been configured externally.
+///
+/// All state and results-changed handlers on the provided browser will be
+/// overwritten when the stream starts.
+public func bonjourBrowserStream(
+    browser: NWBrowser
+) -> DeferredStream<Result<BonjourBrowseEvent, Error>> {
     DeferredStream {
         AsyncStream { continuation in
-            let delegate = NWBrowserStreamDelegate(
-                serviceType: serviceType,
-                domain: domain,
-                params: params,
-                continuation: continuation
-            )
+            let delegate = NWBrowserStreamDelegate(browser: browser, continuation: continuation)
             continuation.onTermination = { @Sendable _ in delegate.stop() }
             delegate.start()
         }
     }
 }
 
+// MARK: - Private delegate
+
 private final class NWBrowserStreamDelegate: @unchecked Sendable {
     private let browser: NWBrowser
     private let continuation: AsyncStream<Result<BonjourBrowseEvent, Error>>.Continuation
 
     init(
-        serviceType: String,
-        domain: String?,
-        params: NWParameters,
+        browser: NWBrowser,
         continuation: AsyncStream<Result<BonjourBrowseEvent, Error>>.Continuation
     ) {
+        self.browser = browser
         self.continuation = continuation
-        browser = NWBrowser(
-            for: .bonjourWithTXTRecord(type: serviceType, domain: domain),
-            using: params
-        )
 
         browser.stateUpdateHandler = { [weak self] state in
             switch state {
@@ -79,6 +95,9 @@ private final class NWBrowserStreamDelegate: @unchecked Sendable {
             changes.forEach { self?.handle(change: $0) }
         }
     }
+
+    func start() { browser.start(queue: .main) }
+    func stop() { browser.cancel() }
 
     private func handle(change: NWBrowser.Result.Change) {
         switch change {
@@ -101,9 +120,6 @@ private final class NWBrowserStreamDelegate: @unchecked Sendable {
             break
         }
     }
-
-    func start() { browser.start(queue: .main) }
-    func stop() { browser.cancel() }
 
     private func handleError(_ error: NWError) {
         if case let .dns(code) = error, code == kDNSServiceErr_PolicyDenied {

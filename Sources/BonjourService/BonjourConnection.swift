@@ -39,7 +39,6 @@ import FP
 /// }
 /// ```
 public final class BonjourConnection: @unchecked Sendable {
-
     /// A lazy stream of inbound data chunks. Iterating starts reading;
     /// terminating the iteration (or `deinit`) cancels the connection.
     public let receive: DeferredStream<Result<Data, Error>>

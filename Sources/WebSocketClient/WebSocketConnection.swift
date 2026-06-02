@@ -62,7 +62,6 @@ import FP
 /// }
 /// ```
 public final class WebSocketConnection: @unchecked Sendable {
-
     /// A lazy stream of inbound messages. Iterating starts the receive loop;
     /// terminating the iteration (or `deinit`) closes the connection.
     public let receive: DeferredStream<Result<WebSocketMessage, Error>>
