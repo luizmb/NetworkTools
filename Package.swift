@@ -15,6 +15,8 @@ let package = Package(
         .library(name: "Multipeer",       targets: ["Multipeer"]),
         .library(name: "NetworkClient",   targets: ["NetworkClient"]),
         .library(name: "NetworkServer",   targets: ["NetworkServer"]),
+        .library(name: "WebSocketClient", targets: ["WebSocketClient"]),
+        .library(name: "BonjourService",  targets: ["BonjourService"]),
     ],
     dependencies: [
         .package(url: "https://github.com/luizmb/FP.git", from: "1.8.1"),
@@ -55,6 +57,20 @@ let package = Package(
                 .product(name: "NIOCore",  package: "swift-nio"),
                 .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
+            ]
+        ),
+        .target(
+            name: "WebSocketClient",
+            dependencies: [
+                "Core",
+                .product(name: "FP", package: "FP"),
+            ]
+        ),
+        .target(
+            name: "BonjourService",
+            dependencies: [
+                "Core",
+                .product(name: "FP", package: "FP"),
             ]
         ),
         .testTarget(
