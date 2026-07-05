@@ -1,15 +1,26 @@
 import Core
 import FP
 import ReactiveConcurrency
+import ReactiveConcurrencyTransformers
 
 // MARK: - Domain typealiases for the HTTP routing pipeline
 //
 // A pipeline step is a Kleisli arrow in `ReaderTPublisher`: `(I) -> Reader<Env, Publisher<O, ResponseError>>`.
-// Steps compose with `>=>` (from ReactiveConcurrencyOperators).
+// Steps compose with `>=>` (the `ResponseError`-specialized overload below preserves `@Sendable`).
 
 /// A step in the HTTP request-processing pipeline.
 public typealias RouteStep<I: Sendable, Env: Sendable, O: Sendable> =
     @Sendable (I) -> Reader<Env, Publisher<O, ResponseError>>
+
+/// `@Sendable`-preserving Kleisli composition for route steps. RC's generic `>=>` returns a
+/// non-`@Sendable` function; this `ResponseError`-specialized overload (more specific, so it wins
+/// overload resolution here) keeps `@Sendable` so composed pipelines satisfy `Router`/`when`.
+public func >=> <Env: Sendable, A: Sendable, B: Sendable, C: Sendable>(
+    _ fn1: @escaping @Sendable (A) -> Reader<Env, Publisher<B, ResponseError>>,
+    _ fn2: @escaping @Sendable (B) -> Reader<Env, Publisher<C, ResponseError>>
+) -> @Sendable (A) -> Reader<Env, Publisher<C, ResponseError>> {
+    { a in fn1(a).flatMapT(fn2) }
+}
 
 /// Route matching step: dispatches a raw `Request` to a `MatchedRoute<U, Q>`.
 public typealias RouteMatcher<U: Sendable, Q: Sendable, Env: Sendable> =

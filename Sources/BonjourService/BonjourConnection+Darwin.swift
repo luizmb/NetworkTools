@@ -1,8 +1,8 @@
 #if canImport(Network)
 import Foundation
 import FP
-import ReactiveConcurrency
 @preconcurrency import Network
+import ReactiveConcurrency
 
 // MARK: - NWConnection factory (Apple platforms only)
 

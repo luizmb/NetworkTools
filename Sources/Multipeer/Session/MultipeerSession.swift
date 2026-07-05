@@ -2,8 +2,8 @@
 import Combine
 import Foundation
 import FP
-import ReactiveConcurrency
 @preconcurrency import MultipeerConnectivity
+import ReactiveConcurrency
 
 /// A Multipeer session exposing both Combine and `DeferredStream`/`DeferredTask` APIs side by
 /// side. The two API families are implemented independently — the deferred-concurrency side

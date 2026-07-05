@@ -5,8 +5,8 @@
 #if canImport(MultipeerConnectivity)
 import Foundation
 import FP
-import ReactiveConcurrency
 @preconcurrency import MultipeerConnectivity
+import ReactiveConcurrency
 
 /// Native ``DeferredStream`` wrapping `MCNearbyServiceAdvertiser`.
 ///

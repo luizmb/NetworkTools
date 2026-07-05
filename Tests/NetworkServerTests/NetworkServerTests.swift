@@ -3,10 +3,10 @@ import Core
 import Foundation
 import FP
 import NIOHTTP1
+import ReactiveConcurrency
+import ReactiveConcurrencyOperators
+import ReactiveConcurrencyTransformers
 import Testing
-#if canImport(Combine)
-import Combine
-#endif
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -15,6 +15,18 @@ import FoundationNetworking
 private typealias Empty = NetworkServer.Empty
 
 // MARK: - Helpers
+
+// Test bridges mirroring the old ZIO ergonomics on the new `Reader<Env, Publisher>` pipeline:
+// `.provide(env)` narrows the reader to a `Publisher`, `.run()` awaits its single result.
+private extension Reader {
+    func provide(_ env: Environment) -> Output { self(env) }
+}
+
+private extension Publisher where Output == Response, Failure == ResponseError {
+    func run() async -> Result<Response, ResponseError> {
+        await firstResultTask().run() ?? .failure(.serverError("no response"))
+    }
+}
 
 private extension Result {
     var isSuccess: Bool { if case .success = self { true } else { false } }
@@ -290,18 +302,18 @@ struct RouterTests {
     }
 
     @Test func matchesRegisteredRoute() async {
-        let router = when(get("/ping") >=> ignoreBody() >=> .response { _ in .html("pong") }, injecting: Void.self)
+        let router = when(get("/ping") >=> ignoreBody() >=> response { _ in .html("pong") }, injecting: Void.self)
         #expect(await router.handle(req(.GET, "/ping")).provide(()).run().response.status == .ok)
     }
 
     @Test func returnsNotFoundForUnregisteredPath() async {
-        let router = when(get("/ping") >=> ignoreBody() >=> .response { _ in .html("pong") }, injecting: Void.self)
+        let router = when(get("/ping") >=> ignoreBody() >=> response { _ in .html("pong") }, injecting: Void.self)
         #expect(await router.handle(req(.GET, "/other")).provide(()).run().response.status == .notFound)
     }
 
     @Test func matchesFirstMatchingRoute() async {
-        let routerA = when(get("/a") >=> ignoreBody() >=> .response { _ in .html("A") }, injecting: Void.self)
-        let routerB = when(get("/b") >=> ignoreBody() >=> .response { _ in .html("B") }, injecting: Void.self)
+        let routerA = when(get("/a") >=> ignoreBody() >=> response { _ in .html("A") }, injecting: Void.self)
+        let routerB = when(get("/b") >=> ignoreBody() >=> response { _ in .html("B") }, injecting: Void.self)
         let h = (routerA <|> routerB).handle
         #expect(String(data: (await h(req(.GET, "/a")).provide(()).run()).response.body, encoding: .utf8) == "A")
         #expect(String(data: (await h(req(.GET, "/b")).provide(()).run()).response.body, encoding: .utf8) == "B")
@@ -317,7 +329,7 @@ struct RouterTests {
         let router = when(
             get("/users/:id", params: .decode(UserParams.self, using: \.dictionaryDecoderFactory))
             >=> ignoreBody()
-            >=> .response { (typedReq: TypedRequest<UserParams, Empty, Empty>) -> Result<Response, ResponseError> in
+            >=> response { (typedReq: TypedRequest<UserParams, Empty, Empty>) -> Result<Response, ResponseError> in
                 box.value = typedReq.urlParams.id
                 return .html("ok")
             },
@@ -334,7 +346,7 @@ struct RouterTests {
         let router = when(
             post("/echo")
             >=> decodeBody(using: \.decoder)
-            >=> .response { (typedReq: TypedRequest<Empty, Empty, Body>) in
+            >=> response { (typedReq: TypedRequest<Empty, Empty, Body>) in
                 .json(Resp(echo: typedReq.body.name), encoder: JSONEncoder())
             },
             injecting: Env.self
@@ -349,22 +361,19 @@ struct RouterTests {
         #expect(decoded?.echo == "hello")
     }
 
-    @Test func asyncHandlerViaDeferredTask() async {
-        let router = when(get("/async") >=> ignoreBody() >=> .response { _ in DeferredTask { .html("async") } }, injecting: Void.self)
+    @Test func asyncHandlerViaPublisherFuture() async {
+        let router = when(get("/async") >=> ignoreBody() >=> response { _ in Publisher.future { .html("async") } }, injecting: Void.self)
         #expect(
             String(data: (await router.handle(req(.GET, "/async")).provide(()).run()).response.body, encoding: .utf8) == "async"
         )
     }
 
-    #if canImport(Combine)
-    @Test func asyncHandlerViaCombinePublisher() async {
+    @Test func asyncHandlerViaPublisher() async {
         let router = when(
             get("/pub")
             >=> ignoreBody()
-            >=> .response { (_: TypedRequest<Empty, Empty, Empty>) in
-                Just(Result<Response, ResponseError>.html("pub").response)
-                    .setFailureType(to: ResponseError.self)
-                    .eraseToAnyPublisher()
+            >=> response { (_: TypedRequest<Empty, Empty, Empty>) in
+                Publisher.pure(Result<Response, ResponseError>.html("pub").response)
             },
             injecting: Void.self
         )
@@ -372,12 +381,11 @@ struct RouterTests {
             String(data: (await router.handle(req(.GET, "/pub")).provide(()).run()).response.body, encoding: .utf8) == "pub"
         )
     }
-    #endif
 
     @Test func handlerReceivesEnvironment() async {
         struct Env: Sendable { let greeting: String }
         let router = when(
-            get("/hello") >=> ignoreBody() >=> .response { _, env in .html(env.greeting) },
+            get("/hello") >=> ignoreBody() >=> response { _, env in .html(env.greeting) },
             injecting: Env.self
         )
         let response = await router.handle(req(.GET, "/hello")).provide(Env(greeting: "hi there")).run().response
@@ -407,7 +415,7 @@ struct NIOServerTests {
     func startServer_respondsToRequest() async throws {
         let port = 18_091
         let frozenRouter = when(
-            get("/hello") >=> ignoreBody() >=> .response { req in .html("OK:\(req.raw.path)") },
+            get("/hello") >=> ignoreBody() >=> response { req in .html("OK:\(req.raw.path)") },
             injecting: Void.self
         )
         Thread.detachNewThread {
@@ -431,11 +439,11 @@ struct NIOServerTests {
         struct Env: Sendable { let decoder: JSONDecoder }
 
         let frozenRouter: Router<Env> =
-            when(get("/ping") >=> ignoreBody() >=> .response { _ in .html("pong") }, injecting: Env.self)
+            when(get("/ping") >=> ignoreBody() >=> response { _ in .html("pong") }, injecting: Env.self)
             <|> when(
                 post("/echo")
                 >=> decodeBody(using: \.decoder)
-                >=> .response { (req: TypedRequest<Empty, Empty, EchoBody>) in
+                >=> response { (req: TypedRequest<Empty, Empty, EchoBody>) in
                     .json(EchoResp(message: req.body.message), encoder: JSONEncoder())
                 },
                 injecting: Env.self
