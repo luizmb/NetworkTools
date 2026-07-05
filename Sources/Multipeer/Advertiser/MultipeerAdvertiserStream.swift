@@ -6,6 +6,7 @@
 import Foundation
 import FP
 @preconcurrency import MultipeerConnectivity
+import ReactiveConcurrency
 
 /// Native ``DeferredStream`` wrapping `MCNearbyServiceAdvertiser`.
 ///
@@ -18,7 +19,7 @@ public func multipeerAdvertiserStream(
     myselfAsPeer: MCPeerID,
     serviceType: String,
     discoveryInfo: [String: String]? = nil
-) -> DeferredStream<Result<MultipeerAdvertiserEvent, Error>> {
+) -> Publisher<MultipeerAdvertiserEvent, Error> {
     DeferredStream {
         AsyncStream { continuation in
             let delegate = MultipeerAdvertiserStreamDelegate(
@@ -31,6 +32,7 @@ public func multipeerAdvertiserStream(
             delegate.start()
         }
     }
+    .eraseToThrowingPublisher()
 }
 
 private final class MultipeerAdvertiserStreamDelegate: NSObject, MCNearbyServiceAdvertiserDelegate, @unchecked Sendable {

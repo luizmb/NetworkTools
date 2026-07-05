@@ -1,6 +1,7 @@
 #if canImport(Darwin)
 import Foundation
 import FP
+import ReactiveConcurrency
 
 // MARK: - URLSession factory (Apple platforms only)
 
@@ -14,7 +15,7 @@ extension URLSession {
     /// _ = await conn.send(.text("hello")).run()
     /// // conn goes out of scope → deinit → normal-closure frame sent
     /// ```
-    public func webSocketConnection(with url: URL) -> DeferredTask<WebSocketConnection> {
+    public func webSocketConnection(with url: URL) -> Publisher<WebSocketConnection, Never> {
         makeConnection(webSocketTask(with: url))
     }
 
@@ -27,7 +28,7 @@ extension URLSession {
     /// req.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     /// let conn = await URLSession.shared.webSocketConnection(with: req).run()
     /// ```
-    public func webSocketConnection(with request: URLRequest) -> DeferredTask<WebSocketConnection> {
+    public func webSocketConnection(with request: URLRequest) -> Publisher<WebSocketConnection, Never> {
         makeConnection(webSocketTask(with: request))
     }
 
@@ -38,14 +39,14 @@ extension URLSession {
     ///     .webSocketConnection(with: URL(string: "wss://chat.example.com")!, protocols: ["chat", "v2"])
     ///     .run()
     /// ```
-    public func webSocketConnection(with url: URL, protocols: [String]) -> DeferredTask<WebSocketConnection> {
+    public func webSocketConnection(with url: URL, protocols: [String]) -> Publisher<WebSocketConnection, Never> {
         makeConnection(webSocketTask(with: url, protocols: protocols))
     }
 
     // MARK: - Private factory
 
-    private func makeConnection(_ task: URLSessionWebSocketTask) -> DeferredTask<WebSocketConnection> {
-        DeferredTask {
+    private func makeConnection(_ task: URLSessionWebSocketTask) -> Publisher<WebSocketConnection, Never> {
+        Publisher.future {
             let box = WebSocketTaskBox(task)
             box.task.resume()
             return WebSocketConnection(
@@ -55,9 +56,10 @@ extension URLSession {
                         continuation.onTermination = { @Sendable _ in delegate.stop() }
                         delegate.start()
                     }
-                },
+                }
+                .eraseToThrowingPublisher(),
                 send: { message in
-                    DeferredTask {
+                    Publisher.future {
                         await withCheckedContinuation { continuation in
                             box.task.send(message.asTaskMessage) { error in
                                 continuation.resume(returning: error.map(Result.failure) ?? .success(()))
@@ -65,7 +67,7 @@ extension URLSession {
                         }
                     }
                 },
-                ping: DeferredTask {
+                ping: Publisher.future {
                     await withCheckedContinuation { continuation in
                         box.task.sendPing { error in
                             continuation.resume(returning: error.map(Result.failure) ?? .success(()))

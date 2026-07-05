@@ -2,6 +2,7 @@
 #if canImport(Darwin)
 import Foundation
 import FP
+import ReactiveConcurrency
 
 /// Resolves a ``BonjourServiceInfo`` to its concrete host, port, and IP addresses.
 ///
@@ -38,8 +39,8 @@ import FP
 public func bonjourResolve(
     _ service: BonjourServiceInfo,
     timeout: TimeInterval = 5
-) -> DeferredTask<Result<ResolvedServiceInfo, Error>> {
-    DeferredTask {
+) -> Publisher<ResolvedServiceInfo, Error> {
+    Publisher.future {
         // Declared outside withCheckedContinuation so the async frame retains netService
         // across the suspension point.
         let netService = NetService(domain: service.domain, type: service.type, name: service.name)

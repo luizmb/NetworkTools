@@ -1,22 +1,23 @@
 import Core
 import Foundation
 import FP
+import ReactiveConcurrency
 
 public struct Router<Env: Sendable>: @unchecked Sendable {
     public let handle: RoutePipeline<Env>
 
-    public init(_ handle: RoutePipeline<Env>) {
+    public init(_ handle: @escaping RoutePipeline<Env>) {
         self.handle = handle
     }
 
     /// The empty router — always returns 404. Identity for `<|>`.
     public static var empty: Router<Env> {
-        Router(RoutePipeline { _ in ZIO { _ in DeferredTask { .failure(.notFound) } } })
+        Router { _ in Reader { _ in Publisher.future { .failure(.notFound) } } }
     }
 
     public func contramap<World: Sendable>(_ f: @escaping @Sendable (World) -> Env) -> Router<World> {
-        Router<World>(RoutePipeline { [handle] request in
-            ZIO { world in handle.run(request).run(f(world)) }
+        Router<World>({ [handle] request in
+            Reader { world in handle(request)(f(world)) }
         })
     }
 }
@@ -24,24 +25,18 @@ public struct Router<Env: Sendable>: @unchecked Sendable {
 // MARK: - Alternative
 
 struct SendableHandler: @unchecked Sendable {
-    let call: (Request) -> DeferredTask<Result<Response, ResponseError>>
-    func callAsFunction(_ request: Request) -> DeferredTask<Result<Response, ResponseError>> { call(request) }
+    let call: @Sendable (Request) -> Publisher<Response, ResponseError>
+    func callAsFunction(_ request: Request) -> Publisher<Response, ResponseError> { call(request) }
 }
 
 extension Router {
     /// Ordered choice: try `lhs`; fall through to `rhs` only on `.failure(.notFound)`.
     public static func alt(_ lhs: Router<Env>, _ rhs: @autoclosure () -> Router<Env>) -> Router<Env> {
         let rhs = rhs()
-        return Router(RoutePipeline { [lh = lhs.handle, rh = rhs.handle] request in
-            let l = lh.run(request)
-            let r = rh.run(request)
-            return ZIO { env in
-                DeferredTask {
-                    let result = await l.run(env).run()
-                    if case .failure(let e) = result, e.status == .notFound {
-                        return await r.run(env).run()
-                    }
-                    return result
+        return Router({ [lh = lhs.handle, rh = rhs.handle] request in
+            Reader { env in
+                lh(request)(env).`catch` { error in
+                    error.status == .notFound ? rh(request)(env) : Publisher.fail(error)
                 }
             }
         })

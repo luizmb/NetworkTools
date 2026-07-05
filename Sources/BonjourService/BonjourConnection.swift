@@ -1,5 +1,6 @@
 import Foundation
 import FP
+import ReactiveConcurrency
 
 /// A live Bonjour (TCP) connection with ARC-based lifetime management.
 ///
@@ -41,20 +42,20 @@ import FP
 public final class BonjourConnection: @unchecked Sendable {
     /// A lazy stream of inbound data chunks. Iterating starts reading;
     /// terminating the iteration (or `deinit`) cancels the connection.
-    public let receive: DeferredStream<Result<Data, Error>>
+    public let receive: Publisher<Data, Error>
 
     /// Returns a lazy task that, when run, sends one chunk of data.
     ///
     /// ```swift
     /// _ = await conn.send(Data("hello".utf8)).run()
     /// ```
-    public let send: @Sendable (Data) -> DeferredTask<Result<Void, Error>>
+    public let send: @Sendable (Data) -> Publisher<Void, Error>
 
     private let cancelAction: () -> Void
 
     public init(
-        receive: DeferredStream<Result<Data, Error>>,
-        send: @escaping @Sendable (Data) -> DeferredTask<Result<Void, Error>>,
+        receive: Publisher<Data, Error>,
+        send: @escaping @Sendable (Data) -> Publisher<Void, Error>,
         cancel: @escaping () -> Void
     ) {
         self.receive = receive

@@ -2,17 +2,18 @@ import Foundation
 import FP
 @preconcurrency import NIOCore
 import NIOHTTP1
+import ReactiveConcurrency
 
 final class HTTPChannelHandler: ChannelInboundHandler, @unchecked Sendable {
     typealias InboundIn   = HTTPServerRequestPart
     typealias OutboundOut = HTTPServerResponsePart
 
-    private let requestHandler: (Request) -> DeferredTask<Result<Response, ResponseError>>
+    private let requestHandler: @Sendable (Request) -> Publisher<Response, ResponseError>
     private var method: HTTPMethod = .GET
     private var uri: String = "/"
     private var body: [UInt8] = []
 
-    init(_ requestHandler: @escaping (Request) -> DeferredTask<Result<Response, ResponseError>>) {
+    init(_ requestHandler: @escaping @Sendable (Request) -> Publisher<Response, ResponseError>) {
         self.requestHandler = requestHandler
     }
 
@@ -27,13 +28,16 @@ final class HTTPChannelHandler: ChannelInboundHandler, @unchecked Sendable {
             body.append(contentsOf: buf.readBytes(length: buf.readableBytes) ?? [])
         case .end:
             let request   = Request(method: method, uri: uri, body: Data(body))
-            let task      = requestHandler(request)
+            let publisher = requestHandler(request)
             let eventLoop = context.eventLoop
             Task { [weak self] in
                 guard let self else { return }
-                let response = switch await task.run() {
-                case .success(let r): r
-                case .failure(let e): Response(e)
+                // `.asEffect`-analog for the server boundary: run the response `Publisher` to its
+                // first result. A handler that emits nothing (`nil`) is a server-side bug → 500.
+                let response: Response = switch await publisher.firstResultTask().run() {
+                case .success(let r)?: r
+                case .failure(let e)?: Response(e)
+                case nil: Response(.serverError("Handler produced no response"))
                 }
                 eventLoop.execute { [weak self] in
                     guard let self else { return }

@@ -2,6 +2,7 @@
 import Foundation
 import FP
 @preconcurrency import Network
+import ReactiveConcurrency
 
 /// Native ``DeferredStream`` wrapping `NWBrowser` for Bonjour service discovery.
 ///
@@ -45,7 +46,7 @@ public func bonjourBrowserStream(
     serviceType: String,
     domain: String? = nil,
     params: NWParameters = .tcp
-) -> DeferredStream<Result<BonjourBrowseEvent, Error>> {
+) -> Publisher<BonjourBrowseEvent, Error> {
     bonjourBrowserStream(browser: NWBrowser(
         for: .bonjourWithTXTRecord(type: serviceType, domain: domain),
         using: params
@@ -58,7 +59,7 @@ public func bonjourBrowserStream(
 /// overwritten when the stream starts.
 public func bonjourBrowserStream(
     browser: NWBrowser
-) -> DeferredStream<Result<BonjourBrowseEvent, Error>> {
+) -> Publisher<BonjourBrowseEvent, Error> {
     DeferredStream {
         AsyncStream { continuation in
             let delegate = NWBrowserStreamDelegate(browser: browser, continuation: continuation)
@@ -66,6 +67,7 @@ public func bonjourBrowserStream(
             delegate.start()
         }
     }
+    .eraseToThrowingPublisher()
 }
 
 // MARK: - Private delegate

@@ -1,11 +1,26 @@
 import Core
 import FP
+import ReactiveConcurrency
+import ReactiveConcurrencyTransformers
 
 // MARK: - Domain typealiases for the HTTP routing pipeline
+//
+// A pipeline step is a Kleisli arrow in `ReaderTPublisher`: `(I) -> Reader<Env, Publisher<O, ResponseError>>`.
+// Steps compose with `>=>` (the `ResponseError`-specialized overload below preserves `@Sendable`).
 
 /// A step in the HTTP request-processing pipeline.
 public typealias RouteStep<I: Sendable, Env: Sendable, O: Sendable> =
-    ZIOKleisli<I, Env, O, ResponseError>
+    @Sendable (I) -> Reader<Env, Publisher<O, ResponseError>>
+
+/// `@Sendable`-preserving Kleisli composition for route steps. RC's generic `>=>` returns a
+/// non-`@Sendable` function; this `ResponseError`-specialized overload (more specific, so it wins
+/// overload resolution here) keeps `@Sendable` so composed pipelines satisfy `Router`/`when`.
+public func >=> <Env: Sendable, A: Sendable, B: Sendable, C: Sendable>(
+    _ fn1: @escaping @Sendable (A) -> Reader<Env, Publisher<B, ResponseError>>,
+    _ fn2: @escaping @Sendable (B) -> Reader<Env, Publisher<C, ResponseError>>
+) -> @Sendable (A) -> Reader<Env, Publisher<C, ResponseError>> {
+    { a in fn1(a).flatMapT(fn2) }
+}
 
 /// Route matching step: dispatches a raw `Request` to a `MatchedRoute<U, Q>`.
 public typealias RouteMatcher<U: Sendable, Q: Sendable, Env: Sendable> =
@@ -23,57 +38,32 @@ public typealias ResponseHandler<U: Sendable, Q: Sendable, B: Sendable, Env: Sen
 public typealias RoutePipeline<Env: Sendable> =
     RouteStep<Request, Env, Response>
 
-// MARK: - ZIOKleisli.response — NetworkServer entry points
+// MARK: - response — NetworkServer terminal-handler entry points
 
-public extension ZIOKleisli {
-    static func response<U, Q, B>(_ handler: @escaping @Sendable (Input, Env) -> Result<Success, Failure>)
-    -> ZIOKleisli where Input == TypedRequest<U, Q, B>, Success == Response, Failure == ResponseError, Env: Sendable {
-        ZIOKleisli { req in ZIO { env in DeferredTask { handler(req, env) } } }
-    }
-
-    static func response<U, Q, B>(_ handler: @escaping @Sendable (Input) -> Result<Success, Failure>)
-    -> ZIOKleisli where Input == TypedRequest<U, Q, B>, Success == Response, Failure == ResponseError, Env: Sendable {
-        ZIOKleisli { req in ZIO { _ in DeferredTask { handler(req) } } }
-    }
-
-    static func response<U, Q, B>(_ handler: @escaping @Sendable (Input, Env) -> DeferredTask<Result<Success, Failure>>)
-    -> ZIOKleisli where Input == TypedRequest<U, Q, B>, Success == Response, Failure == ResponseError, Env: Sendable {
-        ZIOKleisli { req in ZIO { env in handler(req, env) } }
-    }
-
-    static func response<U, Q, B>(_ handler: @escaping @Sendable (Input) -> DeferredTask<Result<Success, Failure>>)
-    -> ZIOKleisli where Input == TypedRequest<U, Q, B>, Success == Response, Failure == ResponseError, Env: Sendable {
-        ZIOKleisli { req in ZIO { _ in handler(req) } }
-    }
+/// Terminal handler from a synchronous `(TypedRequest, Env) -> Result`.
+public func response<U, Q, B, Env: Sendable>(
+    _ handler: @escaping @Sendable (TypedRequest<U, Q, B>, Env) -> Result<Response, ResponseError>
+) -> ResponseHandler<U, Q, B, Env> {
+    { req in Reader { env in Publisher.future { handler(req, env) } } }
 }
 
-#if canImport(Combine)
-import Combine
-
-private extension AnyPublisher where Output: Sendable, Failure == ResponseError {
-    // FP's failable `toDeferredTask` widens Failure to `any Error` so it can synthesize
-    // `EmptyPublisherError` on no-emit completion. Here the publisher's `Failure` is
-    // already `ResponseError`, so the downcast always succeeds for genuine failures —
-    // only an `EmptyPublisherError` falls through, and a handler that produces no
-    // response is a server-side bug, hence the 500.
-    func toResponseTask() -> DeferredTask<Result<Output, ResponseError>> {
-        toDeferredTask().map { result in
-            result.mapError { e in
-                (e as? ResponseError) ?? .serverError("Publisher completed without emitting a response")
-            }
-        }
-    }
+/// Terminal handler from a synchronous `(TypedRequest) -> Result`.
+public func response<U, Q, B, Env: Sendable>(
+    _ handler: @escaping @Sendable (TypedRequest<U, Q, B>) -> Result<Response, ResponseError>
+) -> ResponseHandler<U, Q, B, Env> {
+    { req in Reader { _ in Publisher.future { handler(req) } } }
 }
 
-public extension ZIOKleisli {
-    static func response<U, Q, B>(_ handler: @escaping @Sendable (Input, Env) -> any Publisher<Success, Failure>)
-    -> ZIOKleisli where Input == TypedRequest<U, Q, B>, Success == Response, Failure == ResponseError, Env: Sendable {
-        ZIOKleisli { req in ZIO { env in handler(req, env).eraseToAnyPublisher().toResponseTask() } }
-    }
-
-    static func response<U, Q, B>(_ handler: @escaping @Sendable (Input) -> any Publisher<Success, Failure>)
-    -> ZIOKleisli where Input == TypedRequest<U, Q, B>, Success == Response, Failure == ResponseError, Env: Sendable {
-        ZIOKleisli { req in ZIO { _ in handler(req).eraseToAnyPublisher().toResponseTask() } }
-    }
+/// Terminal handler from an async `(TypedRequest, Env) -> Publisher`.
+public func response<U, Q, B, Env: Sendable>(
+    _ handler: @escaping @Sendable (TypedRequest<U, Q, B>, Env) -> Publisher<Response, ResponseError>
+) -> ResponseHandler<U, Q, B, Env> {
+    { req in Reader { env in handler(req, env) } }
 }
-#endif
+
+/// Terminal handler from an async `(TypedRequest) -> Publisher`.
+public func response<U, Q, B, Env: Sendable>(
+    _ handler: @escaping @Sendable (TypedRequest<U, Q, B>) -> Publisher<Response, ResponseError>
+) -> ResponseHandler<U, Q, B, Env> {
+    { req in Reader { _ in handler(req) } }
+}

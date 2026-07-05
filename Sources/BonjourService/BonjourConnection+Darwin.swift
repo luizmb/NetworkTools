@@ -2,6 +2,7 @@
 import Foundation
 import FP
 @preconcurrency import Network
+import ReactiveConcurrency
 
 // MARK: - NWConnection factory (Apple platforms only)
 
@@ -20,9 +21,10 @@ extension NWConnection {
                     continuation.onTermination = { @Sendable _ in delegate.stop() }
                     delegate.start()
                 }
-            },
+            }
+            .eraseToThrowingPublisher(),
             send: { data in
-                DeferredTask {
+                Publisher.future {
                     await withCheckedContinuation { continuation in
                         box.connection.send(content: data, completion: .contentProcessed { error in
                             continuation.resume(returning: error.map(Result.failure) ?? .success(()))

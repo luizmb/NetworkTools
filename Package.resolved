@@ -1,13 +1,31 @@
 {
-  "originHash" : "89507f1b6142c41131d8639bd920b4316b14f855afebf6f801eaf92bb98eb000",
+  "originHash" : "2cc6871cd12b4cf5e04b9e0e36ed3d926a6bbf3b5e44d414e653abe9c99c3c84",
   "pins" : [
     {
       "identity" : "fp",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/luizmb/FP.git",
       "state" : {
-        "revision" : "dda7d6cb9bc20a23f0c89e5447df258e5cd17e28",
-        "version" : "1.8.1"
+        "revision" : "c1b32932021b444d8b21ca873c80bfcd4c6b8ecb",
+        "version" : "1.13.0"
+      }
+    },
+    {
+      "identity" : "hourglass",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/luizmb/Hourglass.git",
+      "state" : {
+        "revision" : "ec2ff5aac99e59d2ea208e4d391fe54da8961608",
+        "version" : "0.6.2"
+      }
+    },
+    {
+      "identity" : "reactiveconcurrency",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/luizmb/ReactiveConcurrency.git",
+      "state" : {
+        "revision" : "df0d8b95ff45c850a2a902f1fa17976244ba2822",
+        "version" : "0.2.0"
       }
     },
     {
@@ -60,8 +78,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/swiftlang/swift-syntax.git",
       "state" : {
-        "revision" : "4799286537280063c85a32f09884cfbca301b1a1",
-        "version" : "602.0.0"
+        "revision" : "79e4b74a295b6eb74a8b585e3a39d29e70c1dbd1",
+        "version" : "603.0.2"
       }
     },
     {

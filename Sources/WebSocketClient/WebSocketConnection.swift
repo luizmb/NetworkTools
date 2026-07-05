@@ -1,4 +1,5 @@
 import FP
+import ReactiveConcurrency
 
 /// A live, full-duplex WebSocket connection with ARC-based lifetime management.
 ///
@@ -64,7 +65,7 @@ import FP
 public final class WebSocketConnection: @unchecked Sendable {
     /// A lazy stream of inbound messages. Iterating starts the receive loop;
     /// terminating the iteration (or `deinit`) closes the connection.
-    public let receive: DeferredStream<Result<WebSocketMessage, Error>>
+    public let receive: Publisher<WebSocketMessage, Error>
 
     /// Returns a lazy task that, when run, sends one message to the server.
     ///
@@ -72,21 +73,21 @@ public final class WebSocketConnection: @unchecked Sendable {
     /// _ = await conn.send(.text("ping")).run()
     /// _ = await conn.send(.data(Data([0x01]))).run()
     /// ```
-    public let send: @Sendable (WebSocketMessage) -> DeferredTask<Result<Void, Error>>
+    public let send: @Sendable (WebSocketMessage) -> Publisher<Void, Error>
 
     /// A lazy task that sends a single ping frame and waits for the pong.
     ///
     /// ```swift
     /// let result = await conn.ping.run()
     /// ```
-    public let ping: DeferredTask<Result<Void, Error>>
+    public let ping: Publisher<Void, Error>
 
     private let cancelAction: () -> Void
 
     public init(
-        receive: DeferredStream<Result<WebSocketMessage, Error>>,
-        send: @escaping @Sendable (WebSocketMessage) -> DeferredTask<Result<Void, Error>>,
-        ping: DeferredTask<Result<Void, Error>>,
+        receive: Publisher<WebSocketMessage, Error>,
+        send: @escaping @Sendable (WebSocketMessage) -> Publisher<Void, Error>,
+        ping: Publisher<Void, Error>,
         cancel: @escaping () -> Void
     ) {
         self.receive = receive

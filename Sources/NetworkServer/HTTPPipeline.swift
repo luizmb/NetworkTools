@@ -2,6 +2,7 @@ import Core
 import Foundation
 import FP
 import NIOHTTP1
+import ReactiveConcurrency
 
 // MARK: - Core receive — explicit RouteParam injection
 
@@ -11,9 +12,9 @@ public func receive<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Senda
     params: RouteParam<U, Env>,
     query: RouteParam<Q, Env>
 ) -> RouteMatcher<U, Q, Env> {
-    RouteMatcher { request in
-        ZIO { env in
-            DeferredTask {
+    { request in
+        Reader { env in
+            Publisher.future {
                 guard request.method == method,
                       let pathDict = matchPath(request.path, against: path)
                 else { return .failure(.notFound) }
@@ -173,7 +174,7 @@ public func options<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Senda
 /// startServer(port: 8080, router: router).runReader(())
 /// ```
 public func when<Env: Sendable>(
-    _ chain: RoutePipeline<Env>,
+    _ chain: @escaping RoutePipeline<Env>,
     injecting _: Env.Type
 ) -> Router<Env> {
     Router(chain)
@@ -183,8 +184,10 @@ public func when<Env: Sendable>(
 
 /// Passes a matched route through with an `Empty` body — no `Decodable` constraint imposed.
 public func ignoreBody<U, Q, Env: Sendable>() -> BodyDecoder<U, Q, Empty, Env> {
-    BodyDecoder { matched in
-        .pure(TypedRequest(urlParams: matched.urlParams, queryParams: matched.queryParams, body: .value, raw: matched.raw))
+    { matched in
+        Reader { _ in
+            Publisher.pure(TypedRequest(urlParams: matched.urlParams, queryParams: matched.queryParams, body: .value, raw: matched.raw))
+        }
     }
 }
 
@@ -201,10 +204,10 @@ public func ignoreBody<U, Q, Env: Sendable>() -> BodyDecoder<U, Q, Empty, Env> {
 public func decodeBody<U, Q, B: Decodable & Sendable, Env: Sendable>(
     using decoderLens: @escaping @Sendable (Env) -> DataDecoder<B>
 ) -> BodyDecoder<U, Q, B, Env> {
-    BodyDecoder { matched in
-        ZIO { env in
+    { matched in
+        Reader { env in
             let bodyData = matched.raw.body.isEmpty ? Data("{}".utf8) : matched.raw.body
-            return DeferredTask {
+            return Publisher.future {
                 decoderLens(env).run(bodyData)
                     .map { body in
                         TypedRequest(
