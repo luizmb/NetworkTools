@@ -2,6 +2,7 @@
 import Combine
 import Foundation
 import FP
+import ReactiveConcurrency
 @preconcurrency import MultipeerConnectivity
 
 /// A Multipeer session exposing both Combine and `DeferredStream`/`DeferredTask` APIs side by
@@ -11,8 +12,8 @@ import FP
 public class MultipeerSession: NSObject, MCSessionDelegate, @unchecked Sendable {
     public let session: MCSession
 
-    private let _messages = PassthroughSubject<MultipeerSessionReceivedMessage, Never>()
-    private let _connections = PassthroughSubject<MultipeerSessionConnectionStatusEvent, Never>()
+    private let _messages = Combine.PassthroughSubject<MultipeerSessionReceivedMessage, Never>()
+    private let _connections = Combine.PassthroughSubject<MultipeerSessionConnectionStatusEvent, Never>()
     private let messagesMulticaster = AsyncMulticaster<MultipeerSessionReceivedMessage>()
     private let connectionsMulticaster = AsyncMulticaster<MultipeerSessionConnectionStatusEvent>()
 
@@ -29,11 +30,11 @@ public class MultipeerSession: NSObject, MCSessionDelegate, @unchecked Sendable 
 
     // MARK: - Combine API
 
-    public var messages: AnyPublisher<MultipeerSessionReceivedMessage, Never> {
+    public var messages: Combine.AnyPublisher<MultipeerSessionReceivedMessage, Never> {
         _messages.eraseToAnyPublisher()
     }
 
-    public var connections: AnyPublisher<MultipeerSessionConnectionStatusEvent, Never> {
+    public var connections: Combine.AnyPublisher<MultipeerSessionConnectionStatusEvent, Never> {
         _connections.eraseToAnyPublisher()
     }
 
@@ -44,7 +45,7 @@ public class MultipeerSession: NSObject, MCSessionDelegate, @unchecked Sendable 
         browser: MCNearbyServiceBrowser,
         context: Data?,
         timeout: TimeInterval
-    ) -> AnyPublisher<MCPeerID, Never> {
+    ) -> Combine.AnyPublisher<MCPeerID, Never> {
         _connections
             .filter { event in
                 guard case let .peerConnected(connectedPeer, _) = event else { return false }
@@ -70,14 +71,14 @@ public class MultipeerSession: NSObject, MCSessionDelegate, @unchecked Sendable 
         }
     }
 
-    // MARK: - DeferredStream / DeferredTask API
+    // MARK: - Publisher API (ReactiveConcurrency)
 
-    public var messagesStream: DeferredStream<MultipeerSessionReceivedMessage> {
-        DeferredStream { [multicaster = messagesMulticaster] in multicaster.register() }
+    public var messagesStream: ReactiveConcurrency.Publisher<MultipeerSessionReceivedMessage, Never> {
+        DeferredStream { [multicaster = messagesMulticaster] in multicaster.register() }.eraseToPublisher()
     }
 
-    public var connectionsStream: DeferredStream<MultipeerSessionConnectionStatusEvent> {
-        DeferredStream { [multicaster = connectionsMulticaster] in multicaster.register() }
+    public var connectionsStream: ReactiveConcurrency.Publisher<MultipeerSessionConnectionStatusEvent, Never> {
+        DeferredStream { [multicaster = connectionsMulticaster] in multicaster.register() }.eraseToPublisher()
     }
 
     /// Invites a peer and suspends until it first becomes connected.
@@ -90,8 +91,8 @@ public class MultipeerSession: NSObject, MCSessionDelegate, @unchecked Sendable 
         browser: MCNearbyServiceBrowser,
         context: Data?,
         timeout: TimeInterval
-    ) -> DeferredTask<MCPeerID?> {
-        DeferredTask { [self] in
+    ) -> ReactiveConcurrency.Publisher<MCPeerID?, Never> {
+        ReactiveConcurrency.Publisher.future { [self] in
             let stream = connectionsMulticaster.register()
             browser.invitePeer(peer, to: session, withContext: context, timeout: timeout)
             for await event in stream {
@@ -103,16 +104,16 @@ public class MultipeerSession: NSObject, MCSessionDelegate, @unchecked Sendable 
         }
     }
 
-    public func sendTask(_ data: Data, to peer: MCPeerID, reliable: Bool = true) -> DeferredTask<Result<Void, Error>> {
-        DeferredTask { [self] in
+    public func sendTask(_ data: Data, to peer: MCPeerID, reliable: Bool = true) -> ReactiveConcurrency.Publisher<Void, Error> {
+        ReactiveConcurrency.Publisher.future { [self] in
             Result {
                 try session.send(data, toPeers: [peer], with: reliable ? .reliable : .unreliable)
             }
         }
     }
 
-    public func sendToAllTask(_ data: Data, reliable: Bool = true) -> DeferredTask<Result<Void, Error>> {
-        DeferredTask { [self] in
+    public func sendToAllTask(_ data: Data, reliable: Bool = true) -> ReactiveConcurrency.Publisher<Void, Error> {
+        ReactiveConcurrency.Publisher.future { [self] in
             Result {
                 try session.send(data, toPeers: session.connectedPeers, with: reliable ? .reliable : .unreliable)
             }

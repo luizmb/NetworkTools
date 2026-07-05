@@ -1,6 +1,7 @@
 #if canImport(Network)
 import Foundation
 import FP
+import ReactiveConcurrency
 @preconcurrency import Network
 
 /// Native ``DeferredStream`` wrapping `NWListener` for Bonjour service advertising.
@@ -40,7 +41,7 @@ public func bonjourListenerStream(
     port: NWEndpoint.Port = .any,
     txtRecord: NWTXTRecord = NWTXTRecord(),
     params: NWParameters = .tcp
-) -> DeferredStream<Result<BonjourListenEvent, Error>> {
+) -> Publisher<BonjourListenEvent, Error> {
     DeferredStream {
         AsyncStream { continuation in
             do {
@@ -60,12 +61,13 @@ public func bonjourListenerStream(
             }
         }
     }
+    .eraseToThrowingPublisher()
 }
 
 /// Variant for when an `NWListener` has already been configured externally.
 public func bonjourListenerStream(
     listener: NWListener
-) -> DeferredStream<Result<BonjourListenEvent, Error>> {
+) -> Publisher<BonjourListenEvent, Error> {
     DeferredStream {
         AsyncStream { continuation in
             let delegate = NWListenerStreamDelegate(listener: listener, continuation: continuation)
@@ -73,6 +75,7 @@ public func bonjourListenerStream(
             delegate.start()
         }
     }
+    .eraseToThrowingPublisher()
 }
 
 private final class NWListenerStreamDelegate: @unchecked Sendable {

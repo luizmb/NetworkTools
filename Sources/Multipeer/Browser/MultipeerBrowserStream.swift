@@ -5,6 +5,7 @@
 #if canImport(MultipeerConnectivity)
 import Foundation
 import FP
+import ReactiveConcurrency
 @preconcurrency import MultipeerConnectivity
 
 /// Native ``DeferredStream`` wrapping `MCNearbyServiceBrowser`.
@@ -17,7 +18,7 @@ import FP
 public func multipeerBrowserStream(
     myselfAsPeer: MCPeerID,
     serviceType: String
-) -> DeferredStream<Result<MultipeerBrowserEvent, Error>> {
+) -> Publisher<MultipeerBrowserEvent, Error> {
     DeferredStream {
         AsyncStream { continuation in
             let delegate = MultipeerBrowserStreamDelegate(
@@ -29,6 +30,7 @@ public func multipeerBrowserStream(
             delegate.start()
         }
     }
+    .eraseToThrowingPublisher()
 }
 
 private final class MultipeerBrowserStreamDelegate: NSObject, MCNearbyServiceBrowserDelegate, @unchecked Sendable {

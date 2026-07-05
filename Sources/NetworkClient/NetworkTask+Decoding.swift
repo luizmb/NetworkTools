@@ -4,17 +4,19 @@ import Foundation
 import FoundationNetworking
 #endif
 import FP
+import ReactiveConcurrency
+import ReactiveConcurrencyTransformers
 
 // MARK: - Decoding
 
 private func _decode<D: Decodable & Sendable>(_ data: Data, using decoder: DataDecoder<D>) -> NetworkTask<D> {
-    ZIO { _ in DeferredTask { decoder.run(data).mapError(HTTPError.decoding) } }
+    Reader { _ in Publisher.future { decoder.run(data).mapError(HTTPError.decoding) } }
 }
 
-public extension ZIO where Env == URLRequest, Success == Data, Failure == HTTPError {
+public extension Reader where Environment == URLRequest, Output == Publisher<Data, HTTPError> {
     /// Decodes the raw `Data` output using the provided `DataDecoder`.
     func decode<D: Decodable & Sendable>(using decoder: DataDecoder<D>) -> NetworkTask<D> {
-        flatMap { _decode($0, using: decoder) }
+        flatMapT { _decode($0, using: decoder) }
     }
 
     /// Decodes the raw `Data` output using the provided `DataDecoderFactory`.
