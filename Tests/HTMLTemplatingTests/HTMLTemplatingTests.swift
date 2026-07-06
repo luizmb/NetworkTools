@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // swiftlint:disable file_length
 import Foundation
 @testable import HTMLTemplating
@@ -42,6 +44,7 @@ struct EscAttrTests {
     @Test func combined() {
         #expect(escAttr(#"<a href="url">"#) == "&lt;a href=&quot;url&quot;&gt;")
     }
+
     @Test func noSpecials() { #expect(escAttr("hello") == "hello") }
 }
 
@@ -247,7 +250,7 @@ struct RenderIncludeTests {
     @Test func missingFragmentReturnsFailure() {
         let env = HTMLEnvironment.mockFailure(error: URLError(.fileDoesNotExist))
         let result = render("{{#include missing}}", [:]).runReader(env)
-        if case .failure(let e) = result, case .readError(let name, _) = e {
+        if case let .failure(e) = result, case let .readError(name, _) = e {
             #expect(name == "missing")
         } else {
             Issue.record("Expected .failure(.readError(\"missing\", _)), got \(result)")
@@ -316,7 +319,7 @@ struct LoadTemplateTests {
     @Test func notFoundReturnsFailure() {
         let env = HTMLEnvironment(find: { _ in nil }, readFile: { _ in .success("") })
         let result = loadTemplate("nonexistent").runReader(env)
-        guard case .failure(let e) = result, case .notFound = e else {
+        guard case let .failure(e) = result, case .notFound = e else {
             Issue.record("Expected .failure(.notFound), got \(result)")
             return
         }
@@ -324,7 +327,7 @@ struct LoadTemplateTests {
 
     @Test func foundReturnsContents() {
         let result = loadTemplate("page").runReader(.mockSuccess(contents: "<h1>Hi</h1>"))
-        guard case .success(let html) = result else {
+        guard case let .success(html) = result else {
             Issue.record("Expected .success, got \(result)")
             return
         }
@@ -333,7 +336,7 @@ struct LoadTemplateTests {
 
     @Test func readErrorPropagates() {
         let result = loadTemplate("page").runReader(.mockFailure(error: URLError(.fileDoesNotExist)))
-        guard case .failure(let e) = result, case .readError = e else {
+        guard case let .failure(e) = result, case .readError = e else {
             Issue.record("Expected .failure(.readError), got \(result)")
             return
         }

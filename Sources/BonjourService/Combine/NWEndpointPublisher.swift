@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // nil TXT (no record) is semantically distinct from [:] (empty record).
 // swiftlint:disable discouraged_optional_collection
 #if canImport(Combine)
@@ -6,10 +8,10 @@ import Core
 import Foundation
 import Network
 
-extension NWEndpoint {
+public extension NWEndpoint {
     /// Resolves this endpoint to a `ResolvedEndpoint`, using a default `NetServicePublisher`
     /// for `.service` endpoints.
-    public func publisher() -> NWEndpointPublisher {
+    func publisher() -> NWEndpointPublisher {
         publisher { description, strategy in
             NetService(domain: description.domain, type: description.type, name: description.serviceName)
                 .publisher(monitorDevice: strategy)
@@ -20,7 +22,7 @@ extension NWEndpoint {
     ///
     /// Useful when you want to control timeout, monitoring strategy, or substitute a mock
     /// in tests.
-    public func publisher<P: Publisher>(
+    func publisher<P: Publisher>(
         netServicePublisher: @escaping (ServiceDescription, NetServiceTXTRecordsMonitorStrategy) -> P
     ) -> NWEndpointPublisher
     where P.Output == NetServicePublisher.Output, P.Failure == NetServicePublisher.Failure {
@@ -78,7 +80,7 @@ public struct NWEndpointPublisher {
         publishResolvedTXT: Bool = false
     ) where P.Output == NetServicePublisher.Output, P.Failure == NetServicePublisher.Failure {
         self.endpoint = endpoint
-        self.netServicePublisherFactory = { netServicePublisher($0, $1).eraseToAnyPublisher() }
+        netServicePublisherFactory = { netServicePublisher($0, $1).eraseToAnyPublisher() }
         self.publishResolvedAddresses = publishResolvedAddresses
         self.publishResolvedTXT = publishResolvedTXT
     }
@@ -91,7 +93,9 @@ extension NWEndpointPublisher: Publisher {
     public func receive<S>(subscriber: S)
     where S: Subscriber, Failure == S.Failure, Output == S.Input {
         switch endpoint {
-        case .hostPort, .unix, .url:
+        case .hostPort,
+             .unix,
+             .url:
             Just(.from(endpoint: endpoint, service: nil))
                 .setFailureType(to: Failure.self)
                 .subscribe(subscriber)
@@ -103,7 +107,10 @@ extension NWEndpointPublisher: Publisher {
             )
             .compactMap { event -> ResolvedEndpoint? in
                 switch event.type {
-                case .willPublish, .willResolve, .didPublish, .didAcceptConnectionWith:
+                case .willPublish,
+                     .willResolve,
+                     .didPublish,
+                     .didAcceptConnectionWith:
                     return nil
                 case .didResolveAddress:
                     guard publishResolvedAddresses else { return nil }
@@ -126,8 +133,8 @@ extension NWEndpointPublisher: Publisher {
 
 // MARK: - Model
 
-extension NWEndpointPublisher {
-    public enum ResolvedEndpoint: Equatable {
+public extension NWEndpointPublisher {
+    enum ResolvedEndpoint: Equatable {
         public enum HostType: Equatable {
             case name(String)
             case ip(IP)
@@ -139,14 +146,14 @@ extension NWEndpointPublisher {
         case url(URL, txt: [String: Data]?)
     }
 
-    public enum NWEndpointError: Error {
+    enum NWEndpointError: Error {
         case endpointIsNotSupported
         case netServiceError(NetServicePublisher.Failure)
     }
 }
 
-extension NWEndpointPublisher.ResolvedEndpoint {
-    public static func from(endpoint: NWEndpoint, service: NetService?) -> Self {
+public extension NWEndpointPublisher.ResolvedEndpoint {
+    static func from(endpoint: NWEndpoint, service: NetService?) -> Self {
         let txt = service?.txtRecordData().map { NetService.dictionary(fromTXTRecord: $0) }
         switch endpoint {
         case let .hostPort(host, port):
@@ -176,47 +183,50 @@ extension NWEndpointPublisher.ResolvedEndpoint {
         }
     }
 
-    public var interface: NWInterface? {
+    var interface: NWInterface? {
         switch self {
         case let .hostPort(_, _, i, _): i
-        case let .service(_, i, _):     i
-        case .unix, .url:               nil
+        case let .service(_, i, _): i
+        case .unix,
+             .url: nil
         }
     }
 
-    public var txt: [String: Data]? {
+    var txt: [String: Data]? {
         switch self {
         case let .hostPort(_, _, _, t): t
-        case let .service(_, _, t):     t
-        case let .unix(_, t):           t
-        case let .url(_, t):            t
+        case let .service(_, _, t): t
+        case let .unix(_, t): t
+        case let .url(_, t): t
         }
     }
 
-    public var hostname: String? {
+    var hostname: String? {
         switch self {
         case let .hostPort(.name(h), _, _, _): h
-        case let .service(s, _, _):            s.hostName
-        case let .url(u, _):                   u.host
-        case let .hostPort(.ip(ip), _, _, _):  ip.ipString
-        case .unix:                            nil
+        case let .service(s, _, _): s.hostName
+        case let .url(u, _): u.host
+        case let .hostPort(.ip(ip), _, _, _): ip.ipString
+        case .unix: nil
         }
     }
 
-    public var ips: [String]? {
+    var ips: [String]? {
         switch self {
         case let .hostPort(.ip(ip), _, _, _): [ip.ipString]
-        case let .service(s, _, _):           s.parsedAddresses()
-        case .hostPort(.name, _, _, _), .unix, .url: nil
+        case let .service(s, _, _): s.parsedAddresses()
+        case .hostPort(.name, _, _, _),
+             .unix,
+             .url: nil
         }
     }
 
-    public var port: Int? {
+    var port: Int? {
         switch self {
         case let .hostPort(_, p, _, _): p
-        case let .service(s, _, _):     s.port
-        case let .url(u, _):            u.port
-        case .unix:                     nil
+        case let .service(s, _, _): s.port
+        case let .url(u, _): u.port
+        case .unix: nil
         }
     }
 }

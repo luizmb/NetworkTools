@@ -1,14 +1,16 @@
+// SPDX-License-Identifier: Apache-2.0
+
 #if canImport(Combine)
 import Combine
 import Core
 import Foundation
 import Network
 
-extension NWListener {
+public extension NWListener {
     /// A Combine publisher that streams events from this listener.
     ///
     /// Shorthand for `NWListenerPublisher(listener: self)`.
-    public var publisher: NWListenerPublisher { .init(listener: self) }
+    var publisher: NWListenerPublisher { .init(listener: self) }
 }
 
 /// A Combine `Publisher` that advertises a Bonjour service and streams inbound connection events.
@@ -81,7 +83,7 @@ public struct NWListenerPublisher {
     ) throws {
         let l = try NWListener(using: params, on: port)
         l.service = NWListener.Service(name: serviceName, type: serviceType, domain: nil, txtRecord: txtRecord)
-        self.listener = l
+        listener = l
     }
 }
 
@@ -105,18 +107,18 @@ extension NWListenerPublisher {
 
         init(subscriber: S, listener: NWListener) {
             self.listener = listener
-            self.buffer = DemandBuffer(subscriber: subscriber)
+            buffer = DemandBuffer(subscriber: subscriber)
 
             listener.stateUpdateHandler = { [weak self] state in
                 guard let self else { return }
                 switch state {
                 case .ready:
                     _ = buffer?.buffer(value: .ready(port: listener.port))
-                case let .failed(error):  handleError(error)
+                case let .failed(error): handleError(error)
                 case let .waiting(error): handleError(error)
-                case .cancelled:          buffer?.complete(completion: .finished)
-                case .setup:              break
-                @unknown default:         break
+                case .cancelled: buffer?.complete(completion: .finished)
+                case .setup: break
+                @unknown default: break
                 }
             }
 
@@ -132,7 +134,7 @@ extension NWListenerPublisher {
         func request(_ demand: Subscribers.Demand) {
             guard let buffer else { return }
             lock.lock()
-            if !started && demand > .none {
+            if !started, demand > .none {
                 started = true
                 lock.unlock()
                 start()
@@ -157,8 +159,8 @@ extension NWListenerPublisher {
 
 // MARK: - Model
 
-extension NWListenerPublisher {
-    public enum Event {
+public extension NWListenerPublisher {
+    enum Event {
         /// The listener is active and advertising via Bonjour. `port` is the OS-assigned
         /// port — always check this when the listener was created with `.any`.
         case ready(port: NWEndpoint.Port?)
@@ -168,7 +170,7 @@ extension NWListenerPublisher {
         case serviceRegistrationChanged(NWListener.ServiceRegistrationChange)
     }
 
-    public enum NWListenerError: Error {
+    enum NWListenerError: Error {
         /// Local network access was denied by the OS or user.
         case permissionDenied
         /// The listener failed with an underlying network error.

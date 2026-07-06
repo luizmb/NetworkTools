@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // nil TXT (no record) is semantically distinct from [:] (empty record).
 // swiftlint:disable discouraged_optional_collection
 #if canImport(Combine)
@@ -6,11 +8,11 @@ import Core
 import Foundation
 import Network
 
-extension NWBrowser {
+public extension NWBrowser {
     /// A Combine publisher that streams service-discovery events from this browser.
     ///
     /// Shorthand for `NWBrowserPublisher(browser: self)`.
-    public var publisher: NWBrowserPublisher { .init(browser: self) }
+    var publisher: NWBrowserPublisher { .init(browser: self) }
 }
 
 /// A Combine `Publisher` that streams Bonjour service-discovery events from `NWBrowser`.
@@ -70,7 +72,7 @@ public struct NWBrowserPublisher {
     ///   - domain: Search domain; `nil` searches the local link and wide-area domains.
     ///   - params: Network parameters; defaults to plain TCP.
     public init(serviceType: String, domain: String?, params: NWParameters = .tcp) {
-        self.browser = NWBrowser(
+        browser = NWBrowser(
             for: .bonjourWithTXTRecord(type: serviceType, domain: domain),
             using: params
         )
@@ -102,15 +104,16 @@ extension NWBrowserPublisher {
 
         init(subscriber: S, browser: NWBrowser) {
             self.browser = browser
-            self.buffer = DemandBuffer(subscriber: subscriber)
+            buffer = DemandBuffer(subscriber: subscriber)
 
             browser.stateUpdateHandler = { [weak self] state in
                 switch state {
-                case let .failed(error):  self?.handleError(error)
+                case let .failed(error): self?.handleError(error)
                 case let .waiting(error): self?.handleError(error)
-                case .cancelled:          self?.buffer?.complete(completion: .finished)
-                case .setup, .ready:      break
-                @unknown default:         break
+                case .cancelled: self?.buffer?.complete(completion: .finished)
+                case .setup,
+                     .ready: break
+                @unknown default: break
                 }
             }
 
@@ -139,7 +142,7 @@ extension NWBrowserPublisher {
         func request(_ demand: Subscribers.Demand) {
             guard let buffer else { return }
             lock.lock()
-            if !started && demand > .none {
+            if !started, demand > .none {
                 started = true
                 lock.unlock()
                 start()
@@ -164,8 +167,8 @@ extension NWBrowserPublisher {
 
 // MARK: - Model
 
-extension NWBrowserPublisher {
-    public enum Event {
+public extension NWBrowserPublisher {
+    enum Event {
         /// A service matching the search descriptor appeared on the network.
         case didFind(endpoint: NWEndpoint, txt: [String: String]?)
         /// A previously discovered service is no longer available.
@@ -179,7 +182,7 @@ extension NWBrowserPublisher {
         )
     }
 
-    public enum NWBrowserError: Error {
+    enum NWBrowserError: Error {
         /// The user has not granted local-network access to the app.
         case bonjourPermissionDenied
         /// The browser failed with an underlying network error.

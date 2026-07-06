@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+
+#if canImport(NIOCore)
 import Core
 import Foundation
 import FP
@@ -13,9 +16,9 @@ public struct Request: Sendable {
         uri: String,
         body: Data
     ) {
-        self.method     = method
-        self.uri        = uri
-        self.body       = body
+        self.method = method
+        self.uri = uri
+        self.body = body
     }
 
     public var path: String {
@@ -42,3 +45,4 @@ public struct Request: Sendable {
         Reader { factory in factory.dataDecoder(for: T.self).run(body) }
     }
 }
+#endif

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+
+#if canImport(NIOCore)
 import Core
 import Foundation
 import NIOHTTP1
@@ -36,3 +39,4 @@ public extension Result where Success == Response, Failure == ResponseError {
     static func badRequest(_ msg: String = "") -> Self { .failure(.badRequest(msg)) }
     static func serverError(_ msg: String = "") -> Self { .failure(.serverError(msg)) }
 }
+#endif

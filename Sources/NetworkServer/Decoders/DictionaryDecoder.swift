@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+
+#if canImport(NIOCore)
 import Core
 import Foundation
 
@@ -25,3 +28,4 @@ extension StringKeyValueDecoder: DictionaryDecoderFactory {
         }
     }
 }
+#endif

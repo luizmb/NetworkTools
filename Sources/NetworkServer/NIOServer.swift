@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+
+#if canImport(NIOCore)
 import Foundation
 import FP
 import NIOCore
@@ -33,10 +36,11 @@ public func startServer<Env: Sendable>(host: String = "127.0.0.1", port: Int, ro
             try channel.closeFuture.wait()
         }
 
-        if case .failure(let shutdownError) = Result(catching: { try group.syncShutdownGracefully() }) {
+        if case let .failure(shutdownError) = Result(catching: { try group.syncShutdownGracefully() }) {
             print("[NetworkServer] Event loop shutdown error: \(shutdownError)")
         }
 
         return result
     }
 }
+#endif

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // MCNearbyServiceAdvertiser exposes discoveryInfo as [String: String]? where nil (no TXT
 // data) is semantically distinct from [:] (empty TXT data), so the optional collection is
 // kept intentionally.
@@ -21,7 +23,7 @@ public struct MultipeerAdvertiserPublisher: Publisher {
     private let discoveryInfo: [String: String]?
 
     public init(myselfAsPeer: MCPeerID, serviceType: String, discoveryInfo: [String: String]? = nil) {
-        self.peer = myselfAsPeer
+        peer = myselfAsPeer
         self.serviceType = serviceType
         self.discoveryInfo = discoveryInfo
     }
@@ -79,7 +81,7 @@ where S.Input == MultipeerAdvertiserEvent, S.Failure == Error {
         DispatchQueue.main.async { [self] in
             let first = requested == .none
             requested += increment ?? .none
-            if first && requested != .none {
+            if first, requested != .none {
                 advertiser.startAdvertisingPeer()
             }
         }

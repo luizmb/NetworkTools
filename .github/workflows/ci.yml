@@ -39,8 +39,11 @@ jobs:
       - name: Install Periphery
         run: brew install peripheryapp/periphery/periphery
 
-      - name: Install SwiftLint
+      - name: Install SwiftLint, SwiftFormat, Periphery
         run: mint bootstrap
+
+      - name: Format (check)
+        run: mint run swiftformat --lint .
 
       - name: Lint
         run: mint run swiftlint lint --strict
@@ -88,3 +91,20 @@ jobs:
 
       - name: Test
         run: swift test 2>&1
+
+  # The whole package builds on Windows: NetworkServer's swift-nio (NIOPosix) deps are
+  # condition-gated out of Windows in Package.swift AND its sources are #if canImport(NIOCore)
+  # gated (compile-empty on Windows); Multipeer/BonjourService are #if canImport gated too.
+  # So the portable products (Core, HTMLTemplating, NetworkClient, WebSocketClient) compile and
+  # the non-portable ones become empty. See the platform-support matrix in README.md.
+  test-windows:
+    name: Build & Test (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: compnerd/gha-setup-swift@main
+        with:
+          swift-version: swift-6.3-release
+          swift-build: 6.3-RELEASE
+      - uses: actions/checkout@v7
+      - name: Build
+        run: swift build

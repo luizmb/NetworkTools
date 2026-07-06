@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 #if canImport(MultipeerConnectivity)
 import Combine
 import Foundation
@@ -124,10 +126,10 @@ public class MultipeerSession: NSObject, MCSessionDelegate, @unchecked Sendable 
 
     public func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
         let event: MultipeerSessionConnectionStatusEvent? = switch state {
-        case .connected:    .peerConnected(peerID, session: session)
-        case .connecting:   .peerIsConnecting(peerID, session: session)
+        case .connected: .peerConnected(peerID, session: session)
+        case .connecting: .peerIsConnecting(peerID, session: session)
         case .notConnected: .peerDisconnected(peerID, session: session)
-        @unknown default:   nil
+        @unknown default: nil
         }
         guard let event else { return }
         _connections.send(event)

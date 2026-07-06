@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import Foundation
 
 public enum HTTPError: Error, Sendable {
@@ -9,9 +11,9 @@ public enum HTTPError: Error, Sendable {
 extension HTTPError: CustomStringConvertible {
     public var description: String {
         switch self {
-        case .network(let e):      "Network error: \(e.localizedDescription)"
-        case .badStatus(let c, _): "HTTP \(c)"
-        case .decoding(let e):     "Decoding error: \(e.localizedDescription)"
+        case let .network(e): "Network error: \(e.localizedDescription)"
+        case let .badStatus(c, _): "HTTP \(c)"
+        case let .decoding(e): "Decoding error: \(e.localizedDescription)"
         }
     }
 }

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // swiftlint:disable discouraged_optional_collection
 import Foundation
 
@@ -54,13 +56,13 @@ public struct ResolvedServiceInfo: Sendable, Equatable {
 
 // MARK: - Convenience
 
-extension ResolvedServiceInfo {
+public extension ResolvedServiceInfo {
     /// The preferred host string for opening a connection.
     ///
     /// Returns the first resolved IP address if available, falling back to the
     /// hostname. IPv6 addresses are returned without brackets here; use
     /// ``webSocketURL(path:secure:)`` to get a properly formatted URL.
-    public var preferredHost: String? { ips.first ?? host }
+    var preferredHost: String? { ips.first ?? host }
 
     /// Returns a WebSocket URL built from the resolved host and port.
     ///
@@ -71,11 +73,12 @@ extension ResolvedServiceInfo {
     /// let secureURL = resolved.webSocketURL(secure: true)  // wss://...
     /// let pathURL = resolved.webSocketURL(path: "/ws")     // ws://.../ws
     /// ```
-    public func webSocketURL(path: String = "", secure: Bool = false) -> URL? {
+    func webSocketURL(path: String = "", secure: Bool = false) -> URL? {
         guard let rawHost = preferredHost, let port else { return nil }
         let scheme = secure ? "wss" : "ws"
         let host = rawHost.contains(":") ? "[\(rawHost)]" : rawHost
         return URL(string: "\(scheme)://\(host):\(port)\(path)")
     }
 }
+
 // swiftlint:enable discouraged_optional_collection

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 #if canImport(Network)
 import Foundation
 import FP
@@ -91,11 +93,11 @@ private final class NWListenerStreamDelegate: @unchecked Sendable {
             switch state {
             case .ready:
                 continuation.yield(.success(.ready(port: listener.port?.rawValue)))
-            case let .failed(error):  handleError(error)
+            case let .failed(error): handleError(error)
             case let .waiting(error): handleError(error)
-            case .cancelled:          continuation.finish()
-            case .setup:              break
-            @unknown default:         break
+            case .cancelled: continuation.finish()
+            case .setup: break
+            @unknown default: break
             }
         }
 
@@ -108,7 +110,7 @@ private final class NWListenerStreamDelegate: @unchecked Sendable {
         listener.serviceRegistrationUpdateHandler = { [weak self] change in
             guard let self else { return }
             switch change {
-            case .add:    continuation.yield(.success(.registered))
+            case .add: continuation.yield(.success(.registered))
             case .remove: continuation.yield(.success(.unregistered))
             @unknown default: break
             }

@@ -1,6 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+
+#if canImport(NIOCore)
 import Foundation
 import FP
 import NIOHTTP1
+
 /// Matches an incoming request and decodes its URL and query parameters into typed values.
 ///
 /// - `URLParams` is decoded from path segments (`:id`, `:name`, …) using `URLParamsDecoder`.
@@ -20,21 +24,21 @@ public struct Route<URLParams: Decodable & Sendable, QueryParams: Decodable & Se
     public let pattern: String
 
     public init(_ method: HTTPMethod, _ pattern: String) {
-        self.method  = method
+        self.method = method
         self.pattern = pattern
     }
 
     public func match(_ raw: Request) -> Reader<DictionaryDecoderFactory, Result<MatchedRoute<URLParams, QueryParams>, ResponseError>> {
         Reader { env in
             guard raw.method == method,
-                let pathParams = matchPath(raw.path, against: pattern),
-                case .success(let urlParams) = env.dictionaryDecoder(for: URLParams.self).run(pathParams)
+                  let pathParams = matchPath(raw.path, against: pattern),
+                  case let .success(urlParams) = env.dictionaryDecoder(for: URLParams.self).run(pathParams)
             else { return .failure(.notFound) }
 
             switch env.dictionaryDecoder(for: QueryParams.self).run(raw.queryParams) {
-            case .success(let queryParams):
+            case let .success(queryParams):
                 return .success(MatchedRoute(urlParams: urlParams, queryParams: queryParams, raw: raw))
-            case .failure(let error):
+            case let .failure(error):
                 return .failure(.badRequest(error.localizedDescription))
             }
         }
@@ -45,7 +49,7 @@ public struct Route<URLParams: Decodable & Sendable, QueryParams: Decodable & Se
 
 // swiftlint:disable:next discouraged_optional_collection
 func matchPath(_ path: String, against pattern: String) -> [String: String]? {
-    let pathParts    = path.split(separator: "/", omittingEmptySubsequences: true)
+    let pathParts = path.split(separator: "/", omittingEmptySubsequences: true)
     let patternParts = pattern.split(separator: "/", omittingEmptySubsequences: true)
     guard pathParts.count == patternParts.count else { return nil }
 
@@ -60,3 +64,4 @@ func matchPath(_ path: String, against pattern: String) -> [String: String]? {
         if tok.hasPrefix(":") { params[String(tok.dropFirst())] = String(seg) }
     }
 }
+#endif

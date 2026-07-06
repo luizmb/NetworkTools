@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import Foundation
 
 /// A Bonjour service identity: the combination of name, type, and domain that uniquely
@@ -39,9 +41,9 @@ public struct ServiceDescription {
     }
 }
 
-extension BonjourServiceInfo {
+public extension BonjourServiceInfo {
     /// Converts a `ServiceDescription` (Combine API) to a ``BonjourServiceInfo`` (async API).
-    public init(_ description: ServiceDescription) {
+    init(_ description: ServiceDescription) {
         self.init(name: description.serviceName, type: description.type, domain: description.domain)
     }
 }

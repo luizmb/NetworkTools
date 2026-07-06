@@ -1,13 +1,15 @@
+// SPDX-License-Identifier: Apache-2.0
+
 #if canImport(Combine)
 import Combine
 import Core
 import Foundation
 
-extension NetServiceBrowser {
+public extension NetServiceBrowser {
     /// Returns a publisher for the given service type and domain.
     ///
     /// Equivalent to `NetServiceBrowserPublisher(netServiceBrowser: self, ...)`.
-    public func publisher(serviceOfType type: String, inDomain domain: String) -> NetServiceBrowserPublisher {
+    func publisher(serviceOfType type: String, inDomain domain: String) -> NetServiceBrowserPublisher {
         .init(netServiceBrowser: self, serviceOfType: type, inDomain: domain)
     }
 }
@@ -62,7 +64,8 @@ extension NetServiceBrowserPublisher: Publisher {
             subscriber: subscriber,
             netServiceBrowser: netServiceBrowser,
             services: services,
-            domain: domain))
+            domain: domain
+        ))
     }
 }
 
@@ -78,7 +81,7 @@ extension NetServiceBrowserPublisher {
 
         init(subscriber: S, netServiceBrowser: NetServiceBrowser, services: String, domain: String) {
             self.netServiceBrowser = netServiceBrowser
-            self.buffer = DemandBuffer(subscriber: subscriber)
+            buffer = DemandBuffer(subscriber: subscriber)
             self.services = services
             self.domain = domain
             super.init()
@@ -88,7 +91,7 @@ extension NetServiceBrowserPublisher {
         func request(_ demand: Subscribers.Demand) {
             guard let buffer else { return }
             lock.lock()
-            if !started && demand > .none {
+            if !started, demand > .none {
                 started = true
                 lock.unlock()
                 start()
@@ -125,7 +128,7 @@ extension NetServiceBrowserPublisher {
             _ = buffer?.buffer(value: .init(netServiceBrowser: b, type: .didRemoveDomain(domainString: d, moreComing: moreComing)))
         }
 
-        func netServiceBrowserDidStopSearch(_ b: NetServiceBrowser) {
+        func netServiceBrowserDidStopSearch(_: NetServiceBrowser) {
             buffer?.complete(completion: .finished)
         }
     }
@@ -133,8 +136,8 @@ extension NetServiceBrowserPublisher {
 
 // MARK: - Model
 
-extension NetServiceBrowserPublisher {
-    public struct Event {
+public extension NetServiceBrowserPublisher {
+    struct Event {
         public let netServiceBrowser: NetServiceBrowser
         public let type: EventType
 
@@ -144,7 +147,7 @@ extension NetServiceBrowserPublisher {
         }
     }
 
-    public enum EventType {
+    enum EventType {
         case willSearch
         case didFindDomain(domainString: String, moreComing: Bool)
         case didFind(service: NetService, moreComing: Bool)
@@ -152,7 +155,7 @@ extension NetServiceBrowserPublisher {
         case didRemove(service: NetService, moreComing: Bool)
     }
 
-    public enum NetServiceBrowserError: Error {
+    enum NetServiceBrowserError: Error {
         case didNotSearch(netServiceBrowser: NetServiceBrowser, errorDict: [String: NSNumber])
     }
 }

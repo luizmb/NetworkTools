@@ -1,8 +1,12 @@
+// SPDX-License-Identifier: Apache-2.0
+
+#if canImport(NIOCore)
 import Core
 import FP
 import ReactiveConcurrency
 
 // MARK: - Domain typealiases for the HTTP routing pipeline
+
 //
 // A pipeline step is a Kleisli arrow in `ReaderTPublisher`: `(I) -> Reader<Env, Publisher<O, ResponseError>>`.
 // Steps compose with `>=>` from ReactiveConcurrencyOperators.
@@ -56,3 +60,4 @@ public func response<U, Q, B, Env: Sendable>(
 ) -> ResponseHandler<U, Q, B, Env> {
     { req in Reader { _ in handler(req) } }
 }
+#endif

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // swiftlint:disable discouraged_optional_collection
 #if canImport(Darwin)
 import Foundation

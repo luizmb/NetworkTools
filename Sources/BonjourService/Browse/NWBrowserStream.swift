@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 #if canImport(Network)
 import Foundation
 import FP
@@ -85,11 +87,12 @@ private final class NWBrowserStreamDelegate: @unchecked Sendable {
 
         browser.stateUpdateHandler = { [weak self] state in
             switch state {
-            case let .failed(error):  self?.handleError(error)
+            case let .failed(error): self?.handleError(error)
             case let .waiting(error): self?.handleError(error)
-            case .cancelled:          self?.continuation.finish()
-            case .setup, .ready:      break
-            @unknown default:         break
+            case .cancelled: self?.continuation.finish()
+            case .setup,
+                 .ready: break
+            @unknown default: break
             }
         }
 

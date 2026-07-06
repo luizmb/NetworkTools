@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import Foundation
 import FP
 
@@ -97,8 +99,8 @@ public func loadTemplate(_ name: String) -> Reader<HTMLEnvironment, Result<Strin
 
 public func esc(_ s: String) -> String {
     s.replacingOccurrences(of: "&", with: "&amp;")
-     .replacingOccurrences(of: "<", with: "&lt;")
-     .replacingOccurrences(of: ">", with: "&gt;")
+        .replacingOccurrences(of: "<", with: "&lt;")
+        .replacingOccurrences(of: ">", with: "&gt;")
 }
 
 public func escAttr(_ s: String) -> String {
@@ -116,7 +118,7 @@ private func loadFragment(_ name: String) -> Reader<HTMLEnvironment, Result<Stri
 
 private func renderImpl(_ template: String, _ context: Context) -> Reader<HTMLEnvironment, Result<String, TemplateError>> {
     Reader { env in
-        var output    = ""
+        var output = ""
         var remaining = template[...]
 
         while let openRange = remaining.range(of: "{{") {
@@ -133,8 +135,8 @@ private func renderImpl(_ template: String, _ context: Context) -> Reader<HTMLEn
             remaining = remaining[closeRange.upperBound...]
 
             switch renderToken(token, context: context, env: env) {
-            case .success(let s): output += s
-            case .failure(let e): return .failure(e)
+            case let .success(s): output += s
+            case let .failure(e): return .failure(e)
             case .none: break
             }
         }
@@ -150,20 +152,20 @@ private func renderToken(
     env: HTMLEnvironment
 ) -> Result<String, TemplateError>? {
     if token.hasPrefix("#each ") {
-        return renderEach(token, context: context, env: env)
+        renderEach(token, context: context, env: env)
     } else if token.hasPrefix("#if ") {
-        return renderIf(token, context: context, env: env)
+        renderIf(token, context: context, env: env)
     } else if token.hasPrefix("#include ") {
-        return renderInclude(token, context: context, env: env)
+        renderInclude(token, context: context, env: env)
     } else {
-        return renderVariable(token, context: context)
+        renderVariable(token, context: context)
     }
 }
 
 private func renderEach(_ token: String, context: Context, env: HTMLEnvironment) -> Result<String, TemplateError>? {
     let parts = words(token.dropFirst(6), limit: 2)
     guard parts.count == 2,
-          case .list(let items) = context[parts[0]]
+          case let .list(items) = context[parts[0]]
     else { return nil }
 
     return loadFragment(parts[1])
@@ -194,18 +196,19 @@ private func renderInclude(_ token: String, context: Context, env: HTMLEnvironme
 
 private func renderVariable(_ token: String, context: Context) -> Result<String, TemplateError>? {
     switch context[token] {
-    case .string(let s): .success(s)
-    case .bool(let b):   .success(b ? "true" : "false")
-    case .list, nil:     nil
+    case let .string(s): .success(s)
+    case let .bool(b): .success(b ? "true" : "false")
+    case .list,
+         nil: nil
     }
 }
 
 private func truthy(_ value: TemplateValue?) -> Bool {
     switch value {
-    case .string(let s): !s.isEmpty
-    case .bool(let b):   b
-    case .list(let l):   !l.isEmpty
-    case nil:            false
+    case let .string(s): !s.isEmpty
+    case let .bool(b): b
+    case let .list(l): !l.isEmpty
+    case nil: false
     }
 }
 

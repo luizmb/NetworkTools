@@ -1,7 +1,9 @@
+// SPDX-License-Identifier: Apache-2.0
+
 #if canImport(Darwin)
 import Foundation
 
-extension NetService {
+public extension NetService {
     /// Resolves the raw socket-address data into human-readable IP address strings.
     ///
     /// Uses `getnameinfo` with `NI_NUMERICHOST` to convert each `sockaddr` in `addresses`
@@ -20,7 +22,7 @@ extension NetService {
     ///     .sink { ips in print("resolved IPs:", ips) }
     ///     .store(in: &cancellables)
     /// ```
-    public func parsedAddresses() -> [String] {
+    func parsedAddresses() -> [String] {
         guard let addresses else { return [] }
         return addresses.compactMap { addressData in
             var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))

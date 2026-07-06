@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // swiftlint:disable file_length
 import Core
 import Foundation
@@ -36,8 +38,8 @@ private extension Result {
 private extension Result where Success == Response, Failure == ResponseError {
     var response: Response {
         switch self {
-        case .success(let r): r
-        case .failure(let e): Response(e)
+        case let .success(r): r
+        case let .failure(e): Response(e)
         }
     }
 }
@@ -249,20 +251,20 @@ struct RouteTests {
 
     @Test func rejectsWrongMethod() {
         let result = match(Route<Empty, Empty>(.GET, "/ping"), req(.POST, "/ping"))
-        guard case .failure(let e) = result else { Issue.record("Expected .failure"); return }
+        guard case let .failure(e) = result else { Issue.record("Expected .failure"); return }
         #expect(e.status == .notFound)
     }
 
     @Test func rejectsWrongPath() {
         let result = match(Route<Empty, Empty>(.GET, "/ping"), req(.GET, "/pong"))
-        guard case .failure(let e) = result else { Issue.record("Expected .failure"); return }
+        guard case let .failure(e) = result else { Issue.record("Expected .failure"); return }
         #expect(e.status == .notFound)
     }
 
     @Test func decodesURLParams() {
         struct UserParams: Decodable { let id: String }
         let route = Route<UserParams, Empty>(.GET, "/users/:id")
-        guard case .success(let mr) = match(route, req(.GET, "/users/42")) else {
+        guard case let .success(mr) = match(route, req(.GET, "/users/42")) else {
             Issue.record("Expected .success"); return
         }
         #expect(mr.urlParams.id == "42")
@@ -271,13 +273,13 @@ struct RouteTests {
     @Test func returnsNotFoundOnURLParamTypeMismatch() {
         struct UserParams: Decodable { let id: Int }
         let result = match(Route<UserParams, Empty>(.GET, "/users/:id"), req(.GET, "/users/abc"))
-        guard case .failure(let e) = result else { Issue.record("Expected .failure"); return }
+        guard case let .failure(e) = result else { Issue.record("Expected .failure"); return }
         #expect(e.status == .notFound)
     }
 
     @Test func returnsErrorOnMissingRequiredQueryParam() {
         struct Q: Decodable { let page: Int }
-        guard case .failure(let e) = match(Route<Empty, Q>(.GET, "/items"), req(.GET, "/items")) else {
+        guard case let .failure(e) = match(Route<Empty, Q>(.GET, "/items"), req(.GET, "/items")) else {
             Issue.record("Expected .failure"); return
         }
         #expect(e.status == .badRequest)
@@ -328,11 +330,11 @@ struct RouterTests {
         let box = Box()
         let router = when(
             get("/users/:id", params: .decode(UserParams.self, using: \.dictionaryDecoderFactory))
-            >=> ignoreBody()
-            >=> response { (typedReq: TypedRequest<UserParams, Empty, Empty>) -> Result<Response, ResponseError> in
-                box.value = typedReq.urlParams.id
-                return .html("ok")
-            },
+                >=> ignoreBody()
+                >=> response { (typedReq: TypedRequest<UserParams, Empty, Empty>) -> Result<Response, ResponseError> in
+                    box.value = typedReq.urlParams.id
+                    return .html("ok")
+                },
             injecting: Env.self
         )
         _ = await router.handle(req(.GET, "/users/42")).provide(Env()).run()
@@ -345,10 +347,10 @@ struct RouterTests {
         struct Env: Sendable { let decoder: JSONDecoder }
         let router = when(
             post("/echo")
-            >=> decodeBody(using: \.decoder)
-            >=> response { (typedReq: TypedRequest<Empty, Empty, Body>) in
-                .json(Resp(echo: typedReq.body.name), encoder: JSONEncoder())
-            },
+                >=> decodeBody(using: \.decoder)
+                >=> response { (typedReq: TypedRequest<Empty, Empty, Body>) in
+                    .json(Resp(echo: typedReq.body.name), encoder: JSONEncoder())
+                },
             injecting: Env.self
         )
         let response = await router.handle(
@@ -371,10 +373,10 @@ struct RouterTests {
     @Test func asyncHandlerViaPublisher() async {
         let router = when(
             get("/pub")
-            >=> ignoreBody()
-            >=> response { (_: TypedRequest<Empty, Empty, Empty>) in
-                Publisher.pure(Result<Response, ResponseError>.html("pub").response)
-            },
+                >=> ignoreBody()
+                >=> response { (_: TypedRequest<Empty, Empty, Empty>) in
+                    Publisher.pure(Result<Response, ResponseError>.html("pub").response)
+                },
             injecting: Void.self
         )
         #expect(
@@ -442,10 +444,10 @@ struct NIOServerTests {
             when(get("/ping") >=> ignoreBody() >=> response { _ in .html("pong") }, injecting: Env.self)
             <|> when(
                 post("/echo")
-                >=> decodeBody(using: \.decoder)
-                >=> response { (req: TypedRequest<Empty, Empty, EchoBody>) in
-                    .json(EchoResp(message: req.body.message), encoder: JSONEncoder())
-                },
+                    >=> decodeBody(using: \.decoder)
+                    >=> response { (req: TypedRequest<Empty, Empty, EchoBody>) in
+                        .json(EchoResp(message: req.body.message), encoder: JSONEncoder())
+                    },
                 injecting: Env.self
             )
         Thread.detachNewThread {
@@ -461,8 +463,8 @@ struct NIOServerTests {
         // swiftlint:disable:next force_unwrapping
         var echoReq = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/echo")!)
         echoReq.httpMethod = "POST"
-        echoReq.httpBody   = Data(#"{"message":"hello"}"#.utf8)
-        let (echoData, _)  = try await URLSession.shared.data(for: echoReq)
+        echoReq.httpBody = Data(#"{"message":"hello"}"#.utf8)
+        let (echoData, _) = try await URLSession.shared.data(for: echoReq)
         #expect(try JSONDecoder().decode(EchoResp.self, from: echoData).message == "hello")
 
         // swiftlint:disable:next force_unwrapping

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 #if canImport(Darwin)
 import Foundation
 import FP
@@ -5,7 +7,7 @@ import ReactiveConcurrency
 
 // MARK: - URLSession factory (Apple platforms only)
 
-extension URLSession {
+public extension URLSession {
     /// Returns a lazy task that, when run, opens a WebSocket to `url`.
     ///
     /// ```swift
@@ -15,7 +17,7 @@ extension URLSession {
     /// _ = await conn.send(.text("hello")).run()
     /// // conn goes out of scope → deinit → normal-closure frame sent
     /// ```
-    public func webSocketConnection(with url: URL) -> Publisher<WebSocketConnection, Never> {
+    func webSocketConnection(with url: URL) -> Publisher<WebSocketConnection, Never> {
         makeConnection(webSocketTask(with: url))
     }
 
@@ -28,7 +30,7 @@ extension URLSession {
     /// req.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     /// let conn = await URLSession.shared.webSocketConnection(with: req).run()
     /// ```
-    public func webSocketConnection(with request: URLRequest) -> Publisher<WebSocketConnection, Never> {
+    func webSocketConnection(with request: URLRequest) -> Publisher<WebSocketConnection, Never> {
         makeConnection(webSocketTask(with: request))
     }
 
@@ -39,7 +41,7 @@ extension URLSession {
     ///     .webSocketConnection(with: URL(string: "wss://chat.example.com")!, protocols: ["chat", "v2"])
     ///     .run()
     /// ```
-    public func webSocketConnection(with url: URL, protocols: [String]) -> Publisher<WebSocketConnection, Never> {
+    func webSocketConnection(with url: URL, protocols: [String]) -> Publisher<WebSocketConnection, Never> {
         makeConnection(webSocketTask(with: url, protocols: protocols))
     }
 
@@ -85,8 +87,8 @@ extension URLSession {
 extension WebSocketMessage {
     var asTaskMessage: URLSessionWebSocketTask.Message {
         switch self {
-        case .text(let s): return .string(s)
-        case .data(let d): return .data(d)
+        case let .text(s): .string(s)
+        case let .data(d): .data(d)
         }
     }
 }
@@ -95,9 +97,9 @@ extension URLSessionWebSocketTask.Message {
     /// Returns `nil` for any `@unknown default` case added in a future SDK.
     var asWebSocketMessage: WebSocketMessage? {
         switch self {
-        case .string(let s): return .text(s)
-        case .data(let d):   return .data(d)
-        @unknown default:    return nil
+        case let .string(s): return .text(s)
+        case let .data(d): return .data(d)
+        @unknown default: return nil
         }
     }
 }

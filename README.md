@@ -1,5 +1,12 @@
 # NetworkTools
 
+[![CI](https://github.com/luizmb/NetworkTools/actions/workflows/ci.yml/badge.svg)](https://github.com/luizmb/NetworkTools/actions/workflows/ci.yml)
+[![Documentation](https://img.shields.io/badge/docs-online-blue)](https://ios.lu/NetworkTools)
+[![Swift 6.3+](https://img.shields.io/badge/swift-6.3%2B-orange)](https://swift.org)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+
+**[→ Full API Documentation](https://ios.lu/NetworkTools)**
+
 A suite of Swift packages for HTML templating, HTTP client networking, and HTTP server hosting. Built on functional programming principles using [`FP`](https://github.com/luizmb/FP): every public API uses `Reader` for dependency injection, `Result` for error handling, `DeferredTask` / `Publisher` (Combine) for async work, and `FunctionWrapper` for composable function types. No force-unwraps, no `fatalError`, no silent failures.
 
 **Platforms:** macOS 13+, iOS 16+, tvOS 16+, watchOS 9+
@@ -18,11 +25,32 @@ A suite of Swift packages for HTML templating, HTTP client networking, and HTTP 
 
 ---
 
+## Platform Support
+
+Not every product is available on every platform. `Core` and `HTMLTemplating` are pure
+Swift + `FP` and run everywhere; the others depend on platform-specific technologies.
+
+| Product | Apple (macOS/iOS/tvOS/watchOS/visionOS) | Linux | Windows | Notes |
+|---|:---:|:---:|:---:|---|
+| **Core** | ✅ | ✅ | ✅ | Pure `FP` + Foundation |
+| **HTMLTemplating** | ✅ | ✅ | ✅ | Pure `FP` + Foundation |
+| **NetworkClient** | ✅ | ✅ | ⚠️ | `URLSession` / `FoundationNetworking` — limited on Windows |
+| **WebSocketClient** | ✅ | ✅ | ⚠️ | Uses `URLSessionWebSocketTask` where available |
+| **NetworkServer** | ✅ | ✅ | ❌ | Built on swift-nio `NIOPosix` (Posix-only; the NIO dependencies are gated out of Windows in `Package.swift`) |
+| **Multipeer** | ✅ (Apple only) | ❌ | ❌ | `MultipeerConnectivity` — Apple frameworks only |
+| **BonjourService** | ✅ (Apple only) | ❌ | ❌ | `MultipeerConnectivity` / `Network` — Apple frameworks only |
+
+On non-Apple platforms the Apple-only modules compile to empty (`#if canImport(...)` gated), so
+depending on them is safe — they simply expose no API there. CI builds the portable products
+(`Core`, `HTMLTemplating`) on Windows.
+
+---
+
 ## Installation
 
 ```swift
 // Package.swift
-.package(url: "https://github.com/luizmb/NetworkTools.git", branch: "main")
+.package(url: "https://github.com/luizmb/NetworkTools.git", from: "0.6.0")
 ```
 
 Add individual products to your targets as needed:
