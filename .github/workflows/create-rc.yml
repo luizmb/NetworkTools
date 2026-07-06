@@ -37,6 +37,27 @@ jobs:
             exit 1
           fi
 
+      # Bump the SPM install version in every doc that pins it (README + DocC articles + docs/),
+      # on main, before branching the RC — so main and the eventual v-tag agree. perl -0777 so it
+      # matches single-line and multi-line (traits:) `.package(url: "…REPO.git" … from: "X.Y.Z")` blocks.
+      - name: Bump install version to ${{ inputs.version }} (README + DocC + docs)
+        run: |
+          REPO="${{ github.event.repository.name }}"
+          VER="${{ inputs.version }}"
+          FILES=$(grep -rl "${REPO}\.git" README.md Sources docs 2>/dev/null || true)
+          for f in $FILES; do
+            perl -0777 -pi -e "s{(${REPO}\.git\"[^)]*?from:\s*\")[0-9]+\.[0-9]+\.[0-9]+}{\${1}${VER}}g" "$f"
+          done
+          if git diff --quiet; then
+            echo "::notice::install version already ${VER} across docs"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -am "docs: bump install version to ${VER} (README + DocC + docs)"
+            git push origin main
+            echo "::notice::install version bumped to ${VER} across docs"
+          fi
+
       - name: Create and push release branch
         run: |
           BRANCH="release/${{ inputs.version }}"
