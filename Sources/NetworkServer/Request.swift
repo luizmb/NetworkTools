@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#if canImport(NIOCore)
 import Core
 import Foundation
 import FP
@@ -44,3 +45,4 @@ public struct Request: Sendable {
         Reader { factory in factory.dataDecoder(for: T.self).run(body) }
     }
 }
+#endif

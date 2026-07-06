@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#if canImport(NIOCore)
 import Core
 import Foundation
 import FP
@@ -48,3 +49,4 @@ public extension Router {
 public func <|> <Env: Sendable>(_ lhs: Router<Env>, _ rhs: @autoclosure () -> Router<Env>) -> Router<Env> {
     Router.alt(lhs, rhs())
 }
+#endif

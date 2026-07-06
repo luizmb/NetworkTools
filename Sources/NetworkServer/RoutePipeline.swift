@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#if canImport(NIOCore)
 import Core
 import FP
 import ReactiveConcurrency
@@ -59,3 +60,4 @@ public func response<U, Q, B, Env: Sendable>(
 ) -> ResponseHandler<U, Q, B, Env> {
     { req in Reader { _ in handler(req) } }
 }
+#endif

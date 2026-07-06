@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#if canImport(NIOCore)
 import Foundation
 import NIOHTTP1
 
@@ -11,3 +12,4 @@ public struct TypedRequest<URLParams, QueryParams, Body>: @unchecked Sendable {
     public let body: Body
     public let raw: Request
 }
+#endif

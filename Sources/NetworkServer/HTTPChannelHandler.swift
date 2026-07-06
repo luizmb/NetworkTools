@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#if canImport(NIOCore)
 import Foundation
 import FP
 @preconcurrency import NIOCore
@@ -67,3 +68,4 @@ final class HTTPChannelHandler: ChannelInboundHandler, @unchecked Sendable {
         context.close(promise: nil)
     }
 }
+#endif

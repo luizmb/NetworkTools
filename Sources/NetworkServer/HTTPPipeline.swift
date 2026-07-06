@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#if canImport(NIOCore)
 import Core
 import Foundation
 import FP
@@ -250,3 +251,4 @@ public func decodeBody<U, Q, B: Decodable & Sendable, Env: Sendable>(
 public func decodeBody<U, Q, B: Decodable & Sendable, Env: HasDataDecoderFactory>() -> BodyDecoder<U, Q, B, Env> {
     decodeBody(using: \.dataDecoderFactory)
 }
+#endif

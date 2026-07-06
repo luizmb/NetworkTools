@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#if canImport(NIOCore)
 import Foundation
 import FP
 import NIOCore
@@ -42,3 +43,4 @@ public func startServer<Env: Sendable>(host: String = "127.0.0.1", port: Int, ro
         return result
     }
 }
+#endif

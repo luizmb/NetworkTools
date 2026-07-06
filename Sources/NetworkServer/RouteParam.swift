@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#if canImport(NIOCore)
 import Core
 import Foundation
 
@@ -34,3 +35,4 @@ public extension RouteParam {
         RouteParam { env, dict in factory(env).dictionaryDecoder(for: T.self).run(dict) }
     }
 }
+#endif

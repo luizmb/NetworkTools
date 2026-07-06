@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#if canImport(NIOCore)
 import Foundation
 
 // MARK: - Decoder
@@ -215,3 +216,4 @@ struct StringSingleValueContainer: SingleValueDecodingContainer {
         try T(from: StringSingleValueDecoder(value: value, codingPath: codingPath))
     }
 }
+#endif

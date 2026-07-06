@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#if canImport(NIOCore)
 import Core
 import Foundation
 import NIOHTTP1
@@ -52,3 +53,4 @@ public extension ResponseError {
         ResponseError(status: status, headers: [("Content-Type", "text/html; charset=utf-8")], body: Data(string.utf8))
     }
 }
+#endif

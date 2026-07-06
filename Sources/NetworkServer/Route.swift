@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#if canImport(NIOCore)
 import Foundation
 import FP
 import NIOHTTP1
@@ -63,3 +64,4 @@ func matchPath(_ path: String, against pattern: String) -> [String: String]? {
         if tok.hasPrefix(":") { params[String(tok.dropFirst())] = String(seg) }
     }
 }
+#endif

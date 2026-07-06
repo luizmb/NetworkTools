@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#if canImport(NIOCore)
 import Foundation
 import NIOHTTP1
 
@@ -22,3 +23,4 @@ public struct Response: @unchecked Sendable {
         self.init(status: error.status, headers: error.headers, body: error.body)
     }
 }
+#endif

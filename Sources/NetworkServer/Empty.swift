@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#if canImport(NIOCore)
 import Foundation
 
 /// Sentinel type for route parameters that require no decoding.
@@ -10,3 +11,4 @@ public struct Empty: Codable, Sendable {
     public func encode(to encoder: any Encoder) throws { _ = encoder.container(keyedBy: CodingKeys.self) }
     private enum CodingKeys: CodingKey {}
 }
+#endif
