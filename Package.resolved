@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/luizmb/ReactiveConcurrency.git",
       "state" : {
-        "revision" : "4b712d4d311177182a109c7e3fb5f802fe80a648",
-        "version" : "0.3.0"
+        "revision" : "a45f4a36d10797579f7593005c74e707b760652e",
+        "version" : "0.4.0"
       }
     },
     {
