@@ -389,6 +389,24 @@ A composable HTTP client with two parallel APIs: `RequestPublisher<A>` (Combine)
 
 > **Note:** `RequestPublisher` and its operators require Combine (macOS 10.15+, iOS 13+, tvOS 13+, watchOS 6+). `NetworkTask` and `URLSession.taskRequester` use `DeferredTask` and are available on all supported platforms without Combine.
 
+### Mocking, recording & replaying (decorators)
+
+The cross-platform `HTTPRequester` (a plain `@Sendable (URLRequest) -> Publisher<(Data, HTTPURLResponse), HTTPError>`) can be layered with **pure decorators** — `Endo<HTTPRequester>` values that compose with `<>`:
+
+- **`overriding`** — short-circuit matching requests with a canned response (mock an endpoint that isn't built yet, or force an empty/500/timeout/slow case).
+- **`recording`** — tee every real exchange to a serialized, on-disk `RecordStore` (any encoder: JSON/Plist/XML/YAML).
+- **`replaying`** — serve recorded responses from a snapshot, **consume-once** (so a polled endpoint can return `pending → pending → done` across a test), turning a flaky shared-staging e2e suite into a deterministic one.
+
+```swift
+let client = URLSession.shared.httpRequester.decorated(by: HTTPRequester.overriding([
+    Rule(.method("GET") && .path("/currencies"),
+         respond: .json(["MXN", "ARS", "COP", "BRL"], encoder: JSONEncoder())),
+    Rule(.path("/slow"), respond: .ok(body: page) <> .withDelay(.seconds(3))),
+]))
+```
+
+Two composable atoms are shared by the decorators: `RequestMatch` (`.method`/`.path`/`.query`/`.header`/`.pathRegex`, combined with `&&`/`||`/`!`) and `StubResponse` (`.ok`/`.status`/`.json`/`.failure` + `.withStatus`/`.withHeader`/`.withBody`/`.withDelay`, composed with `<>`). See the [Mocking, Recording & Replaying](https://ios.lu/NetworkTools/documentation/networkclient/mockingrecordingreplaying) guide for the full walkthrough.
+
 ### Core types
 
 ```swift
