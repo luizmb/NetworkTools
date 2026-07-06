@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 #if canImport(Combine)
 import Combine
 import Foundation
@@ -12,7 +14,7 @@ public extension AnyPublisher where Output: Encodable, Failure == EncodingError 
 public extension AnyPublisher where Output: Encodable {
     func encode(using encoder: Convert<Output, Data, Failure>) -> AnyPublisher<Data, Failure> {
         flatMap { value in
-             encoder(value).publisher.eraseToAnyPublisher()
+            encoder(value).publisher.eraseToAnyPublisher()
         }
         .eraseToAnyPublisher()
     }
@@ -26,7 +28,7 @@ public extension AnyPublisher where Output: Encodable {
 
     func encode(
         using encoder: Convert<Output,
-        Data, EncodingError>,
+            Data, EncodingError>,
         mapError errorTransform: @escaping (EncodingError) -> Failure
     ) -> AnyPublisher<Data, Failure> {
         encode(using: encoder.mapError(errorTransform))

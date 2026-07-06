@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import FP
 import ReactiveConcurrency
 
@@ -93,7 +95,7 @@ public final class WebSocketConnection: @unchecked Sendable {
         self.receive = receive
         self.send = send
         self.ping = ping
-        self.cancelAction = cancel
+        cancelAction = cancel
     }
 
     /// Closes the connection immediately with a normal-closure frame.

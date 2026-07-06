@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // nil TXT (no record) is semantically distinct from [:] (empty record).
 // swiftlint:disable discouraged_optional_collection
 import Foundation
@@ -37,4 +39,5 @@ public struct BonjourServiceInfo: Sendable, Equatable {
         self.txt = txt
     }
 }
+
 // swiftlint:enable discouraged_optional_collection

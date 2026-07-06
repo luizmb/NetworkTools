@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import Foundation
 
 /// Events emitted by ``bonjourListenerStream(serviceType:serviceName:port:txtRecord:params:)``.

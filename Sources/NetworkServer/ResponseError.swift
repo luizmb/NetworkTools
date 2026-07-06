@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import Core
 import Foundation
 import NIOHTTP1
@@ -8,9 +10,9 @@ public struct ResponseError: Error, @unchecked Sendable {
     public let body: Data
 
     public init(status: HTTPResponseStatus, headers: [(String, String)] = [], body: Data = Data()) {
-        self.status  = status
+        self.status = status
         self.headers = headers
-        self.body    = body
+        self.body = body
     }
 }
 
@@ -39,9 +41,9 @@ public extension ResponseError {
         status: HTTPResponseStatus = .internalServerError
     ) -> ResponseError {
         switch encoder.dataEncoder(for: T.self).run(value) {
-        case .success(let data):
+        case let .success(data):
             ResponseError(status: status, headers: [("Content-Type", "application/json")], body: data)
-        case .failure(let e):
+        case let .failure(e):
             ResponseError(status: .internalServerError, body: Data(e.localizedDescription.utf8))
         }
     }

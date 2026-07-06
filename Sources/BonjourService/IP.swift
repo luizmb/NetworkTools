@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 #if canImport(Network)
 import Foundation
 import Network
@@ -49,12 +51,14 @@ public enum IP: Codable, CustomStringConvertible, Equatable, Hashable {
         case let .ipv4(v4):
             return v4.rawValue.map(String.init).joined(separator: ".")
         case let .ipv6(v6):
-            let bigEndian = (1 == CFSwapInt32LittleToHost(1))
+            let bigEndian = (CFSwapInt32LittleToHost(1) == 1)
             var address = (0..<8)
                 .map { i in v6.rawValue.subdata(in: i * 2 ..< i * 2 + 2).readUInt16(bigEndian: bigEndian) }
                 .map { $0 == 0 ? "" : String(format: "%llx", $0) }
                 .joined(separator: ":")
-            while address.contains(":::") { address = address.replacingOccurrences(of: ":::", with: "::") }
+            while address.contains(":::") {
+                address = address.replacingOccurrences(of: ":::", with: "::")
+            }
             if let name = v6.interface?.name { return "\(address)%\(name)" }
             return address
         }
@@ -121,25 +125,25 @@ public enum IP: Codable, CustomStringConvertible, Equatable, Hashable {
 
 // MARK: - IP prisms
 
-extension IP {
-    public var ipv4: IPv4Address? {
+public extension IP {
+    var ipv4: IPv4Address? {
         guard case let .ipv4(v) = self else { return nil }
         return v
     }
 
-    public var isIPv4: Bool { ipv4 != nil }
+    var isIPv4: Bool { ipv4 != nil }
 
-    public var ipv6: IPv6Address? {
+    var ipv6: IPv6Address? {
         guard case let .ipv6(v) = self else { return nil }
         return v
     }
 
-    public var isIPv6: Bool { ipv6 != nil }
+    var isIPv6: Bool { ipv6 != nil }
 }
 
-extension Array where Element == IP {
+public extension [IP] {
     /// Picks the first IPv6 address, falling back to the first IPv4 address.
-    public var preferredAddress: IP? {
+    var preferredAddress: IP? {
         first(where: \.isIPv6) ?? first(where: \.isIPv4)
     }
 }

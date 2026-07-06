@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // MCNearbyServiceAdvertiser exposes discoveryInfo as [String: String]? where nil (no TXT
 // data) is semantically distinct from [:] (empty TXT data), so the optional collection is
 // kept intentionally.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // swiftlint:disable file_length
 import Core
 import Foundation
@@ -18,11 +20,11 @@ private struct Person: Codable, Equatable {
     let name: String
 }
 
-private let personJSON  = Data(#"{"id":1,"name":"Alice"}"#.utf8)
+private let personJSON = Data(#"{"id":1,"name":"Alice"}"#.utf8)
 private let invalidJSON = Data("not json".utf8)
 
 private extension Result {
-    var successValue: Success? { if case .success(let v) = self { v } else { nil } }
+    var successValue: Success? { if case let .success(v) = self { v } else { nil } }
     var isFailure: Bool { if case .failure = self { true } else { false } }
 }
 
@@ -35,7 +37,7 @@ private let mockRequest = URLRequest(url: URL(string: "https://example.com")!)
 private func firstResult<O, E: Error>(of publisher: AnyPublisher<O, E>) -> Result<O, E>? {
     var result: Result<O, E>?
     let token = publisher.first().sink(
-        receiveCompletion: { if case .failure(let e) = $0 { result = .failure(e) } },
+        receiveCompletion: { if case let .failure(e) = $0 { result = .failure(e) } },
         receiveValue: { result = .success($0) }
     )
     withExtendedLifetime(token) {}
@@ -89,7 +91,7 @@ struct DataDecoderFunctorTests {
         let result = DataDecoder<Int> { _ in .failure(original) }
             .mapError { _ in replaced }
             .run(Data())
-        guard case .failure(let e) = result, case .dataCorrupted(let ctx) = e else {
+        guard case let .failure(e) = result, case let .dataCorrupted(ctx) = e else {
             Issue.record("Expected .failure(.dataCorrupted)")
             return
         }
@@ -113,14 +115,14 @@ struct DataDecoderApplicativeTests {
 
     @Test func apply_propagatesLeftFailure() {
         let err = DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: ""))
-        let f   = AnyDataConvert<(Int) -> Int> { _ in .failure(err) }
+        let f = AnyDataConvert<(Int) -> Int> { _ in .failure(err) }
         #expect(AnyDataConvert.apply(f, .pure(1)).run(Data()).isFailure)
     }
 
     @Test func apply_propagatesRightFailure() {
         let err = DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: ""))
-        let f   = AnyDataConvert<(Int) -> Int>.pure { $0 + 1 }
-        let a   = AnyDataConvert<Int> { _ in .failure(err) }
+        let f = AnyDataConvert<(Int) -> Int>.pure { $0 + 1 }
+        let a = AnyDataConvert<Int> { _ in .failure(err) }
         #expect(AnyDataConvert.apply(f, a).run(Data()).isFailure)
     }
 
@@ -144,7 +146,7 @@ struct DataDecoderMonadTests {
 
     @Test func flatMap_propagatesUpstreamFailure() {
         let err = DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: ""))
-        let dr  = AnyDataConvert<Int> { _ in .failure(err) }.flatMap { n in AnyDataConvert.pure("\(n)") }
+        let dr = AnyDataConvert<Int> { _ in .failure(err) }.flatMap { n in AnyDataConvert.pure("\(n)") }
         #expect(dr.run(Data()).isFailure)
     }
 
@@ -190,6 +192,7 @@ struct DataDecoderOperatorTests {
         let f = AnyDataConvert<(Int) -> Int>.pure { $0 + 1 }
         #expect((f <*> AnyDataConvert<Int>.pure(41)).run(Data()).successValue == 42)
     }
+
     @Test func seqRightOp() { #expect((AnyDataConvert<Int>.pure(1) *> AnyDataConvert<String>.pure("k")).run(Data()).successValue == "k") }
     @Test func seqLeftOp() { #expect((AnyDataConvert<Int>.pure(9) <* AnyDataConvert<String>.pure("d")).run(Data()).successValue == 9) }
 
@@ -203,6 +206,7 @@ struct DataDecoderOperatorTests {
         let g: (Int) -> AnyDataConvert<String> = { n in .pure("\(n)") }
         #expect((f >=> g)(41).run(Data()).successValue == "42")
     }
+
     @Test func kleisliBackOp() {
         let f: (Int) -> AnyDataConvert<Int> = { n in .pure(n + 1) }
         let g: (Int) -> AnyDataConvert<String> = { n in .pure("\(n)") }
@@ -221,7 +225,7 @@ struct ConvertGenericTests {
 
     @Test func contramap_preProcessesInput() {
         let countDigits = Convert<Int, Int, Never> { .success(String($0).count) }
-        let fromString  = countDigits.contramap { (s: String) in s.count }
+        let fromString = countDigits.contramap { (s: String) in s.count }
         #expect(fromString.run("hello").successValue == 1) // count("hello") = 5, digits in 5 = 1
     }
 
@@ -255,6 +259,7 @@ struct JSONDecoderDataDecoderTests {
 }
 
 #if canImport(Combine)
+
 // MARK: - RequestPublisher: Functor
 
 @Suite("RequestPublisher — Functor")
@@ -271,7 +276,7 @@ struct RequestPublisherFunctorTests {
 
     @Test func mapError_transformsFailure() {
         let p = (fail(.badStatus(404, Data())) as RequestPublisher<Int>).mapError { _ in .badStatus(999, Data()) }
-        guard case .failure(let e) = run(p), case .badStatus(let code, _) = e else {
+        guard case let .failure(e) = run(p), case let .badStatus(code, _) = e else {
             Issue.record("Expected .failure(.badStatus(999, _))")
             return
         }
@@ -359,6 +364,7 @@ struct RequestPublisherOperatorTests {
         let f = just({ @Sendable (n: Int) in n + 1 } as @Sendable (Int) -> Int)
         #expect(run(f <*> just(41))?.successValue == 42)
     }
+
     @Test func seqRightOp() { #expect(run(just(1) *> just("k"))?.successValue == "k") }
     @Test func seqLeftOp() { #expect(run(just(9) <* just("d"))?.successValue == 9) }
 
@@ -370,6 +376,7 @@ struct RequestPublisherOperatorTests {
         let g: @Sendable (Int) -> RequestPublisher<String> = { n in just("\(n)") }
         #expect(run((f >=> g)(41))?.successValue == "42")
     }
+
     @Test func kleisliBackOp() {
         let f: @Sendable (Int) -> RequestPublisher<Int> = { n in just(n + 1) }
         let g: @Sendable (Int) -> RequestPublisher<String> = { n in just("\(n)") }
@@ -401,20 +408,21 @@ struct ValidateStatusCodeTests {
 
     @Test func status300_fails() { #expect(run(makePublisher(status: 300).validateStatusCode())?.isFailure == true) }
     @Test func status400_fails() {
-        guard case .failure(let e) = run(makePublisher(status: 400).validateStatusCode()),
-              case .badStatus(let code, _) = e else {
+        guard case let .failure(e) = run(makePublisher(status: 400).validateStatusCode()),
+              case let .badStatus(code, _) = e else {
             Issue.record("Expected .badStatus(400, _)")
             return
         }
         #expect(code == 400)
     }
+
     @Test func status404_fails() { #expect(run(makePublisher(status: 404).validateStatusCode())?.isFailure == true) }
     @Test func status500_fails() { #expect(run(makePublisher(status: 500).validateStatusCode())?.isFailure == true) }
 
     @Test func badStatusCarriesBody() {
         let errorBody = Data("detail".utf8)
-        guard case .failure(let e) = run(makePublisher(status: 422, body: errorBody).validateStatusCode()),
-              case .badStatus(_, let body) = e else {
+        guard case let .failure(e) = run(makePublisher(status: 422, body: errorBody).validateStatusCode()),
+              case let .badStatus(_, body) = e else {
             Issue.record("Expected .badStatus with body")
             return
         }
@@ -442,7 +450,7 @@ struct RequestPublisherDecodeTests {
     }
 
     @Test func decodingErrorIsWrappedInHTTPError() {
-        guard case .failure(let e) = run(just(invalidJSON).decode(using: decoder)),
+        guard case let .failure(e) = run(just(invalidJSON).decode(using: decoder)),
               case .decoding = e else {
             Issue.record("Expected .failure(.decoding)")
             return
@@ -459,7 +467,7 @@ struct RequestPublisherDecodeTests {
 
 @Suite("AnyPublisher — encode")
 struct AnyPublisherEncodeTests {
-    private let person  = Person(id: 1, name: "Alice")
+    private let person = Person(id: 1, name: "Alice")
     private let encoder = JSONEncoder().dataEncoder(for: Person.self)
 
     private func personPublisher(failure: EncodingError.Type = EncodingError.self) -> AnyPublisher<Person, EncodingError> {

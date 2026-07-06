@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import Core
 import Foundation
 import FP
@@ -13,9 +15,9 @@ public struct Request: Sendable {
         uri: String,
         body: Data
     ) {
-        self.method     = method
-        self.uri        = uri
-        self.body       = body
+        self.method = method
+        self.uri = uri
+        self.body = body
     }
 
     public var path: String {

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import Foundation
 import FP
 import ReactiveConcurrency
@@ -60,7 +62,7 @@ public final class BonjourConnection: @unchecked Sendable {
     ) {
         self.receive = receive
         self.send = send
-        self.cancelAction = cancel
+        cancelAction = cancel
     }
 
     /// Cancels the connection immediately.

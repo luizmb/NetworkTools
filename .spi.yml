@@ -1,0 +1,17 @@
+version: 1
+builder:
+  configs:
+    - platform: macosSpm
+      documentation_targets:
+        - Core
+        - HTMLTemplating
+        - Multipeer
+        - NetworkClient
+        - NetworkServer
+        - WebSocketClient
+        - BonjourService
+    - platform: ios
+    - platform: tvos
+    - platform: watchos
+    - platform: visionos
+    - platform: linux

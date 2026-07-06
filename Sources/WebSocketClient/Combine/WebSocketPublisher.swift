@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 #if canImport(Combine)
 import Combine
 import Core
@@ -81,14 +83,14 @@ extension WebSocketPublisher {
 
         init(subscriber: S, task: URLSessionWebSocketTaskProtocol) {
             self.task = task
-            self.buffer = DemandBuffer(subscriber: subscriber)
+            buffer = DemandBuffer(subscriber: subscriber)
             super.init()
         }
 
         func request(_ demand: Subscribers.Demand) {
             guard let buffer else { return }
             lock.lock()
-            if !started && demand > .none {
+            if !started, demand > .none {
                 started = true
                 lock.unlock()
                 start()

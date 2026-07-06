@@ -1,9 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+
 #if canImport(Network)
 import Foundation
 import Network
 
 // swiftlint:disable discouraged_optional_collection
-extension NWBrowser.Result.Metadata {
+public extension NWBrowser.Result.Metadata {
     /// Extracts the Bonjour TXT record as a `[String: String]` dictionary.
     ///
     /// Returns `nil` when there is no TXT record (`.none` metadata), and an empty
@@ -19,7 +21,7 @@ extension NWBrowser.Result.Metadata {
     ///     }
     /// }
     /// ```
-    public var txt: [String: String]? {
+    var txt: [String: String]? {
         switch self {
         case .none:
             return nil

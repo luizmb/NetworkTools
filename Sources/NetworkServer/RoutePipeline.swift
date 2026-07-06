@@ -1,8 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import Core
 import FP
 import ReactiveConcurrency
 
 // MARK: - Domain typealiases for the HTTP routing pipeline
+
 //
 // A pipeline step is a Kleisli arrow in `ReaderTPublisher`: `(I) -> Reader<Env, Publisher<O, ResponseError>>`.
 // Steps compose with `>=>` from ReactiveConcurrencyOperators.

@@ -1,7 +1,9 @@
+// SPDX-License-Identifier: Apache-2.0
+
 #if canImport(Combine)
 import Foundation
 
-extension URLSession {
+public extension URLSession {
     /// Creates a `WebSocket` handle for the given URL.
     ///
     /// The underlying `URLSessionWebSocketTask` is created immediately but does **not**
@@ -10,7 +12,7 @@ extension URLSession {
     /// ```swift
     /// let socket = URLSession.shared.webSocket(with: URL(string: "wss://echo.example.com")!)
     /// ```
-    public func webSocket(with url: URL) -> WebSocket {
+    func webSocket(with url: URL) -> WebSocket {
         WebSocket(task: webSocketTask(with: url))
     }
 
@@ -23,7 +25,7 @@ extension URLSession {
     /// request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     /// let socket = URLSession.shared.webSocket(with: request)
     /// ```
-    public func webSocket(with request: URLRequest) -> WebSocket {
+    func webSocket(with request: URLRequest) -> WebSocket {
         WebSocket(task: webSocketTask(with: request))
     }
 
@@ -35,7 +37,7 @@ extension URLSession {
     ///     protocols: ["chat", "v2"]
     /// )
     /// ```
-    public func webSocket(with url: URL, protocols: [String]) -> WebSocket {
+    func webSocket(with url: URL, protocols: [String]) -> WebSocket {
         WebSocket(task: webSocketTask(with: url, protocols: protocols))
     }
 }

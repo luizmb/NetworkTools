@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import Core
 import Foundation
 
@@ -12,20 +14,20 @@ public struct RouteParam<T: Decodable & Sendable, Env: Sendable>: Sendable {
     let run: @Sendable (Env, [String: String]) -> Result<T, DecodingError>
 }
 
-extension RouteParam where T == Empty {
-    public static var ignore: Self {
+public extension RouteParam where T == Empty {
+    static var ignore: Self {
         RouteParam { _, _ in .success(.value) }
     }
 }
 
-extension RouteParam {
-    public static func decode(
+public extension RouteParam {
+    static func decode(
         using lens: @escaping @Sendable (Env) -> DictionaryDecoder<T>
     ) -> Self {
         RouteParam { env, dict in lens(env).run(dict) }
     }
 
-    public static func decode(
+    static func decode(
         _ type: T.Type = T.self,
         using factory: @escaping @Sendable (Env) -> DictionaryDecoderFactory
     ) -> Self {

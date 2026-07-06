@@ -1,4 +1,5 @@
-// swiftlint:disable vertical_parameter_alignment_on_call
+// SPDX-License-Identifier: Apache-2.0
+
 import Foundation
 
 // MARK: - Decoder
@@ -46,7 +47,7 @@ struct StringKeyedContainer<Key: CodingKey>: KeyedDecodingContainerProtocol {
     private func stringValue(forKey key: Key) throws -> String {
         guard let v = params[key.stringValue] else {
             throw DecodingError.keyNotFound(key, .init(codingPath: codingPath,
-                debugDescription: "Key '\(key.stringValue)' not found"))
+                                                       debugDescription: "Key '\(key.stringValue)' not found"))
         }
         return v
     }
@@ -58,11 +59,15 @@ struct StringKeyedContainer<Key: CodingKey>: KeyedDecodingContainerProtocol {
     func decode(_ type: Bool.Type, forKey key: Key) throws -> Bool {
         let s = try stringValue(forKey: key)
         switch s.lowercased() {
-        case "true", "1", "yes": return true
-        case "false", "0", "no":  return false
+        case "true",
+             "1",
+             "yes": return true
+        case "false",
+             "0",
+             "no": return false
         default:
             throw DecodingError.typeMismatch(Bool.self, .init(codingPath: codingPath + [key],
-                debugDescription: "Cannot convert '\(s)' to Bool"))
+                                                              debugDescription: "Cannot convert '\(s)' to Bool"))
         }
     }
 
@@ -70,7 +75,7 @@ struct StringKeyedContainer<Key: CodingKey>: KeyedDecodingContainerProtocol {
         let s = try stringValue(forKey: key)
         guard let v = Double(s) else {
             throw DecodingError.typeMismatch(Double.self, .init(codingPath: codingPath + [key],
-                debugDescription: "Cannot convert '\(s)' to Double"))
+                                                                debugDescription: "Cannot convert '\(s)' to Double"))
         }
         return v
     }
@@ -79,7 +84,7 @@ struct StringKeyedContainer<Key: CodingKey>: KeyedDecodingContainerProtocol {
         let s = try stringValue(forKey: key)
         guard let v = Float(s) else {
             throw DecodingError.typeMismatch(Float.self, .init(codingPath: codingPath + [key],
-                debugDescription: "Cannot convert '\(s)' to Float"))
+                                                               debugDescription: "Cannot convert '\(s)' to Float"))
         }
         return v
     }
@@ -99,7 +104,7 @@ struct StringKeyedContainer<Key: CodingKey>: KeyedDecodingContainerProtocol {
         let s = try stringValue(forKey: key)
         guard let v = T(s) else {
             throw DecodingError.typeMismatch(T.self, .init(codingPath: codingPath + [key],
-                debugDescription: "Cannot convert '\(s)' to \(T.self)"))
+                                                           debugDescription: "Cannot convert '\(s)' to \(T.self)"))
         }
         return v
     }
@@ -111,12 +116,12 @@ struct StringKeyedContainer<Key: CodingKey>: KeyedDecodingContainerProtocol {
 
     func nestedContainer<NestedKey: CodingKey>(keyedBy type: NestedKey.Type, forKey key: Key) throws -> KeyedDecodingContainer<NestedKey> {
         throw DecodingError.dataCorrupted(.init(codingPath: codingPath + [key],
-            debugDescription: "Nested containers are not supported in string-keyed parameters"))
+                                                debugDescription: "Nested containers are not supported in string-keyed parameters"))
     }
 
     func nestedUnkeyedContainer(forKey key: Key) throws -> any UnkeyedDecodingContainer {
         throw DecodingError.dataCorrupted(.init(codingPath: codingPath + [key],
-            debugDescription: "Arrays are not supported in string-keyed parameters"))
+                                                debugDescription: "Arrays are not supported in string-keyed parameters"))
     }
 
     func superDecoder() throws -> any Decoder {
@@ -137,12 +142,12 @@ struct StringSingleValueDecoder: Decoder {
 
     func container<Key: CodingKey>(keyedBy type: Key.Type) throws -> KeyedDecodingContainer<Key> {
         throw DecodingError.dataCorrupted(.init(codingPath: codingPath,
-            debugDescription: "Expected a single string value, not a keyed container"))
+                                                debugDescription: "Expected a single string value, not a keyed container"))
     }
 
     func unkeyedContainer() throws -> any UnkeyedDecodingContainer {
         throw DecodingError.dataCorrupted(.init(codingPath: codingPath,
-            debugDescription: "Expected a single string value, not an array"))
+                                                debugDescription: "Expected a single string value, not an array"))
     }
 
     func singleValueContainer() throws -> any SingleValueDecodingContainer {
@@ -155,55 +160,58 @@ struct StringSingleValueContainer: SingleValueDecodingContainer {
     var codingPath: [any CodingKey]
 
     func decodeNil() -> Bool { false }
-    func decode(_ type: String.Type) throws -> String { value }
+    func decode(_: String.Type) throws -> String { value }
 
-    func decode(_ type: Bool.Type) throws -> Bool {
+    func decode(_: Bool.Type) throws -> Bool {
         switch value.lowercased() {
-        case "true", "1", "yes": return true
-        case "false", "0", "no":  return false
+        case "true",
+             "1",
+             "yes": return true
+        case "false",
+             "0",
+             "no": return false
         default:
             throw DecodingError.typeMismatch(Bool.self, .init(codingPath: codingPath,
-                debugDescription: "Cannot convert '\(value)' to Bool"))
+                                                              debugDescription: "Cannot convert '\(value)' to Bool"))
         }
     }
 
-    func decode(_ type: Double.Type) throws -> Double {
+    func decode(_: Double.Type) throws -> Double {
         guard let v = Double(value) else {
             throw DecodingError.typeMismatch(Double.self, .init(codingPath: codingPath,
-                debugDescription: "Cannot convert '\(value)' to Double"))
+                                                                debugDescription: "Cannot convert '\(value)' to Double"))
         }
         return v
     }
 
-    func decode(_ type: Float.Type) throws -> Float {
+    func decode(_: Float.Type) throws -> Float {
         guard let v = Float(value) else {
             throw DecodingError.typeMismatch(Float.self, .init(codingPath: codingPath,
-                debugDescription: "Cannot convert '\(value)' to Float"))
+                                                               debugDescription: "Cannot convert '\(value)' to Float"))
         }
         return v
     }
 
-    func decode(_ type: Int.Type)    throws -> Int { try decodeFixedWidth() }
-    func decode(_ type: Int8.Type)   throws -> Int8 { try decodeFixedWidth() }
-    func decode(_ type: Int16.Type)  throws -> Int16 { try decodeFixedWidth() }
-    func decode(_ type: Int32.Type)  throws -> Int32 { try decodeFixedWidth() }
-    func decode(_ type: Int64.Type)  throws -> Int64 { try decodeFixedWidth() }
-    func decode(_ type: UInt.Type)   throws -> UInt { try decodeFixedWidth() }
-    func decode(_ type: UInt8.Type)  throws -> UInt8 { try decodeFixedWidth() }
-    func decode(_ type: UInt16.Type) throws -> UInt16 { try decodeFixedWidth() }
-    func decode(_ type: UInt32.Type) throws -> UInt32 { try decodeFixedWidth() }
-    func decode(_ type: UInt64.Type) throws -> UInt64 { try decodeFixedWidth() }
+    func decode(_: Int.Type) throws -> Int { try decodeFixedWidth() }
+    func decode(_: Int8.Type) throws -> Int8 { try decodeFixedWidth() }
+    func decode(_: Int16.Type) throws -> Int16 { try decodeFixedWidth() }
+    func decode(_: Int32.Type) throws -> Int32 { try decodeFixedWidth() }
+    func decode(_: Int64.Type) throws -> Int64 { try decodeFixedWidth() }
+    func decode(_: UInt.Type) throws -> UInt { try decodeFixedWidth() }
+    func decode(_: UInt8.Type) throws -> UInt8 { try decodeFixedWidth() }
+    func decode(_: UInt16.Type) throws -> UInt16 { try decodeFixedWidth() }
+    func decode(_: UInt32.Type) throws -> UInt32 { try decodeFixedWidth() }
+    func decode(_: UInt64.Type) throws -> UInt64 { try decodeFixedWidth() }
 
     private func decodeFixedWidth<T: FixedWidthInteger>() throws -> T {
         guard let v = T(value) else {
             throw DecodingError.typeMismatch(T.self, .init(codingPath: codingPath,
-                debugDescription: "Cannot convert '\(value)' to \(T.self)"))
+                                                           debugDescription: "Cannot convert '\(value)' to \(T.self)"))
         }
         return v
     }
 
-    func decode<T: Decodable>(_ type: T.Type) throws -> T {
+    func decode<T: Decodable>(_: T.Type) throws -> T {
         try T(from: StringSingleValueDecoder(value: value, codingPath: codingPath))
     }
 }
-// swiftlint:enable vertical_parameter_alignment_on_call

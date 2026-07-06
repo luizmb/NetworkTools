@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import Core
 import Foundation
 import FP
@@ -29,17 +31,17 @@ struct SendableHandler: @unchecked Sendable {
     func callAsFunction(_ request: Request) -> Publisher<Response, ResponseError> { call(request) }
 }
 
-extension Router {
+public extension Router {
     /// Ordered choice: try `lhs`; fall through to `rhs` only on `.failure(.notFound)`.
-    public static func alt(_ lhs: Router<Env>, _ rhs: @autoclosure () -> Router<Env>) -> Router<Env> {
+    static func alt(_ lhs: Router<Env>, _ rhs: @autoclosure () -> Router<Env>) -> Router<Env> {
         let rhs = rhs()
-        return Router({ [lh = lhs.handle, rh = rhs.handle] request in
+        return Router { [lh = lhs.handle, rh = rhs.handle] request in
             Reader { env in
-                lh(request)(env).`catch` { error in
+                lh(request)(env).catch { error in
                     error.status == .notFound ? rh(request)(env) : Publisher.fail(error)
                 }
             }
-        })
+        }
     }
 }
 

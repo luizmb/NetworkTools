@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // MCNearbyServiceBrowserDelegate hands back discoveryInfo as [String: String]? mirroring the
 // underlying Bonjour TXT record (nil — no TXT — vs [:] — empty TXT — differ semantically), so
 // the optional collection is kept intentionally.
@@ -19,7 +21,7 @@ public struct MultipeerBrowserPublisher: Publisher {
     private let serviceType: String
 
     public init(myselfAsPeer: MCPeerID, serviceType: String) {
-        self.peerID = myselfAsPeer
+        peerID = myselfAsPeer
         self.serviceType = serviceType
     }
 
@@ -72,7 +74,7 @@ where S.Input == MultipeerBrowserEvent, S.Failure == Error {
         DispatchQueue.main.async { [self] in
             let first = requested == .none
             requested += increment ?? .none
-            if first && requested != .none {
+            if first, requested != .none {
                 browser.startBrowsingForPeers()
             }
         }

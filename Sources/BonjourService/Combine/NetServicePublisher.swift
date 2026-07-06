@@ -1,9 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+
 #if canImport(Combine)
 import Combine
 import Core
 import Foundation
 
-extension NetService {
+public extension NetService {
     /// Returns a publisher that resolves this service and optionally monitors its TXT record.
     ///
     /// ```swift
@@ -19,7 +21,7 @@ extension NetService {
     ///     )
     ///     .store(in: &cancellables)
     /// ```
-    public func publisher(
+    func publisher(
         monitorDevice strategy: NetServiceTXTRecordsMonitorStrategy,
         timeout: TimeInterval = 5
     ) -> NetServicePublisher {
@@ -99,7 +101,8 @@ extension NetServicePublisher: Publisher {
             subscriber: subscriber,
             netService: netService,
             timeout: timeout,
-            monitorDevice: monitorDevice))
+            monitorDevice: monitorDevice
+        ))
     }
 }
 
@@ -120,7 +123,7 @@ extension NetServicePublisher {
             monitorDevice: NetServiceTXTRecordsMonitorStrategy
         ) {
             self.netService = netService
-            self.buffer = DemandBuffer(subscriber: subscriber)
+            buffer = DemandBuffer(subscriber: subscriber)
             self.timeout = timeout
             self.monitorDevice = monitorDevice
             super.init()
@@ -130,7 +133,7 @@ extension NetServicePublisher {
         func request(_ demand: Subscribers.Demand) {
             guard let buffer else { return }
             lock.lock()
-            if !started && demand > .none {
+            if !started, demand > .none {
                 started = true
                 lock.unlock()
                 start()
@@ -175,7 +178,7 @@ extension NetServicePublisher {
             _ = buffer?.buffer(value: .init(netService: s, type: .didAcceptConnectionWith(inputStream: i, outputStream: o)))
         }
 
-        func netServiceDidStop(_ s: NetService) {
+        func netServiceDidStop(_: NetService) {
             buffer?.complete(completion: .finished)
         }
 
@@ -185,12 +188,13 @@ extension NetServicePublisher {
 
         func netService(_ s: NetService, didNotResolve dict: [String: NSNumber]) {
             guard let domain = dict["NSNetServicesErrorDomain"]?.intValue,
-                  let code   = dict["NSNetServicesErrorCode"]?.intValue else { return }
+                  let code = dict["NSNetServicesErrorCode"]?.intValue else { return }
             if code == NetService.ErrorCode.timeoutError.rawValue {
                 buffer?.complete(completion: .failure(.netServiceTimeout))
             } else {
                 buffer?.complete(completion: .failure(.didNotResolve(
-                    netService: s, errorDict: dict, errorDomain: domain, errorCode: code)))
+                    netService: s, errorDict: dict, errorDomain: domain, errorCode: code
+                )))
             }
         }
     }
@@ -198,8 +202,8 @@ extension NetServicePublisher {
 
 // MARK: - Model
 
-extension NetServicePublisher {
-    public struct Event: Equatable {
+public extension NetServicePublisher {
+    struct Event: Equatable {
         public let netService: NetService
         public let type: EventType
 
@@ -209,7 +213,7 @@ extension NetServicePublisher {
         }
     }
 
-    public enum EventType: Equatable {
+    enum EventType: Equatable {
         case willPublish
         case didPublish
         case willResolve
@@ -218,7 +222,7 @@ extension NetServicePublisher {
         case didAcceptConnectionWith(inputStream: InputStream, outputStream: OutputStream)
     }
 
-    public enum NetServiceError: Error {
+    enum NetServiceError: Error {
         case didNotPublish(netService: NetService, errorDict: [String: NSNumber])
         case didNotResolve(netService: NetService, errorDict: [String: NSNumber],
                            errorDomain: Int, errorCode: Int)

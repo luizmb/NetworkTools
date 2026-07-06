@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 public struct MatchedRoute<URLParams: Sendable, QueryParams: Sendable>: Sendable {
     public let urlParams: URLParams
     public let queryParams: QueryParams

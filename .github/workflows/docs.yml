@@ -3,6 +3,10 @@ name: Documentation
 on:
   push:
     tags: ['v*']
+  # Manual trigger — lets you re-deploy docs on a CLEAN run (single artifact) without a new tag.
+  # Prefer this over re-running a failed tag run: `gh run rerun --failed` re-uploads and leaves the
+  # previous github-pages artifact attached, which fails with "Multiple artifacts ... count is 2".
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -35,6 +39,9 @@ jobs:
             --target HTMLTemplating \
             --target NetworkClient \
             --target NetworkServer \
+            --target Multipeer \
+            --target WebSocketClient \
+            --target BonjourService \
             --enable-experimental-combined-documentation \
             --output-path .docs \
             --transform-for-static-hosting \

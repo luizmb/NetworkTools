@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // MCNearbyServiceBrowserDelegate hands back discoveryInfo as [String: String]? mirroring the
 // underlying Bonjour TXT record (nil — no TXT — vs [:] — empty TXT — differ semantically), so
 // the optional collection is kept intentionally.

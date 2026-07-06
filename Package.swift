@@ -21,16 +21,16 @@ let package = Package(
         .watchOS(.v9),
     ],
     products: [
-        .library(name: "Core",            targets: ["Core"]),
-        .library(name: "HTMLTemplating",  targets: ["HTMLTemplating"]),
-        .library(name: "Multipeer",       targets: ["Multipeer"]),
-        .library(name: "NetworkClient",   targets: ["NetworkClient"]),
-        .library(name: "NetworkServer",   targets: ["NetworkServer"]),
+        .library(name: "Core", targets: ["Core"]),
+        .library(name: "HTMLTemplating", targets: ["HTMLTemplating"]),
+        .library(name: "Multipeer", targets: ["Multipeer"]),
+        .library(name: "NetworkClient", targets: ["NetworkClient"]),
+        .library(name: "NetworkServer", targets: ["NetworkServer"]),
         .library(name: "WebSocketClient", targets: ["WebSocketClient"]),
-        .library(name: "BonjourService",  targets: ["BonjourService"]),
+        .library(name: "BonjourService", targets: ["BonjourService"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/luizmb/FP.git", from: "1.13.0"),
+        .package(url: "https://github.com/luizmb/FP.git", from: "1.14.0"),
         .package(url: "https://github.com/luizmb/ReactiveConcurrency.git", from: "0.3.0"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.4.0"),
@@ -61,14 +61,17 @@ let package = Package(
                 .product(name: "FP", package: "FP"),
             ] + rcFull
         ),
+        // NetworkServer is built on swift-nio (NIOPosix), which is Posix-only and does not
+        // support Windows. The NIO dependencies are gated to non-Windows platforms; see the
+        // platform-support matrix in README.md.
         .target(
             name: "NetworkServer",
             dependencies: [
                 "Core",
-                .product(name: "FP",       package: "FP"),
-                .product(name: "NIOCore",  package: "swift-nio"),
-                .product(name: "NIOPosix", package: "swift-nio"),
-                .product(name: "NIOHTTP1", package: "swift-nio"),
+                .product(name: "FP", package: "FP"),
+                .product(name: "NIOCore", package: "swift-nio", condition: .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .visionOS, .linux])),
+                .product(name: "NIOPosix", package: "swift-nio", condition: .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .visionOS, .linux])),
+                .product(name: "NIOHTTP1", package: "swift-nio", condition: .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .visionOS, .linux])),
             ] + rcFull
         ),
         .target(
@@ -109,8 +112,8 @@ let package = Package(
             dependencies: [
                 "Core",
                 "NetworkServer",
-                .product(name: "FP",       package: "FP"),
-                .product(name: "NIOHTTP1", package: "swift-nio"),
+                .product(name: "FP", package: "FP"),
+                .product(name: "NIOHTTP1", package: "swift-nio", condition: .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .visionOS, .linux])),
             ] + rcFull
         ),
     ]

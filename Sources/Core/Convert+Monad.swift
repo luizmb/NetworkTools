@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import Foundation
 
 // MARK: - Monad
@@ -35,8 +37,8 @@ public extension Convert {
     func flatMapError<FailureB>(_ f: @escaping (Failure) -> Convert<Input, Output, FailureB>) -> Convert<Input, Output, FailureB> {
         .init { input in
             switch run(input) {
-            case .success(let v): .success(v)
-            case .failure(let e): f(e).run(input)
+            case let .success(v): .success(v)
+            case let .failure(e): f(e).run(input)
             }
         }
     }

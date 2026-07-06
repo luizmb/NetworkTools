@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import Core
 import Foundation
 import FP
@@ -19,13 +21,13 @@ public func receive<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Senda
                       let pathDict = matchPath(request.path, against: path)
                 else { return .failure(.notFound) }
 
-                guard case .success(let urlParams) = params.run(env, pathDict)
+                guard case let .success(urlParams) = params.run(env, pathDict)
                 else { return .failure(.notFound) }
 
                 switch query.run(env, request.queryParams) {
-                case .success(let queryParams):
+                case let .success(queryParams):
                     return .success(MatchedRoute(urlParams: urlParams, queryParams: queryParams, raw: request))
-                case .failure(let error):
+                case let .failure(error):
                     return .failure(.badRequest(error.localizedDescription))
                 }
             }
@@ -64,9 +66,11 @@ public func get<Env: Sendable>(_ path: String) -> RouteMatcher<Empty, Empty, Env
 public func get<U: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>) -> RouteMatcher<U, Empty, Env> {
     receive(.GET, path, params: params)
 }
+
 public func get<Q: Decodable & Sendable, Env: Sendable>(_ path: String, query: RouteParam<Q, Env>) -> RouteMatcher<Empty, Q, Env> {
     receive(.GET, path, query: query)
 }
+
 public func get<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Sendable>(
     _ path: String,
     params: RouteParam<U, Env>,
@@ -79,9 +83,11 @@ public func post<Env: Sendable>(_ path: String) -> RouteMatcher<Empty, Empty, En
 public func post<U: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>) -> RouteMatcher<U, Empty, Env> {
     receive(.POST, path, params: params)
 }
+
 public func post<Q: Decodable & Sendable, Env: Sendable>(_ path: String, query: RouteParam<Q, Env>) -> RouteMatcher<Empty, Q, Env> {
     receive(.POST, path, query: query)
 }
+
 public func post<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Sendable>(
     _ path: String,
     params: RouteParam<U, Env>,
@@ -94,9 +100,11 @@ public func put<Env: Sendable>(_ path: String) -> RouteMatcher<Empty, Empty, Env
 public func put<U: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>) -> RouteMatcher<U, Empty, Env> {
     receive(.PUT, path, params: params)
 }
+
 public func put<Q: Decodable & Sendable, Env: Sendable>(_ path: String, query: RouteParam<Q, Env>) -> RouteMatcher<Empty, Q, Env> {
     receive(.PUT, path, query: query)
 }
+
 public func put<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Sendable>(
     _ path: String,
     params: RouteParam<U, Env>,
@@ -109,9 +117,11 @@ public func patch<Env: Sendable>(_ path: String) -> RouteMatcher<Empty, Empty, E
 public func patch<U: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>) -> RouteMatcher<U, Empty, Env> {
     receive(.PATCH, path, params: params)
 }
+
 public func patch<Q: Decodable & Sendable, Env: Sendable>(_ path: String, query: RouteParam<Q, Env>) -> RouteMatcher<Empty, Q, Env> {
     receive(.PATCH, path, query: query)
 }
+
 public func patch<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Sendable>(
     _ path: String,
     params: RouteParam<U, Env>,
@@ -124,9 +134,11 @@ public func delete<Env: Sendable>(_ path: String) -> RouteMatcher<Empty, Empty, 
 public func delete<U: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>) -> RouteMatcher<U, Empty, Env> {
     receive(.DELETE, path, params: params)
 }
+
 public func delete<Q: Decodable & Sendable, Env: Sendable>(_ path: String, query: RouteParam<Q, Env>) -> RouteMatcher<Empty, Q, Env> {
     receive(.DELETE, path, query: query)
 }
+
 public func delete<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Sendable>(
     _ path: String,
     params: RouteParam<U, Env>,
@@ -139,9 +151,11 @@ public func head<Env: Sendable>(_ path: String) -> RouteMatcher<Empty, Empty, En
 public func head<U: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>) -> RouteMatcher<U, Empty, Env> {
     receive(.HEAD, path, params: params)
 }
+
 public func head<Q: Decodable & Sendable, Env: Sendable>(_ path: String, query: RouteParam<Q, Env>) -> RouteMatcher<Empty, Q, Env> {
     receive(.HEAD, path, query: query)
 }
+
 public func head<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Sendable>(
     _ path: String,
     params: RouteParam<U, Env>,
@@ -154,9 +168,11 @@ public func options<Env: Sendable>(_ path: String) -> RouteMatcher<Empty, Empty,
 public func options<U: Decodable & Sendable, Env: Sendable>(_ path: String, params: RouteParam<U, Env>) -> RouteMatcher<U, Empty, Env> {
     receive(.OPTIONS, path, params: params)
 }
+
 public func options<Q: Decodable & Sendable, Env: Sendable>(_ path: String, query: RouteParam<Q, Env>) -> RouteMatcher<Empty, Q, Env> {
     receive(.OPTIONS, path, query: query)
 }
+
 public func options<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Sendable>(
     _ path: String,
     params: RouteParam<U, Env>,

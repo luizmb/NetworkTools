@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 #if canImport(MultipeerConnectivity)
 import Foundation
 import FP
@@ -38,7 +40,9 @@ struct AsyncMulticasterTests {
 
         async let drained: [Int] = {
             var out: [Int] = []
-            for await element in stream { out.append(element) }
+            for await element in stream {
+                out.append(element)
+            }
             return out
         }()
 

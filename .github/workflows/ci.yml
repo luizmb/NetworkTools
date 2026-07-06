@@ -39,8 +39,11 @@ jobs:
       - name: Install Periphery
         run: brew install peripheryapp/periphery/periphery
 
-      - name: Install SwiftLint
+      - name: Install SwiftLint, SwiftFormat, Periphery
         run: mint bootstrap
+
+      - name: Format (check)
+        run: mint run swiftformat --lint .
 
       - name: Lint
         run: mint run swiftlint lint --strict
@@ -88,3 +91,20 @@ jobs:
 
       - name: Test
         run: swift test 2>&1
+
+  # Windows builds only the portable products. NetworkServer needs swift-nio's NIOPosix
+  # (Posix-only, gated out of Windows in Package.swift) and Multipeer/BonjourService use
+  # Apple-only frameworks — none of those are available on Windows. See the platform-support
+  # matrix in README.md. Building the portable products verifies Windows support without a
+  # guaranteed-to-fail whole-package build.
+  test-windows:
+    name: Build & Test (Windows — portable products)
+    runs-on: windows-latest
+    steps:
+      - uses: compnerd/gha-setup-swift@main
+        with:
+          swift-version: swift-6.3-release
+          swift-build: 6.3-RELEASE
+      - uses: actions/checkout@v7
+      - name: Build portable products
+        run: swift build --product Core --product HTMLTemplating

@@ -8,6 +8,9 @@ targets:
   - HTMLTemplating
   - NetworkClient
   - NetworkServer
+  - BonjourService
+  - WebSocketClient
+  - Multipeer
   - HTMLTemplatingTests
   - NetworkClientTests
   - NetworkServerTests

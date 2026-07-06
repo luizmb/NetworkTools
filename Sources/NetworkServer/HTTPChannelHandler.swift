@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import Foundation
 import FP
 @preconcurrency import NIOCore
@@ -5,7 +7,7 @@ import NIOHTTP1
 import ReactiveConcurrency
 
 final class HTTPChannelHandler: ChannelInboundHandler, @unchecked Sendable {
-    typealias InboundIn   = HTTPServerRequestPart
+    typealias InboundIn = HTTPServerRequestPart
     typealias OutboundOut = HTTPServerResponsePart
 
     private let requestHandler: @Sendable (Request) -> Publisher<Response, ResponseError>
@@ -20,14 +22,14 @@ final class HTTPChannelHandler: ChannelInboundHandler, @unchecked Sendable {
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let part = unwrapInboundIn(data)
         switch part {
-        case .head(let head):
+        case let .head(head):
             method = head.method
-            uri    = head.uri
-            body   = []
-        case .body(var buf):
+            uri = head.uri
+            body = []
+        case var .body(buf):
             body.append(contentsOf: buf.readBytes(length: buf.readableBytes) ?? [])
         case .end:
-            let request   = Request(method: method, uri: uri, body: Data(body))
+            let request = Request(method: method, uri: uri, body: Data(body))
             let publisher = requestHandler(request)
             let eventLoop = context.eventLoop
             Task { [weak self] in
@@ -35,8 +37,8 @@ final class HTTPChannelHandler: ChannelInboundHandler, @unchecked Sendable {
                 // `.asEffect`-analog for the server boundary: run the response `Publisher` to its
                 // first result. A handler that emits nothing (`nil`) is a server-side bug → 500.
                 let response: Response = switch await publisher.firstResultTask().run() {
-                case .success(let r)?: r
-                case .failure(let e)?: Response(e)
+                case let .success(r)?: r
+                case let .failure(e)?: Response(e)
                 case nil: Response(.serverError("Handler produced no response"))
                 }
                 eventLoop.execute { [weak self] in

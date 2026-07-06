@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import Core
 import Foundation
 #if canImport(FoundationNetworking)
@@ -16,7 +18,7 @@ import Testing
 // (`validateStatusCode`, `decode`).
 
 private extension Result {
-    var successValue: Success? { if case .success(let v) = self { v } else { nil } }
+    var successValue: Success? { if case let .success(v) = self { v } else { nil } }
     var isFailure: Bool { if case .failure = self { true } else { false } }
 }
 
@@ -66,7 +68,7 @@ struct NetworkTaskTransformTests {
 
     @Test func mapError_transformsFailure() async {
         let t: NetworkTask<Int> = fail(.badStatus(404, Data())).map { $0.mapError { _ in .badStatus(999, Data()) } }
-        guard case .failure(.badStatus(let code, _)) = await run(t) else {
+        guard case let .failure(.badStatus(code, _)) = await run(t) else {
             Issue.record("Expected .failure(.badStatus(999, _))")
             return
         }
@@ -74,12 +76,12 @@ struct NetworkTaskTransformTests {
     }
 
     @Test func catch_recovers() async {
-        let recovered: NetworkTask<Int> = fail(.badStatus(500, Data())).map { $0.`catch` { _ in Publisher.pure(0) } }
+        let recovered: NetworkTask<Int> = fail(.badStatus(500, Data())).map { $0.catch { _ in Publisher.pure(0) } }
         #expect(await run(recovered).successValue == 0)
     }
 
     @Test func catch_passesSuccessThrough() async {
-        let recovered: NetworkTask<Int> = just(42).map { $0.`catch` { _ in Publisher.pure(0) } }
+        let recovered: NetworkTask<Int> = just(42).map { $0.catch { _ in Publisher.pure(0) } }
         #expect(await run(recovered).successValue == 42)
     }
 }
@@ -106,18 +108,19 @@ struct NetworkTaskValidateStatusCodeTests {
 
     @Test func status300_fails() async { #expect(await run(makeTask(status: 300).validateStatusCode()).isFailure == true) }
     @Test func status400_fails() async {
-        guard case .failure(.badStatus(let code, _)) = await run(makeTask(status: 400).validateStatusCode()) else {
+        guard case let .failure(.badStatus(code, _)) = await run(makeTask(status: 400).validateStatusCode()) else {
             Issue.record("Expected .badStatus(400, _)")
             return
         }
         #expect(code == 400)
     }
+
     @Test func status404_fails() async { #expect(await run(makeTask(status: 404).validateStatusCode()).isFailure == true) }
     @Test func status500_fails() async { #expect(await run(makeTask(status: 500).validateStatusCode()).isFailure == true) }
 
     @Test func badStatusCarriesBody() async {
         let errorBody = Data("detail".utf8)
-        guard case .failure(.badStatus(_, let body)) = await run(makeTask(status: 422, body: errorBody).validateStatusCode()) else {
+        guard case let .failure(.badStatus(_, body)) = await run(makeTask(status: 422, body: errorBody).validateStatusCode()) else {
             Issue.record("Expected .badStatus with body")
             return
         }
@@ -132,7 +135,7 @@ private struct Person: Codable, Equatable, Sendable {
     let name: String
 }
 
-private let personJSON  = Data(#"{"id":1,"name":"Alice"}"#.utf8)
+private let personJSON = Data(#"{"id":1,"name":"Alice"}"#.utf8)
 private let invalidJSON = Data("not json".utf8)
 
 @Suite("NetworkTask — decode")

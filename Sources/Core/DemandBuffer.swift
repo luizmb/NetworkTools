@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 #if canImport(Combine)
 import Combine
 import class Foundation.NSRecursiveLock
@@ -81,7 +83,7 @@ package class DemandBuffer<S: Subscriber> {
 
         guard demandState.requested > 0 || newDemand == Subscribers.Demand.none else { return .none }
 
-        while !buffer.isEmpty && demandState.processed < demandState.requested {
+        while !buffer.isEmpty, demandState.processed < demandState.requested {
             demandState.requested += subscriber.receive(buffer.remove(at: 0))
             demandState.processed += 1
         }
@@ -113,7 +115,7 @@ extension Subscription {
     }
 }
 
-extension Optional where Wrapped == Subscription {
+extension Subscription? {
     mutating func kill() {
         self?.cancel()
         self = nil
