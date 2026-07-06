@@ -26,7 +26,7 @@ public extension HTTPRequester {
         _ playback: RequestPlayback,
         matching: @escaping @Sendable (URLRequest, RecordedExchange) -> Bool = RecordedExchange.matchesMethodAndURL,
         fallback: ReplayFallback = .base
-    ) -> Decorator {
+    ) -> Endo<HTTPRequester> {
         Endo { base in
             HTTPRequester { request in
                 let consume = Publisher<RecordedExchange?, HTTPError>.future {

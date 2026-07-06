@@ -23,18 +23,17 @@ public extension HTTPRequester {
     /// ``StubResponse`` is served (a synthetic 200/empty seed transformed by the stub). Requests
     /// that match no rule pass through to the wrapped requester untouched.
     ///
+    /// The `clock` is injected (a Hourglass conformance flows in via ReactiveConcurrency) so `withDelay`
+    /// is deterministic under test — the library never constructs a clock. Pass a `ContinuousClock` at
+    /// the composition root, or an `ImmediateClock` / `TestClock` in tests.
+    ///
     /// ```swift
-    /// let client = session.httpRequester.decorated(by: HTTPRequester.overriding([
+    /// let client = session.httpRequester.applying(HTTPRequester.overriding([
     ///     Rule(.method("GET") && .path("/currencies"), respond: .ok(body: canned)),
     ///     Rule(.pathPrefix("/flaky"),                   respond: .failure(.network(URLError(.timedOut)))),
-    /// ]))
+    /// ], clock: ContinuousClock()))
     /// ```
-    static func overriding(_ rules: [Rule]) -> Decorator {
-        overriding(rules, clock: ContinuousClock())
-    }
-
-    /// Override with an explicit clock (inject a `TestClock` to make `withDelay` deterministic in tests).
-    static func overriding<C: Clock & Sendable>(_ rules: [Rule], clock: C) -> Decorator where C.Duration == Duration {
+    static func overriding(_ rules: [Rule], clock: some Clock<Duration> & Sendable) -> Endo<HTTPRequester> {
         Endo { base in
             HTTPRequester { request in
                 guard let rule = rules.first(where: { $0.match(request) }) else {
@@ -50,7 +49,11 @@ public extension HTTPRequester {
     }
 
     /// Convenience for a single override rule.
-    static func overriding(when match: RequestMatch, respond response: StubResponse) -> Decorator {
-        overriding([Rule(match, respond: response)])
+    static func overriding(
+        when match: RequestMatch,
+        respond response: StubResponse,
+        clock: some Clock<Duration> & Sendable
+    ) -> Endo<HTTPRequester> {
+        overriding([Rule(match, respond: response)], clock: clock)
     }
 }

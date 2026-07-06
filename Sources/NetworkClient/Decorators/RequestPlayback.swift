@@ -21,7 +21,7 @@ public actor RequestPlayback {
     /// Returns `nil` if the file can't be read or decoded.
     public static func load(
         url: URL,
-        read: BinaryReader = BinaryIO.read,
+        read: BinaryReader = .fileManager,
         decoder: some DataDecoderFactory & Sendable
     ) -> RequestPlayback? {
         let decode = decoder.dataDecoder(for: [RecordedExchange].self)

@@ -9,7 +9,7 @@ A decorator is an `Endo<HTTPRequester>` — a pure `(HTTPRequester) -> HTTPReque
 
 | Decorator | Purpose |
 |---|---|
-| ``HTTPRequester/overriding(_:)`` | Short-circuit matching requests with a canned ``StubResponse`` (no network). |
+| ``HTTPRequester/overriding(_:clock:)`` | Short-circuit matching requests with a canned ``StubResponse`` (no network). |
 | ``HTTPRequester/recording(to:now:)`` | Tee every real exchange to a ``RecordStore`` on disk. |
 | ``HTTPRequester/replaying(_:matching:fallback:)`` | Serve recorded responses from a ``RequestPlayback`` snapshot, once each. |
 
@@ -54,9 +54,9 @@ build and demo the client **now**. Override it with the agreed shape — no netw
 let mocks = HTTPRequester.overriding([
     Rule(.method("GET") && .path("/currencies"),
          respond: .json(["MXN", "ARS", "COP", "BRL"], encoder: JSONEncoder())),
-])
+], clock: ContinuousClock())   // clock is injected — the library never constructs one
 
-let client = URLSession.shared.httpRequester.decorated(by: mocks)
+let client = URLSession.shared.httpRequester.applying(mocks)
 // GET /currencies → your canned JSON; every other request hits the real network.
 ```
 
@@ -69,7 +69,7 @@ HTTPRequester.overriding([
     Rule(.path("/profile"),    respond: .status(500, body: Data("boom".utf8))),      // error state
     Rule(.path("/feed"),       respond: .failure(.network(URLError(.timedOut)))),    // transport failure
     Rule(.path("/slow"),       respond: .ok(body: page) <> .withDelay(.seconds(3))), // latency / spinner
-])
+], clock: ContinuousClock())
 ```
 
 Rules are first-match-wins; unmatched requests pass straight through to the wrapped client.
@@ -92,8 +92,8 @@ let store = RecordStore(
 )
 await store.reset()                   // start the session clean
 
-let recordingClient = liveStagingClient.decorated(
-    by: HTTPRequester.recording(to: store, now: { Date() })   // inject the clock at the boundary
+let recordingClient = liveStagingClient.applying(
+    HTTPRequester.recording(to: store, now: { Date() })       // inject the clock at the boundary
 )
 // run the suite once through `recordingClient`; every exchange is captured to `snapshotURL`.
 ```
@@ -106,7 +106,7 @@ and it **surfaces** write failures instead of swallowing them.
 ```swift
 guard let playback = RequestPlayback.load(url: snapshotURL, decoder: JSONDecoder()) else { return }
 let noNetwork = HTTPRequester { _ in Publisher.fail(.network(URLError(.badURL))) }
-let testClient = noNetwork.decorated(by: HTTPRequester.replaying(playback, fallback: .notFound))
+let testClient = noNetwork.applying(HTTPRequester.replaying(playback, fallback: .notFound))
 // every recorded call replays its exact status, headers and body — same result every run.
 ```
 
@@ -142,6 +142,7 @@ are captured too; put `replaying` *over* a live client to get replay-or-fallback
 
 ```swift
 // Capture a session that also includes local mocks:
-let capture = HTTPRequester.recording(to: store, now: { Date() }) <> HTTPRequester.overriding(mocks)
-let client  = URLSession.shared.httpRequester.decorated(by: capture)
+let capture = HTTPRequester.recording(to: store, now: { Date() })
+    <> HTTPRequester.overriding(rules, clock: ContinuousClock())
+let client  = URLSession.shared.httpRequester.applying(capture)
 ```

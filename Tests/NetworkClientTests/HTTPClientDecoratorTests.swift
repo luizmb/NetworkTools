@@ -117,9 +117,9 @@ private func tempURL() -> URL {
 @Suite struct OverrideTests {
     @Test func matchingRequestIsOverriddenWithoutHittingBase() async {
         let spy = SpyBase(body: Data("real".utf8))
-        let client = spy.requester().decorated(by: HTTPRequester.overriding([
+        let client = spy.requester().applying(HTTPRequester.overriding([
             Rule(.path("/currencies"), respond: .ok(body: Data("[\"BRL\"]".utf8))),
-        ]))
+        ], clock: ImmediateClock()))
         let result = await run(client, req("https://x.com/currencies"))
         let (data, response) = try! result!.get()
         #expect(String(decoding: data, as: UTF8.self) == "[\"BRL\"]")
@@ -129,7 +129,7 @@ private func tempURL() -> URL {
 
     @Test func nonMatchingRequestPassesThrough() async {
         let spy = SpyBase(body: Data("real".utf8))
-        let client = spy.requester().decorated(by: HTTPRequester.overriding(when: .path("/mocked"), respond: .ok()))
+        let client = spy.requester().applying(HTTPRequester.overriding(when: .path("/mocked"), respond: .ok(), clock: ImmediateClock()))
         let result = await run(client, req("https://x.com/other"))
         let (data, response) = try! result!.get()
         #expect(String(decoding: data, as: UTF8.self) == "real")
@@ -138,10 +138,10 @@ private func tempURL() -> URL {
     }
 
     @Test func firstMatchWins() async {
-        let client = SpyBase(body: Data()).requester().decorated(by: HTTPRequester.overriding([
+        let client = SpyBase(body: Data()).requester().applying(HTTPRequester.overriding([
             Rule(.pathPrefix("/a"), respond: .status(201)),
             Rule(.path("/a/b"), respond: .status(202)),
-        ]))
+        ], clock: ImmediateClock()))
         let result = await run(client, req("https://x.com/a/b"))
         #expect(try! result!.get().1.statusCode == 201)
     }
@@ -149,7 +149,7 @@ private func tempURL() -> URL {
     @Test func delayPathDoesNotAlterValue() async {
         // ImmediateClock collapses the delay to zero deterministically — exercises the delay code
         // path (Hourglass owns the actual timing semantics) without a TestClock subscribe/advance race.
-        let client = SpyBase(body: Data()).requester().decorated(by: HTTPRequester.overriding(
+        let client = SpyBase(body: Data()).requester().applying(HTTPRequester.overriding(
             [Rule(.any, respond: .ok(body: Data("done".utf8)) <> .withDelay(.seconds(5)))],
             clock: ImmediateClock()
         ))
@@ -175,7 +175,7 @@ private func tempURL() -> URL {
         _ = await store.reset()
 
         // Record
-        let recording = base.decorated(by: HTTPRequester.recording(to: store))
+        let recording = base.applying(HTTPRequester.recording(to: store))
         _ = await run(recording, req("https://x.com/data"))
         let recorded = await store.all()
         #expect(recorded.count == 1)
@@ -185,7 +185,7 @@ private func tempURL() -> URL {
         // Replay
         let playback = RequestPlayback(exchanges: recorded)
         let replay = HTTPRequester { _ in Publisher.fail(.network(URLError(.badURL))) } // fallback should NOT be hit
-            .decorated(by: HTTPRequester.replaying(playback))
+            .applying(HTTPRequester.replaying(playback))
         let result = await run(replay, req("https://x.com/data"))
         let (data, response) = try! result!.get()
         #expect(response.statusCode == 200)
@@ -198,7 +198,7 @@ private func tempURL() -> URL {
         let b = RecordedExchange(method: "GET", url: "https://x.com/n", statusCode: 200, responseBody: Data("2".utf8))
         let playback = RequestPlayback(exchanges: [a, b])
         let replay = HTTPRequester { _ in Publisher.fail(.network(URLError(.badURL))) }
-            .decorated(by: HTTPRequester.replaying(playback, fallback: .notFound))
+            .applying(HTTPRequester.replaying(playback, fallback: .notFound))
 
         #expect(String(decoding: try! (await run(replay, req("https://x.com/n")))!.get().0, as: UTF8.self) == "1")
         #expect(String(decoding: try! (await run(replay, req("https://x.com/n")))!.get().0, as: UTF8.self) == "2")
@@ -209,7 +209,7 @@ private func tempURL() -> URL {
     @Test func replayFallsBackToBaseWhenUnmatched() async {
         let playback = RequestPlayback(exchanges: [])
         let spy = SpyBase(body: Data("live".utf8))
-        let replay = spy.requester().decorated(by: HTTPRequester.replaying(playback, fallback: .base))
+        let replay = spy.requester().applying(HTTPRequester.replaying(playback, fallback: .base))
         let result = await run(replay, req("https://x.com/unrecorded"))
         #expect(String(decoding: try! result!.get().0, as: UTF8.self) == "live")
         #expect(spy.calls == 1)

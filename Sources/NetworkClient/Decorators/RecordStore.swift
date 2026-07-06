@@ -7,9 +7,9 @@ import FP
 /// A serialized, on-disk store of recorded exchanges — the persistence behind the record decorator.
 ///
 /// `RecordStore` is an `actor`, so concurrent requests recording at the same time can never interleave
-/// their read-modify-write (the race ARQ's `struct` recorder documented and accepted). It keeps an
-/// in-memory copy so it doesn't re-read the whole file per exchange, and every mutation returns a
-/// `Result` — write and encode failures are surfaced, not swallowed.
+/// their read-modify-write of the file. It keeps an in-memory copy so it doesn't re-read the whole
+/// file per exchange, and every mutation returns a `Result` — write and encode failures are surfaced,
+/// not swallowed.
 ///
 /// Encoding/decoding go through any `DataEncoderFactory` / `DataDecoderFactory` (JSON, Plist, XML,
 /// YAML…); the concrete coder is derived once at init so the (non-Sendable) factory never crosses the
@@ -25,8 +25,8 @@ public actor RecordStore {
 
     public init(
         url: URL,
-        read: @escaping BinaryReader = BinaryIO.read,
-        write: @escaping BinaryWriter = BinaryIO.write,
+        read: BinaryReader = .fileManager,
+        write: BinaryWriter = .fileManager,
         encoder: some DataEncoderFactory & Sendable,
         decoder: some DataDecoderFactory & Sendable
     ) {
@@ -47,7 +47,7 @@ public actor RecordStore {
 
     /// Appends an exchange and persists. Call once per response; serialized by the actor.
     @discardableResult
-    public func append(_ exchange: RecordedExchange) -> Result<Void, FileIOError> {
+    public func append(_ exchange: RecordedExchange) -> Result<Void, WriteError> {
         var next = all()
         next.append(exchange)
         return persist(next)
@@ -55,11 +55,11 @@ public actor RecordStore {
 
     /// Clears the store (e.g. once at the start of a recording session).
     @discardableResult
-    public func reset() -> Result<Void, FileIOError> {
+    public func reset() -> Result<Void, WriteError> {
         persist([])
     }
 
-    private func persist(_ exchanges: [RecordedExchange]) -> Result<Void, FileIOError> {
+    private func persist(_ exchanges: [RecordedExchange]) -> Result<Void, WriteError> {
         switch encode.run(exchanges) {
         case let .success(data):
             let result = write(data, url)
@@ -69,7 +69,7 @@ public actor RecordStore {
             }
             return result
         case let .failure(error):
-            return .failure(.write("encode failed: \(error)"))
+            return .failure(.failed("encode failed: \(error)"))
         }
     }
 }

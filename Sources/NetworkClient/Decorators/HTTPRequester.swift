@@ -33,14 +33,12 @@ public struct HTTPRequester: FunctionWrapper, Sendable {
     }
 }
 
-// MARK: - Decorator alias
+// MARK: - Applying a transform
 
 public extension HTTPRequester {
-    /// A decorator: a pure transformation of one requester into another. Compose with `<>`.
-    typealias Decorator = Endo<HTTPRequester>
-
-    /// Applies a decorator to this requester. `base.decorated(by: overriding <> recording)`.
-    func decorated(by decorator: Decorator) -> HTTPRequester {
-        decorator.runEndo(self)
+    /// Applies a pure requester transform. Build transforms with `overriding` / `recording` /
+    /// `replaying`, composing several with `<>`: `base.applying(recording(to: store) <> overriding(mocks))`.
+    func applying(_ transform: Endo<HTTPRequester>) -> HTTPRequester {
+        transform.runEndo(self)
     }
 }

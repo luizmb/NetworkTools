@@ -10,9 +10,9 @@ wrapped as ``HTTPRequester`` (ReactiveConcurrency) or ``Requester`` (Combine). B
 function*, behaviour is layered on with **decorators** — `Endo<HTTPRequester>` values that compose:
 
 ```swift
-let client = URLSession.shared.httpRequester.decorated(
-    by: HTTPRequester.recording(to: store)      // outermost: capture everything…
-        <> HTTPRequester.overriding(mocks)       // …including mocked responses
+let client = URLSession.shared.httpRequester.applying(
+    HTTPRequester.recording(to: store)          // outermost: capture everything…
+        <> HTTPRequester.overriding(rules, clock: ContinuousClock())  // …including mocked responses
 )
 ```
 

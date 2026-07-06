@@ -16,7 +16,7 @@ public extension HTTPRequester {
     ///   - store: where exchanges are persisted.
     ///   - now: optional timestamp source (inject `{ Date() }` at the composition root). When `nil`,
     ///     exchanges are recorded without a date, keeping the decorator pure by default.
-    static func recording(to store: RecordStore, now: (@Sendable () -> Date)? = nil) -> Decorator {
+    static func recording(to store: RecordStore, now: (@Sendable () -> Date)? = nil) -> Endo<HTTPRequester> {
         Endo { base in
             HTTPRequester { request in
                 base(request).flatMap { pair in

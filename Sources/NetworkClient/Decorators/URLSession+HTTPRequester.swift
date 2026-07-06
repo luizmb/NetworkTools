@@ -8,11 +8,11 @@ import FoundationNetworking
 
 public extension URLSession {
     /// A live base ``HTTPRequester`` backed by this session — the plain-function (ReactiveConcurrency)
-    /// counterpart of ``URLSession/requester`` (Combine). Decorate it with `overriding`, `recording`,
-    /// or `replaying`:
+    /// counterpart of ``URLSession/requester`` (Combine). Layer `overriding`, `recording`, or
+    /// `replaying` onto it with `applying`:
     ///
     /// ```swift
-    /// let client = URLSession.shared.httpRequester.decorated(by: HTTPRequester.overriding(rules))
+    /// let client = URLSession.shared.httpRequester.applying(HTTPRequester.overriding(rules, clock: ContinuousClock()))
     /// ```
     var httpRequester: HTTPRequester {
         HTTPRequester { [self] request in
