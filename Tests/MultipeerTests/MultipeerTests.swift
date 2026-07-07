@@ -87,13 +87,11 @@ struct StreamFactoryTests {
 
 @Suite("MultipeerSession")
 struct MultipeerSessionTests {
-    @Test func sessionExposesBothCombineAndDeferredStreamAPIs() {
+    @Test func sessionExposesPublisherAPIs() {
         let peer = MCPeerID(displayName: "tester")
         let session = MultipeerSession(myselfAsPeer: peer)
 
         // Just touch the API surface to ensure it type-checks and constructs.
-        _ = session.messages
-        _ = session.connections
         _ = session.messagesStream
         _ = session.connectionsStream
         _ = session.sendTask(Data(), to: peer)

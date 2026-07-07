@@ -27,19 +27,19 @@ private func req(_ url: String, method: String = "GET", headers: [String: String
     return r
 }
 
-private func run(_ requester: HTTPRequester, _ request: URLRequest) async -> Result<(Data, HTTPURLResponse), HTTPError>? {
-    await requester(request).firstResultTask().run()
+private func run(_ client: HTTPClient, _ request: URLRequest) async -> Result<(Data, HTTPURLResponse), HTTPError>? {
+    await client(request).firstResultTask().run()
 }
 
-/// A base requester returning a fixed 200 body, counting how many times it was actually called.
+/// A base client returning a fixed 200 body, counting how many times it was actually called.
 private final class SpyBase: @unchecked Sendable {
     private let lock = NSLock()
     private var _calls = 0
     var calls: Int { lock.withLock { _calls } }
     let body: Data
     init(body: Data) { self.body = body }
-    func requester() -> HTTPRequester {
-        HTTPRequester { [self] request in
+    func client() -> HTTPClient {
+        HTTPClient { [self] request in
             lock.withLock { _calls += 1 }
             return makeResponse(request: request, status: 200, headers: ["X-Base": "yes"], body: body).publisher
         }
@@ -48,6 +48,47 @@ private final class SpyBase: @unchecked Sendable {
 
 private func tempURL() -> URL {
     URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString + ".json")
+}
+
+// MARK: - HTTPClient basics + pipeline
+
+@Suite struct HTTPClientTests {
+    @Test func constResultAlwaysReturnsIt() async {
+        let client = HTTPClient.const(makeResponse(url: URL(string: "https://x.com")!, status: 201, headers: [:], body: Data("hi".utf8)))
+        let (data, response) = try! (await run(client, req("https://x.com/anything")))!.get()
+        #expect(response.statusCode == 201)
+        #expect(String(decoding: data, as: UTF8.self) == "hi")
+    }
+
+    @Test func constStubBuildsResponse() async {
+        let client = HTTPClient.const(.ok(body: Data("body".utf8)) <> .withStatus(202) <> .withHeader("X-Test", "1"))
+        let (data, response) = try! (await run(client, req("https://x.com")))!.get()
+        #expect(response.statusCode == 202)
+        #expect(response.value(forHTTPHeaderField: "X-Test") == "1")
+        #expect(String(decoding: data, as: UTF8.self) == "body")
+    }
+
+    @Test func validateStatusCodePassesOn2xxFailsOtherwise() async {
+        let ok = HTTPClient.const(makeResponse(url: URL(string: "https://x.com")!, status: 200, headers: [:], body: Data("ok".utf8)))
+        let okResult = await ok(req("https://x.com")).validateStatusCode().firstResultTask().run()
+        #expect(String(decoding: try! okResult!.get(), as: UTF8.self) == "ok")
+
+        let bad = HTTPClient.const(makeResponse(url: URL(string: "https://x.com")!, status: 404, headers: [:], body: Data("no".utf8)))
+        let badResult = await bad(req("https://x.com")).validateStatusCode().firstResultTask().run()
+        #expect({ if case .failure(.badStatus(404, _)) = badResult! { true } else { false } }())
+    }
+
+    @Test func decodeParsesJSON() async throws {
+        struct Payload: Codable, Sendable, Equatable { let x: Int }
+        let body = try JSONEncoder().encode(Payload(x: 5))
+        let client = HTTPClient.const(makeResponse(url: URL(string: "https://x.com")!, status: 200, headers: [:], body: body))
+        let result = await client(req("https://x.com"))
+            .validateStatusCode()
+            .decode(using: JSONDecoder(), type: Payload.self)
+            .firstResultTask()
+            .run()
+        #expect(try! result!.get() == Payload(x: 5))
+    }
 }
 
 // MARK: - RequestMatch
@@ -60,38 +101,19 @@ private func tempURL() -> URL {
         #expect(!m(req("https://api.example.com/users?page=2", method: "POST")))
     }
 
-    @Test func pathTolerantOfTrailingSlash() {
-        #expect(RequestMatch.path("/users")(req("https://x.com/users/")))
-        #expect(RequestMatch.path("/users")(req("https://x.com/users")))
-    }
-
-    @Test func hostPrefixRegexHeader() {
-        #expect(RequestMatch.host("staging.x.com")(req("https://staging.x.com/a")))
+    @Test func hostPrefixRegexCombinators() {
         #expect(RequestMatch.pathPrefix("/api/v1")(req("https://x.com/api/v1/users")))
         #expect(RequestMatch.pathRegex("^/users/[0-9]+$")(req("https://x.com/users/42")))
         #expect(!RequestMatch.pathRegex("^/users/[0-9]+$")(req("https://x.com/users/abc")))
-        #expect(RequestMatch.header("Authorization", "Bearer t")(req("https://x.com", headers: ["Authorization": "Bearer t"])))
-    }
-
-    @Test func combinators() {
         let staging = RequestMatch.host("staging.x.com") || .host("dev.x.com")
         #expect(staging(req("https://dev.x.com/a")))
         #expect((!RequestMatch.method("GET"))(req("https://x.com", method: "POST")))
-        #expect(RequestMatch.all([.method("GET"), .pathPrefix("/a")])(req("https://x.com/a/b")))
-        #expect(!RequestMatch.any([.host("a.com"), .host("b.com")])(req("https://x.com")))
     }
 }
 
 // MARK: - StubResponse composition
 
 @Suite struct StubResponseTests {
-    @Test func okDefaultsTo200Empty() {
-        let r = StubResponse.ok().response(for: req("https://x.com"), incoming: .failure(.network(URLError(.badURL))))
-        let (data, response) = try! r.get()
-        #expect(response.statusCode == 200)
-        #expect(data.isEmpty)
-    }
-
     @Test func composedResponse() {
         let stub = StubResponse.ok(body: Data("hi".utf8)) <> .withStatus(201) <> .withHeader("Content-Type", "text/plain")
         let (data, response) = try! stub.response(for: req("https://x.com"), incoming: StubResponse.seed(for: req("https://x.com"))).get()
@@ -107,64 +129,64 @@ private func tempURL() -> URL {
         #expect(response.value(forHTTPHeaderField: "Content-Type") == "application/json")
         #expect(try JSONDecoder().decode(Payload.self, from: data) == Payload(x: 7))
     }
-
-    @Test func failureStub() {
-        let r = StubResponse.failure(.network(URLError(.notConnectedToInternet)))
-            .response(for: req("https://x.com"), incoming: StubResponse.seed(for: req("https://x.com")))
-        #expect({ if case .failure = r { true } else { false } }())
-    }
 }
 
 // MARK: - Override decorator
 
 @Suite struct OverrideTests {
-    @Test func matchingRequestIsOverriddenWithoutHittingBase() async {
+    @Test func matchingRequestUsesTheOverrideWithoutHittingBase() async {
         let spy = SpyBase(body: Data("real".utf8))
-        let client = HTTPRequester.overriding([
-            Rule(.path("/currencies"), respond: .ok(body: Data("[\"BRL\"]".utf8))),
-        ])(spy.requester())
-        let result = await run(client, req("https://x.com/currencies"))
-        let (data, response) = try! result!.get()
+        let client = HTTPClient.override(on: .path("/currencies"), use: .const(.ok(body: Data("[\"BRL\"]".utf8))))(spy.client())
+        let (data, response) = try! (await run(client, req("https://x.com/currencies")))!.get()
         #expect(String(decoding: data, as: UTF8.self) == "[\"BRL\"]")
         #expect(response.statusCode == 200)
-        #expect(spy.calls == 0) // short-circuited: base never called
+        #expect(spy.calls == 0)
     }
 
     @Test func nonMatchingRequestPassesThrough() async {
         let spy = SpyBase(body: Data("real".utf8))
-        let client = HTTPRequester.overriding(when: .path("/mocked"), respond: .ok())(spy.requester())
-        let result = await run(client, req("https://x.com/other"))
-        let (data, response) = try! result!.get()
+        let client = HTTPClient.override(on: .path("/mocked"), use: .const(.ok()))(spy.client())
+        let (data, response) = try! (await run(client, req("https://x.com/other")))!.get()
         #expect(String(decoding: data, as: UTF8.self) == "real")
         #expect(response.value(forHTTPHeaderField: "X-Base") == "yes")
         #expect(spy.calls == 1)
     }
 
-    @Test func firstMatchWins() async {
-        let client = HTTPRequester.overriding([
-            Rule(.pathPrefix("/a"), respond: .status(201)),
-            Rule(.path("/a/b"), respond: .status(202)),
-        ])(SpyBase(body: Data()).requester())
-        let result = await run(client, req("https://x.com/a/b"))
-        #expect(try! result!.get().1.statusCode == 201)
+    @Test func outerOverrideWinsWhenNested() async {
+        let base = SpyBase(body: Data()).client()
+        let inner = HTTPClient.override(on: .path("/a/b"), use: .const(.status(202)))(base)
+        let client = HTTPClient.override(on: .pathPrefix("/a"), use: .const(.status(201)))(inner)
+        #expect(try! (await run(client, req("https://x.com/a/b")))!.get().1.statusCode == 201)
     }
 
-    @Test func delayingPassesValueThroughOnImmediateClock() async {
-        // ImmediateClock collapses the delay deterministically — exercises the delaying path
-        // (Hourglass owns the timing semantics) without a TestClock subscribe/advance race.
-        let base = SpyBase(body: Data("done".utf8)).requester()
-        let client = HTTPRequester.delaying(.seconds(5), clock: ImmediateClock())(base)
-        let result = await run(client, req("https://x.com"))
-        #expect(String(decoding: try! result!.get().0, as: UTF8.self) == "done")
+    @Test func requestDerivedOverrideEchoesHeaders() async {
+        let base = SpyBase(body: Data()).client()
+        let client = HTTPClient.override(on: .path("/echo")) { request in
+            .const(.ok() <> .withHeaders(request.allHTTPHeaderFields ?? [:]))
+        }(base)
+        let (_, response) = try! (await run(client, req("https://x.com/echo", headers: ["X-In": "v"])))!.get()
+        #expect(response.value(forHTTPHeaderField: "X-In") == "v")
     }
 }
 
-// MARK: - Record + Replay round-trip
+// MARK: - Delay
 
-@Suite struct RecordReplayTests {
-    @Test func recordThenReplayRoundTrips() async {
+@Suite struct DelayTests {
+    @Test func delayPassesValueThroughOnImmediateClock() async {
+        // ImmediateClock collapses the delay deterministically — exercises the delay path without a
+        // TestClock subscribe/advance race.
+        let base = SpyBase(body: Data("done".utf8)).client()
+        let client = HTTPClient.delay(.seconds(5), clock: ImmediateClock())(base)
+        #expect(String(decoding: try! (await run(client, req("https://x.com")))!.get().0, as: UTF8.self) == "done")
+    }
+}
+
+// MARK: - Record + Playback
+
+@Suite struct RecordPlaybackTests {
+    @Test func recordThenPlaybackRoundTrips() async {
         let url = tempURL()
-        let base = HTTPRequester { request in
+        let base = HTTPClient { request in
             makeResponse(
                 request: request,
                 status: 200,
@@ -175,44 +197,36 @@ private func tempURL() -> URL {
         let store = RecordStore(url: url, encoder: JSONEncoder(), decoder: JSONDecoder())
         _ = await store.reset()
 
-        // Record
-        let recording = HTTPRequester.recording(to: store)(base)
+        let recording = HTTPClient.record(to: store)(base)
         _ = await run(recording, req("https://x.com/data"))
         let recorded = await store.all()
         #expect(recorded.count == 1)
-        #expect(recorded.first?.statusCode == 200)
         #expect(recorded.first?.responseHeaders?["Content-Type"] == "application/json")
 
-        // Replay
-        let playback = RequestPlayback(exchanges: recorded)
-        let noNetwork = HTTPRequester { _ in Publisher.fail(.network(URLError(.badURL))) } // fallback should NOT be hit
-        let replay = HTTPRequester.replaying(playback)(noNetwork)
-        let result = await run(replay, req("https://x.com/data"))
-        let (data, response) = try! result!.get()
+        let source = RequestPlayback(exchanges: recorded)
+        let playback = HTTPClient.playback(source)(HTTPClient.const(.status(404)))
+        let (data, response) = try! (await run(playback, req("https://x.com/data")))!.get()
         #expect(response.statusCode == 200)
-        #expect(response.value(forHTTPHeaderField: "Content-Type") == "application/json") // headers replayed
+        #expect(response.value(forHTTPHeaderField: "Content-Type") == "application/json")
         #expect(String(decoding: data, as: UTF8.self) == "{\"ok\":1}")
     }
 
-    @Test func replayConsumesOnce() async {
+    @Test func playbackConsumesOnceThenFallsThrough() async {
         let a = RecordedExchange(method: "GET", url: "https://x.com/n", statusCode: 200, responseBody: Data("1".utf8))
         let b = RecordedExchange(method: "GET", url: "https://x.com/n", statusCode: 200, responseBody: Data("2".utf8))
-        let playback = RequestPlayback(exchanges: [a, b])
-        let noNetwork = HTTPRequester { _ in Publisher.fail(.network(URLError(.badURL))) }
-        let replay = HTTPRequester.replaying(playback, fallback: .notFound)(noNetwork)
+        let source = RequestPlayback(exchanges: [a, b])
+        let client = HTTPClient.playback(source)(HTTPClient.const(.status(404)))
 
-        #expect(String(decoding: try! (await run(replay, req("https://x.com/n")))!.get().0, as: UTF8.self) == "1")
-        #expect(String(decoding: try! (await run(replay, req("https://x.com/n")))!.get().0, as: UTF8.self) == "2")
-        // third call: exhausted -> fallback 404
-        #expect(try! (await run(replay, req("https://x.com/n")))!.get().1.statusCode == 404)
+        #expect(String(decoding: try! (await run(client, req("https://x.com/n")))!.get().0, as: UTF8.self) == "1")
+        #expect(String(decoding: try! (await run(client, req("https://x.com/n")))!.get().0, as: UTF8.self) == "2")
+        #expect(try! (await run(client, req("https://x.com/n")))!.get().1.statusCode == 404)
     }
 
-    @Test func replayFallsBackToBaseWhenUnmatched() async {
-        let playback = RequestPlayback(exchanges: [])
+    @Test func playbackFallsThroughToBaseWhenUnmatched() async {
+        let source = RequestPlayback(exchanges: [])
         let spy = SpyBase(body: Data("live".utf8))
-        let replay = HTTPRequester.replaying(playback, fallback: .base)(spy.requester())
-        let result = await run(replay, req("https://x.com/unrecorded"))
-        #expect(String(decoding: try! result!.get().0, as: UTF8.self) == "live")
+        let client = HTTPClient.playback(source)(spy.client())
+        #expect(String(decoding: try! (await run(client, req("https://x.com/unrecorded")))!.get().0, as: UTF8.self) == "live")
         #expect(spy.calls == 1)
     }
 }

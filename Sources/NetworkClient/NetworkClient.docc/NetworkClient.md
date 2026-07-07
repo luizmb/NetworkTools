@@ -1,46 +1,47 @@
 # ``NetworkClient``
 
-A composable, functional HTTP client — and a set of pure decorators for mocking, recording, and
-deterministically replaying network traffic.
+A composable, functional HTTP client — one requester type, with pure decorators for mocking,
+recording, and deterministically replaying network traffic.
 
 ## Overview
 
-The client is a plain function: `@Sendable (URLRequest) -> Publisher<(Data, HTTPURLResponse), HTTPError>`,
-wrapped as ``HTTPRequester`` (ReactiveConcurrency) or ``Requester`` (Combine). Because it's *just a
-function*, behaviour is layered on with **decorators** — `Endo<HTTPRequester>` values that compose:
-
-Each decorator is an `Endo<HTTPRequester>` — a callable value. Apply one by calling it on a base;
-layer several by **nesting**, which keeps the order of execution explicit (base first, inside-out):
+``HTTPClient`` is the single requester abstraction: a pure function
+`@Sendable (URLRequest) -> Publisher<(Data, HTTPURLResponse), HTTPError>` (ReactiveConcurrency).
+`URLRequest` is an ordinary value, so it's a plain function wrapper — not a `Reader`. Behaviour is
+layered on with **decorators** — `Endo<HTTPClient>` values applied by calling them on a base and
+nesting to compose:
 
 ```swift
-let client = HTTPRequester.recording(to: store)(   // …then capture everything, mocks included
-    HTTPRequester.overriding(rules)(               // base is overridden first…
-        URLSession.shared.httpRequester
+let client = HTTPClient.record(to: store)(              // …then record everything
+    HTTPClient.override(on: .path("/mocked"),           // mock one endpoint…
+                        use: .const(.ok(body: json)))(
+        HTTPClient.live(session: .shared)
     )
 )
+
+// The typed pipeline lives on the response Publisher:
+let user = client(request).validateStatusCode().decode(using: JSONDecoder(), type: User.self)
 ```
 
-Two small, stack-agnostic atoms are shared by every decorator:
-
-- ``RequestMatch`` — "which request?", a composable `(URLRequest) -> Bool`.
-- ``StubResponse`` — "what response?", a composable `Endo` over the `Result` with sensible defaults.
+Two small, stack-agnostic atoms are shared by the decorators: ``RequestMatch`` (which request) and
+``StubResponse`` (what response, composed with `<>`).
 
 ## Topics
 
 ### Getting Started
 - <doc:MockingRecordingReplaying>
 
-### The requester
-- ``HTTPRequester``
+### The client
+- ``HTTPClient``
 - ``HTTPError``
 
 ### Decorator atoms
 - ``RequestMatch``
 - ``StubResponse``
 
-### Decorators
-- ``Rule``
+### Recording & replaying
 - ``RecordStore``
 - ``RequestPlayback``
-- ``ReplayFallback``
 - ``RecordedExchange``
+- ``BinaryReader``
+- ``BinaryWriter``

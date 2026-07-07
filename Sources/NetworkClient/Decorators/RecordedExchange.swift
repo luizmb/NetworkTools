@@ -67,7 +67,7 @@ public extension RecordedExchange {
     }
 
     /// Rebuilds the raw `(Data, HTTPURLResponse)` result this exchange represents (replays status + headers + body).
-    func asResponse() -> HTTPRequester.Response {
+    func asResponse() -> HTTPClient.Response {
         guard let responseURL = URL(string: url) else { return .failure(.network(URLError(.badURL))) }
         return makeResponse(url: responseURL, status: statusCode, headers: responseHeaders ?? [:], body: responseBody)
     }

@@ -1,21 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #if canImport(MultipeerConnectivity)
-import Combine
 import Foundation
 import FP
 @preconcurrency import MultipeerConnectivity
 import ReactiveConcurrency
 
-/// A Multipeer session exposing both Combine and `DeferredStream`/`DeferredTask` APIs side by
-/// side. The two API families are implemented independently — the deferred-concurrency side
-/// does not go through the Combine subjects, so the same pattern carries over to Linux-capable
-/// transports where Combine isn't available.
+/// A Multipeer session exposing its messages, connection events and invitations as ReactiveConcurrency
+/// `Publisher`s.
 public class MultipeerSession: NSObject, MCSessionDelegate, @unchecked Sendable {
     public let session: MCSession
 
-    private let _messages = Combine.PassthroughSubject<MultipeerSessionReceivedMessage, Never>()
-    private let _connections = Combine.PassthroughSubject<MultipeerSessionConnectionStatusEvent, Never>()
     private let messagesMulticaster = AsyncMulticaster<MultipeerSessionReceivedMessage>()
     private let connectionsMulticaster = AsyncMulticaster<MultipeerSessionConnectionStatusEvent>()
 
@@ -30,37 +25,6 @@ public class MultipeerSession: NSObject, MCSessionDelegate, @unchecked Sendable 
         connectionsMulticaster.finish()
     }
 
-    // MARK: - Combine API
-
-    public var messages: Combine.AnyPublisher<MultipeerSessionReceivedMessage, Never> {
-        _messages.eraseToAnyPublisher()
-    }
-
-    public var connections: Combine.AnyPublisher<MultipeerSessionConnectionStatusEvent, Never> {
-        _connections.eraseToAnyPublisher()
-    }
-
-    /// Invites a peer and emits its `MCPeerID` each time it becomes connected.
-    /// The invitation is sent on subscription.
-    public func invite(
-        peer: MCPeerID,
-        browser: MCNearbyServiceBrowser,
-        context: Data?,
-        timeout: TimeInterval
-    ) -> Combine.AnyPublisher<MCPeerID, Never> {
-        _connections
-            .filter { event in
-                guard case let .peerConnected(connectedPeer, _) = event else { return false }
-                return connectedPeer == peer
-            }
-            .map { _ in peer }
-            .handleEvents(receiveSubscription: { [weak self] _ in
-                guard let self else { return }
-                browser.invitePeer(peer, to: session, withContext: context, timeout: timeout)
-            })
-            .eraseToAnyPublisher()
-    }
-
     public func send(_ data: Data, to peer: MCPeerID, reliable: Bool = true) -> Result<Void, Error> {
         Result {
             try session.send(data, toPeers: [peer], with: reliable ? .reliable : .unreliable)
@@ -73,7 +37,7 @@ public class MultipeerSession: NSObject, MCSessionDelegate, @unchecked Sendable 
         }
     }
 
-    // MARK: - Publisher API (ReactiveConcurrency)
+    // MARK: - Publisher API
 
     public var messagesStream: ReactiveConcurrency.Publisher<MultipeerSessionReceivedMessage, Never> {
         DeferredStream { [multicaster = messagesMulticaster] in multicaster.register() }.eraseToPublisher()
@@ -132,19 +96,16 @@ public class MultipeerSession: NSObject, MCSessionDelegate, @unchecked Sendable 
         @unknown default: nil
         }
         guard let event else { return }
-        _connections.send(event)
         connectionsMulticaster.send(event)
     }
 
     public func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {
         let event = MultipeerSessionReceivedMessage.data(data, from: peerID, session: session)
-        _messages.send(event)
         messagesMulticaster.send(event)
     }
 
     public func session(_ session: MCSession, didReceive stream: InputStream, withName streamName: String, fromPeer peerID: MCPeerID) {
         let event = MultipeerSessionReceivedMessage.stream(stream, streamName: streamName, from: peerID, session: session)
-        _messages.send(event)
         messagesMulticaster.send(event)
     }
 
@@ -160,7 +121,6 @@ public class MultipeerSession: NSObject, MCSessionDelegate, @unchecked Sendable 
             progress: progress,
             session: session
         )
-        _messages.send(event)
         messagesMulticaster.send(event)
     }
 
@@ -178,7 +138,6 @@ public class MultipeerSession: NSObject, MCSessionDelegate, @unchecked Sendable 
             error: error,
             session: session
         )
-        _messages.send(event)
         messagesMulticaster.send(event)
     }
 }

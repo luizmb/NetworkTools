@@ -24,24 +24,24 @@ import FP
 /// ```
 ///
 /// The result is lifted into the reactive stack by the decorator via `Result.publisher`, so this
-/// type is completely independent of Combine vs ReactiveConcurrency. Latency is a separate concern —
-/// compose ``HTTPRequester/delaying(_:when:clock:)`` when you want to simulate a slow response.
+/// type is a plain value, independent of the reactive stack. Latency is a separate concern —
+/// compose ``HTTPClient/delay(_:when:clock:)`` when you want to simulate a slow response.
 public struct StubResponse: Sendable {
     /// Given the request, an `Endo` transforming an incoming (real or seed) response into the outgoing one.
-    public let endo: @Sendable (URLRequest) -> Endo<HTTPRequester.Response>
+    public let endo: @Sendable (URLRequest) -> Endo<HTTPClient.Response>
 
-    public init(_ endo: @escaping @Sendable (URLRequest) -> Endo<HTTPRequester.Response>) {
+    public init(_ endo: @escaping @Sendable (URLRequest) -> Endo<HTTPClient.Response>) {
         self.endo = endo
     }
 
     /// Applies the stub to `request`, transforming `incoming` (the base response, or a 200/empty seed
     /// for overrides that don't hit the network).
-    public func response(for request: URLRequest, incoming: HTTPRequester.Response) -> HTTPRequester.Response {
+    public func response(for request: URLRequest, incoming: HTTPClient.Response) -> HTTPClient.Response {
         endo(request).runEndo(incoming)
     }
 
     /// A synthetic seed for overrides: an empty 200 for the request's URL (or `.badURL` if it has none).
-    public static func seed(for request: URLRequest) -> HTTPRequester.Response {
+    public static func seed(for request: URLRequest) -> HTTPClient.Response {
         makeResponse(request: request, status: 200, headers: [:], body: Data())
     }
 }
@@ -50,7 +50,7 @@ public struct StubResponse: Sendable {
 
 public extension StubResponse {
     /// Replace the response wholesale, ignoring anything incoming. This is `FP.const` at the `Result` level.
-    static func const(_ make: @escaping @Sendable (URLRequest) -> HTTPRequester.Response) -> StubResponse {
+    static func const(_ make: @escaping @Sendable (URLRequest) -> HTTPClient.Response) -> StubResponse {
         StubResponse { request in Endo { _ in make(request) } }
     }
 
@@ -129,7 +129,7 @@ public extension StubResponse {
 
 /// Rebuilds the response on the success branch from its (status, url, headers, body); leaves failures untouched.
 private func rewriting(
-    _ f: @escaping @Sendable (Int, URL, [String: String], Data) -> HTTPRequester.Response
+    _ f: @escaping @Sendable (Int, URL, [String: String], Data) -> HTTPClient.Response
 ) -> StubResponse {
     StubResponse { _ in
         Endo { incoming in
@@ -142,12 +142,12 @@ private func rewriting(
     }
 }
 
-func makeResponse(request: URLRequest, status: Int, headers: [String: String], body: Data) -> HTTPRequester.Response {
+func makeResponse(request: URLRequest, status: Int, headers: [String: String], body: Data) -> HTTPClient.Response {
     guard let url = request.url else { return .failure(.network(URLError(.badURL))) }
     return makeResponse(url: url, status: status, headers: headers, body: body)
 }
 
-func makeResponse(url: URL, status: Int, headers: [String: String], body: Data) -> HTTPRequester.Response {
+func makeResponse(url: URL, status: Int, headers: [String: String], body: Data) -> HTTPClient.Response {
     guard let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: headers) else {
         return .failure(.network(URLError(.badServerResponse)))
     }
