@@ -417,6 +417,42 @@ let client = HTTPClient.override(
 
 Two composable atoms drive the decorators: `RequestMatch` (`.method`/`.path`/`.query`/`.header`/`.pathRegex`, combined with `&&`/`||`/`!`) and `StubResponse` (`.ok`/`.status`/`.json`/`.failure` + `.withStatus`/`.withHeader`/`.withBody`, composed with `<>`). See the [Mocking, Recording & Replaying](https://ios.lu/NetworkTools/documentation/networkclient/mockingrecordingreplaying) guide for the full walkthrough.
 
+## NetworkServer
+
+An embedded HTTP server built on swift-nio (`NIOPosix`), with a **typed, functional routing DSL**. A `Router<Env>` is a value: routes compose left-to-right with Kleisli `>=>` (match -> decode body -> handle) and alternate with `<|>`; `Env` is your injected environment. Handlers return `Result<Response, ResponseError>` (sync) or `Publisher<Response, ResponseError>` (async).
+
+```swift
+import NetworkServer
+import ReactiveConcurrency
+
+struct Env: Sendable {
+    let greeting: String
+    let decoder: JSONDecoder   // supplied to `decodeBody(using:)` via a key path
+}
+
+struct NewUser: Decodable, Sendable { let name: String }
+
+let router =
+    when(get("/hello") >=> ignoreBody() >=> response { _, env in .html(env.greeting) },
+         injecting: Env.self)
+    <|> when(
+        post("/users")
+            >=> decodeBody(using: \.decoder)
+            >=> response { (req: TypedRequest<Empty, Empty, NewUser>) in
+                .json(["created": req.body.name], encoder: JSONEncoder(), status: .created)
+            },
+        injecting: Env.self
+    )
+
+// `startServer` returns `Reader<Env, Result<Void, Error>>`; the boundary provides the environment.
+_ = startServer(host: "127.0.0.1", port: 8080, router: router)
+    .provide(Env(greeting: "hi there", decoder: JSONDecoder()))
+```
+
+Routes also support **typed URL params** (`get("/users/:id", params: .decode(UserParams.self, using: \.dictionaryDecoderFactory))`) and **typed query params**, surfaced on the `TypedRequest`. Response builders on `Result<Response, ResponseError>`: `.html`, `.json(_, encoder:)`, `.raw`, `.image`. An unmatched request falls through `<|>`; a total miss is a `404`.
+
+---
+
 ## WebSocketClient
 
 Full-duplex WebSocket client exposing a **`WebSocketConnection`** — an ARC-managed value whose `receive`, `send`, and `ping` are ReactiveConcurrency `Publisher`s. The socket stays open while a reference is held; the last release (or `close()`) sends a normal-closure frame.
