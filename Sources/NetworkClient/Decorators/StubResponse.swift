@@ -14,26 +14,21 @@ import FP
 /// you need on top of sensible defaults (200, no headers, empty body):
 ///
 /// ```swift
-/// .ok(body: json)                                   // 200 + body
-/// .ok() <> .status(201) <> .header("ETag", "\"v1\"")  // build up piece by piece
-/// .failure(.network(URLError(.notConnectedToInternet)))  // simulate a transport error
-/// .json(user) <> .withDelay(.milliseconds(300))     // encode + simulate latency
+/// .ok(body: json)                                       // 200 + body
+/// .ok() <> .withStatus(201) <> .withHeader("ETag", "\"v1\"") // build up piece by piece
+/// .json(user)                                           // encode a value + Content-Type
+/// .failure(.network(URLError(.notConnectedToInternet))) // simulate a transport error
 /// ```
 ///
 /// The result is lifted into the reactive stack by the decorator via `Result.publisher`, so this
-/// type is completely independent of Combine vs ReactiveConcurrency.
+/// type is completely independent of Combine vs ReactiveConcurrency. Latency is a separate concern —
+/// compose ``HTTPRequester/delaying(_:when:clock:)`` when you want to simulate a slow response.
 public struct StubResponse: Sendable {
     /// Given the request, an `Endo` transforming an incoming (real or seed) response into the outgoing one.
     public let endo: @Sendable (URLRequest) -> Endo<HTTPRequester.Response>
-    /// Optional artificial latency before the response is emitted (the decorator applies it with an injected clock).
-    public let delay: Duration
 
-    public init(
-        delay: Duration = .zero,
-        _ endo: @escaping @Sendable (URLRequest) -> Endo<HTTPRequester.Response>
-    ) {
+    public init(_ endo: @escaping @Sendable (URLRequest) -> Endo<HTTPRequester.Response>) {
         self.endo = endo
-        self.delay = delay
     }
 
     /// Applies the stub to `request`, transforming `incoming` (the base response, or a 200/empty seed
@@ -115,18 +110,13 @@ public extension StubResponse {
     static func withBody(_ data: Data) -> StubResponse {
         rewriting { status, url, headers, _ in makeResponse(url: url, status: status, headers: headers, body: data) }
     }
-
-    /// Adds artificial latency before emission (the decorator applies it with an injected clock).
-    static func withDelay(_ delay: Duration) -> StubResponse {
-        StubResponse(delay: delay) { _ in Endo { $0 } }
-    }
 }
 
-// MARK: - Composition (Endo semigroup: left then right; the right non-zero delay wins)
+// MARK: - Composition (Endo semigroup: apply left, then right)
 
 public extension StubResponse {
     static func <> (lhs: StubResponse, rhs: StubResponse) -> StubResponse {
-        StubResponse(delay: rhs.delay != .zero ? rhs.delay : lhs.delay) { request in
+        StubResponse { request in
             Endo { incoming in rhs.endo(request).runEndo(lhs.endo(request).runEndo(incoming)) }
         }
     }

@@ -9,9 +9,10 @@ A decorator is an `Endo<HTTPRequester>` — a pure `(HTTPRequester) -> HTTPReque
 
 | Decorator | Purpose |
 |---|---|
-| ``HTTPRequester/overriding(_:clock:)`` | Short-circuit matching requests with a canned ``StubResponse`` (no network). |
+| ``HTTPRequester/overriding(_:)`` | Short-circuit matching requests with a canned ``StubResponse`` (no network). |
 | ``HTTPRequester/recording(to:now:)`` | Tee every real exchange to a ``RecordStore`` on disk. |
 | ``HTTPRequester/replaying(_:matching:fallback:)`` | Serve recorded responses from a ``RequestPlayback`` snapshot, once each. |
+| ``HTTPRequester/delaying(_:when:clock:)`` | Add artificial latency to matching responses (injected clock). |
 
 They compose with `<>` and read against two shared atoms: ``RequestMatch`` (which request) and
 ``StubResponse`` (what response).
@@ -42,8 +43,10 @@ sensible defaults (**200**, no headers, empty body) — set only what you need:
 .ok() <> .withStatus(201) <> .withHeader("ETag", "\"v1\"") // build it up piece by piece
 .json(User(id: 1), status: 200, encoder: JSONEncoder())   // encode a value + Content-Type
 .failure(.network(URLError(.notConnectedToInternet)))     // simulate a transport error
-.ok(body: json) <> .withDelay(.milliseconds(800))         // simulate latency (injected clock)
 ```
+
+Latency is a *separate* concern (it's about timing, not the response value) — compose the
+``HTTPRequester/delaying(_:when:clock:)`` decorator when you want a slow response.
 
 ## Scenario 1 — Override: mock an endpoint that isn't built yet
 
@@ -54,7 +57,7 @@ build and demo the client **now**. Override it with the agreed shape — no netw
 let mocks = HTTPRequester.overriding([
     Rule(.method("GET") && .path("/currencies"),
          respond: .json(["MXN", "ARS", "COP", "BRL"], encoder: JSONEncoder())),
-], clock: ContinuousClock())   // clock is injected — the library never constructs one
+])
 
 let client = URLSession.shared.httpRequester.applying(mocks)
 // GET /currencies → your canned JSON; every other request hits the real network.
@@ -64,12 +67,16 @@ The same tool forces **edge cases** your UI must handle but the server won't pro
 empty list, a 500, a timeout, or a slow response to test your spinner:
 
 ```swift
+// A mock per condition:
 HTTPRequester.overriding([
-    Rule(.path("/currencies"), respond: .ok(body: Data("[]".utf8))),                 // empty state
-    Rule(.path("/profile"),    respond: .status(500, body: Data("boom".utf8))),      // error state
-    Rule(.path("/feed"),       respond: .failure(.network(URLError(.timedOut)))),    // transport failure
-    Rule(.path("/slow"),       respond: .ok(body: page) <> .withDelay(.seconds(3))), // latency / spinner
-], clock: ContinuousClock())
+    Rule(.path("/currencies"), respond: .ok(body: Data("[]".utf8))),              // empty state
+    Rule(.path("/profile"),    respond: .status(500, body: Data("boom".utf8))),   // error state
+    Rule(.path("/feed"),       respond: .failure(.network(URLError(.timedOut)))), // transport failure
+])
+
+// …and slow /slow down by three seconds to exercise the spinner (a separate, composable decorator):
+HTTPRequester.delaying(.seconds(3), when: .path("/slow"), clock: ContinuousClock())
+    <> HTTPRequester.overriding([Rule(.path("/slow"), respond: .ok(body: page))])
 ```
 
 Rules are first-match-wins; unmatched requests pass straight through to the wrapped client.
@@ -143,6 +150,6 @@ are captured too; put `replaying` *over* a live client to get replay-or-fallback
 ```swift
 // Capture a session that also includes local mocks:
 let capture = HTTPRequester.recording(to: store, now: { Date() })
-    <> HTTPRequester.overriding(rules, clock: ContinuousClock())
+    <> HTTPRequester.overriding(rules)
 let client  = URLSession.shared.httpRequester.applying(capture)
 ```

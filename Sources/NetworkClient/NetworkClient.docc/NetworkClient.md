@@ -12,7 +12,7 @@ function*, behaviour is layered on with **decorators** — `Endo<HTTPRequester>`
 ```swift
 let client = URLSession.shared.httpRequester.applying(
     HTTPRequester.recording(to: store)          // outermost: capture everything…
-        <> HTTPRequester.overriding(rules, clock: ContinuousClock())  // …including mocked responses
+        <> HTTPRequester.overriding(rules)          // …including mocked responses
 )
 ```
 

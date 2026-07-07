@@ -12,7 +12,7 @@ public extension URLSession {
     /// `replaying` onto it with `applying`:
     ///
     /// ```swift
-    /// let client = URLSession.shared.httpRequester.applying(HTTPRequester.overriding(rules, clock: ContinuousClock()))
+    /// let client = URLSession.shared.httpRequester.applying(HTTPRequester.overriding(rules))
     /// ```
     var httpRequester: HTTPRequester {
         HTTPRequester { [self] request in

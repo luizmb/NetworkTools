@@ -119,7 +119,7 @@ private func tempURL() -> URL {
         let spy = SpyBase(body: Data("real".utf8))
         let client = spy.requester().applying(HTTPRequester.overriding([
             Rule(.path("/currencies"), respond: .ok(body: Data("[\"BRL\"]".utf8))),
-        ], clock: ImmediateClock()))
+        ]))
         let result = await run(client, req("https://x.com/currencies"))
         let (data, response) = try! result!.get()
         #expect(String(decoding: data, as: UTF8.self) == "[\"BRL\"]")
@@ -129,7 +129,7 @@ private func tempURL() -> URL {
 
     @Test func nonMatchingRequestPassesThrough() async {
         let spy = SpyBase(body: Data("real".utf8))
-        let client = spy.requester().applying(HTTPRequester.overriding(when: .path("/mocked"), respond: .ok(), clock: ImmediateClock()))
+        let client = spy.requester().applying(HTTPRequester.overriding(when: .path("/mocked"), respond: .ok()))
         let result = await run(client, req("https://x.com/other"))
         let (data, response) = try! result!.get()
         #expect(String(decoding: data, as: UTF8.self) == "real")
@@ -141,18 +141,16 @@ private func tempURL() -> URL {
         let client = SpyBase(body: Data()).requester().applying(HTTPRequester.overriding([
             Rule(.pathPrefix("/a"), respond: .status(201)),
             Rule(.path("/a/b"), respond: .status(202)),
-        ], clock: ImmediateClock()))
+        ]))
         let result = await run(client, req("https://x.com/a/b"))
         #expect(try! result!.get().1.statusCode == 201)
     }
 
-    @Test func delayPathDoesNotAlterValue() async {
-        // ImmediateClock collapses the delay to zero deterministically — exercises the delay code
-        // path (Hourglass owns the actual timing semantics) without a TestClock subscribe/advance race.
-        let client = SpyBase(body: Data()).requester().applying(HTTPRequester.overriding(
-            [Rule(.any, respond: .ok(body: Data("done".utf8)) <> .withDelay(.seconds(5)))],
-            clock: ImmediateClock()
-        ))
+    @Test func delayingPassesValueThroughOnImmediateClock() async {
+        // ImmediateClock collapses the delay deterministically — exercises the delaying path
+        // (Hourglass owns the timing semantics) without a TestClock subscribe/advance race.
+        let base = SpyBase(body: Data("done".utf8)).requester()
+        let client = base.applying(HTTPRequester.delaying(.seconds(5), clock: ImmediateClock()))
         let result = await run(client, req("https://x.com"))
         #expect(String(decoding: try! result!.get().0, as: UTF8.self) == "done")
     }
