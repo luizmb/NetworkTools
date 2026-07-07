@@ -2,7 +2,7 @@
 
 import Foundation
 
-/// Controls whether a `NetServicePublisher` continues watching for TXT record changes
+/// Controls whether resolution continues watching for TXT record changes
 /// after the initial resolution.
 ///
 /// Pass `.keepMonitoringTXTUpdates` when you need live TXT record updates (e.g. dynamic

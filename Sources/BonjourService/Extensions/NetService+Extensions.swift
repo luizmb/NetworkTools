@@ -12,14 +12,14 @@ public extension NetService {
     ///
     /// ```swift
     /// let publisher = NetService(domain: "local.", type: "_http._tcp.", name: "My Server")
-    ///     .publisher(monitorDevice: .doNotMonitorTXTUpdates)
+    ///     bonjourResolve(info)
     ///
     /// publisher
     ///     .compactMap { event -> [String]? in
     ///         guard case .didResolveAddress = event.type else { return nil }
     ///         return event.netService.parsedAddresses()
     ///     }
-    ///     .sink { ips in print("resolved IPs:", ips) }
+    ///     // -> ResolvedServiceInfo (IPs, port, TXT)
     ///     .store(in: &cancellables)
     /// ```
     func parsedAddresses() -> [String] {

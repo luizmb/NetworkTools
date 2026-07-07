@@ -14,7 +14,7 @@ import Foundation
 ///     case .success(.ready(let port)):
 ///         print("advertising on port", port ?? 0)
 ///     case .success(.newConnection(let conn)):
-///         Task { for await data in conn.receive { ... } }
+///         for await data in conn.receive.values { ... }
 ///     case .success(.registered):
 ///         print("Bonjour registration confirmed")
 ///     case .success(.unregistered):

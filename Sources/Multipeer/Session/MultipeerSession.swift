@@ -40,11 +40,19 @@ public class MultipeerSession: NSObject, MCSessionDelegate, @unchecked Sendable 
     // MARK: - Publisher API
 
     public var messagesStream: ReactiveConcurrency.Publisher<MultipeerSessionReceivedMessage, Never> {
-        DeferredStream { [multicaster = messagesMulticaster] in multicaster.register() }.eraseToPublisher()
+        Publisher { [multicaster = messagesMulticaster] continuation in
+            for await value in multicaster.register() {
+                continuation.yield(value)
+            }
+        }
     }
 
     public var connectionsStream: ReactiveConcurrency.Publisher<MultipeerSessionConnectionStatusEvent, Never> {
-        DeferredStream { [multicaster = connectionsMulticaster] in multicaster.register() }.eraseToPublisher()
+        Publisher { [multicaster = connectionsMulticaster] continuation in
+            for await value in multicaster.register() {
+                continuation.yield(value)
+            }
+        }
     }
 
     /// Invites a peer and suspends until it first becomes connected.
