@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// A predicate that decides whether a `URLRequest` matches — the shared "which request?" atom used
 /// by the override and replay decorators.

@@ -2,6 +2,9 @@
 
 import Core
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import FP
 
 /// A consume-once source of recorded exchanges — the state behind the replay decorator.

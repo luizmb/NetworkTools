@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 // Optional collections are intentional here: a `RecordedExchange` is a Codable snapshot DTO where an
 // absent field (no request headers, no body) is meaningfully distinct from an empty one and is simply

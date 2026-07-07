@@ -2,6 +2,9 @@
 
 import Core
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import FP
 
 /// The "what response?" atom — a request-aware `Endo` over the raw HTTP result, shared by the

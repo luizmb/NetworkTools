@@ -2,6 +2,9 @@
 
 import Core
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import FP
 import Hourglass
 @testable import NetworkClient
