@@ -7,7 +7,7 @@
 
 **[→ Full API Documentation](https://ios.lu/NetworkTools)**
 
-A suite of Swift packages for HTML templating, HTTP client networking, and HTTP server hosting. Built on functional programming principles using [`FP`](https://github.com/luizmb/FP): every public API uses `Reader` for dependency injection, `Result` for error handling, `DeferredTask` / `Publisher` (Combine) for async work, and `FunctionWrapper` for composable function types. No force-unwraps, no `fatalError`, no silent failures.
+A suite of Swift packages for HTML templating, HTTP client networking, and HTTP server hosting. Built on functional programming principles using [`FP`](https://github.com/luizmb/FP): every public API uses `Reader` for dependency injection, `Result` for error handling, [ReactiveConcurrency](https://github.com/luizmb/ReactiveConcurrency)'s `Publisher` (a cold, lazy, composable async stream) for async work, and `FunctionWrapper` for composable function types. No Combine, no force-unwraps, no `fatalError`, no silent failures.
 
 **Platforms:** macOS 13+, iOS 16+, tvOS 16+, watchOS 9+
 
@@ -15,13 +15,13 @@ A suite of Swift packages for HTML templating, HTTP client networking, and HTTP 
 
 ## Packages
 
-- [Core](#core) — codec layer, `DemandBuffer`, and Combine helpers shared by the other packages
+- [Core](#core) — codec layer (`Convert`, `DataEncoder`/`DataDecoder` + factories) shared by the other packages
 - [HTMLTemplating](#htmltemplating) — file-based HTML template engine with `{{}}` directives
-- [Multipeer](#multipeer) — `MultipeerConnectivity` wrapper exposing Combine and `DeferredTask`/`DeferredStream` APIs side by side
-- [NetworkClient](#networkclient) — composable HTTP client built on `URLSession` and Combine
+- [Multipeer](#multipeer) — `MultipeerConnectivity` wrapper exposing advertiser/browser/session events as `Publisher`s
+- [NetworkClient](#networkclient) — composable HTTP client: one `HTTPClient` type + pure decorators for mocking, recording, and replaying
 - [NetworkServer](#networkserver) — embedded NIO-backed HTTP server with a typed functional routing DSL
-- [WebSocketClient](#websocketclient) — full-duplex WebSocket client with Combine (`WebSocket`) and async (`WebSocketConnection`) APIs
-- [BonjourService](#bonjourservice) — Bonjour discovery and advertising with Combine publishers and `DeferredStream` on both sides
+- [WebSocketClient](#websocketclient) — full-duplex WebSocket client exposing a `WebSocketConnection` with `Publisher`-based receive/send
+- [BonjourService](#bonjourservice) — Bonjour discovery and advertising exposed as `Publisher` streams
 
 ---
 
@@ -30,19 +30,19 @@ A suite of Swift packages for HTML templating, HTTP client networking, and HTTP 
 Not every product is available on every platform. `Core` and `HTMLTemplating` are pure
 Swift + `FP` and run everywhere; the others depend on platform-specific technologies.
 
-| Product | Apple (macOS/iOS/tvOS/watchOS/visionOS) | Linux | Windows | Notes |
-|---|:---:|:---:|:---:|---|
-| **Core** | ✅ | ✅ | ✅ | Pure `FP` + Foundation |
-| **HTMLTemplating** | ✅ | ✅ | ✅ | Pure `FP` + Foundation |
-| **NetworkClient** | ✅ | ✅ | ⚠️ | `URLSession` / `FoundationNetworking` — limited on Windows |
-| **WebSocketClient** | ✅ | ✅ | ⚠️ | Uses `URLSessionWebSocketTask` where available |
-| **NetworkServer** | ✅ | ✅ | ❌ | Built on swift-nio `NIOPosix` (Posix-only; the NIO dependencies are gated out of Windows in `Package.swift`) |
-| **Multipeer** | ✅ (Apple only) | ❌ | ❌ | `MultipeerConnectivity` — Apple frameworks only |
-| **BonjourService** | ✅ (Apple only) | ❌ | ❌ | `MultipeerConnectivity` / `Network` — Apple frameworks only |
+| Product | Apple (macOS/iOS/tvOS/watchOS/visionOS) | Linux | Windows | Android | Notes |
+|---|:---:|:---:|:---:|:---:|---|
+| **Core** | ✅ | ✅ | ✅ | ✅ | Pure `FP` + Foundation |
+| **HTMLTemplating** | ✅ | ✅ | ✅ | ✅ | Pure `FP` + Foundation |
+| **NetworkClient** | ✅ | ✅ | ⚠️ | ⚠️ | `URLSession` / `FoundationNetworking` where available |
+| **WebSocketClient** | ✅ | ⚠️ | ⚠️ | ⚠️ | Connection factory needs `URLSessionWebSocketTask` (`canImport(Darwin)`) |
+| **NetworkServer** | ✅ | ✅ | ❌ | ⚠️ | swift-nio `NIOPosix` (Posix-only; gated out of Windows in `Package.swift`) |
+| **Multipeer** | ✅ | ❌ | ❌ | ❌ | `MultipeerConnectivity` — Apple frameworks only |
+| **BonjourService** | ✅ | ❌ | ❌ | ❌ | `MultipeerConnectivity` / `Network` — Apple frameworks only |
 
 On non-Apple platforms the Apple-only modules compile to empty (`#if canImport(...)` gated), so
-depending on them is safe — they simply expose no API there. CI builds the portable products
-(`Core`, `HTMLTemplating`) on Windows.
+depending on them is safe — they simply expose no API there. CI builds macOS, Linux, and Windows;
+Android is expected to behave like Linux for the portable products but is not yet exercised in CI.
 
 ---
 
@@ -283,7 +283,7 @@ All IO is fully contained in the environment — `render` never touches the file
 
 ## Core
 
-Shared building blocks used by all three packages — the codec layer (with its Combine extensions) and the `Convert` function-wrapper. The `Loading<Success, Failure>` lifecycle enum used to live here; it now lives in [FP's `DataStructure` module](https://github.com/luizmb/FP/blob/main/docs/types/Loading.md) (from `v1.7.0` onwards) so any project can use it. Add `import DataStructure` to access it.
+Shared building blocks used by the other packages — the codec layer (`Convert`, `DataEncoder`/`DataDecoder`, and their factories). The `Loading<Success, Failure>` lifecycle enum used to live here; it now lives in [FP's `DataStructure` module](https://github.com/luizmb/FP/blob/main/docs/types/Loading.md) (from `v1.7.0` onwards) so any project can use it. Add `import DataStructure` to access it.
 
 ### `Convert<Input, Output, Failure>`
 
@@ -323,36 +323,6 @@ func makeDecoder() -> DataDecoderFactory {
 }
 ```
 
-### `AnyPublisher` — decoding (Combine)
-
-Static factory that lifts a `Data` value into a typed decoded publisher, for use inside `flatMap` chains:
-
-```swift
-// AnyPublisher<User, DecodingError>
-let pub: AnyPublisher<User, DecodingError> = .decoding(jsonData, using: JSONDecoder())
-
-// With a pre-built DataDecoder:
-let pub2 = AnyPublisher<User, DecodingError>.decoding(jsonData, using: userDecoder)
-```
-
-### `AnyPublisher` — encoding (Combine)
-
-Instance methods that encode the publisher's `Encodable` output to `Data`.
-
-```swift
-// Upstream failure type == EncodingError — no mapping needed:
-let dataPublisher: AnyPublisher<Data, EncodingError> =
-    someAlbumPublisher.encode(using: JSONEncoder())
-
-// Upstream failure type is different — lift EncodingError with mapError:
-let dataPublisher2: AnyPublisher<Data, MyError> =
-    someAlbumPublisher.encode(using: JSONEncoder(), mapError: MyError.encoding)
-
-// Both overloads also accept a pre-built DataEncoder<Output>:
-someAlbumPublisher.encode(using: albumEncoder)
-someAlbumPublisher.encode(using: albumEncoder, mapError: MyError.encoding)
-```
-
 ### `Convert` — contravariant functor
 
 `contramap` maps over the *input* type, adapting a `Convert<Input, Output, Failure>` to accept a different input by pre-processing it before the conversion runs:
@@ -365,23 +335,45 @@ let stringDecoder: Convert<String, User, DecodingError> =
     userDecoder.contramap { Data($0.utf8) }
 ```
 
-### `AnyPublisher` — bridging to `DeferredTask` (Combine)
+> Decoding/encoding values flowing through a `Publisher` lives with the client that produces them — see NetworkClient's `Publisher.validateStatusCode()` / `.decode(using:)`.
 
-The bridge from Combine into `DeferredTask` lives in `FP` (`AnyPublisher.toDeferredTask()`), not in `Core` — `Core` simply re-exports `FP`. Two overloads:
+## Multipeer
+
+A `MultipeerConnectivity` wrapper exposing advertiser, browser, and session events as ReactiveConcurrency `Publisher`s.
 
 ```swift
-// Infallible publisher — DeferredTask<Output?> (nil if the publisher
-// completes without emitting):
-let task: DeferredTask<Int?> = someIntPublisher.toDeferredTask()
+import ReactiveConcurrency
+import Multipeer
 
-// Failable publisher — DeferredTask<Result<Output, any Error>>:
-//   value emitted          → .success(value)
-//   publisher fails        → .failure(originalError) as any Error
-//   completes with nothing → .failure(EmptyPublisherError())
-let task: DeferredTask<Result<User, any Error>> = somePublisher.toDeferredTask()
+let me = MCPeerID(displayName: "My Device")
+let session = MultipeerSession(myselfAsPeer: me)
+
+// Advertise — accept invitations
+for await event in multipeerAdvertiserStream(myselfAsPeer: me, serviceType: "myapp").values {
+    if case .success(.didReceiveInvitationFromPeer(_, _, let accept)) = event {
+        accept(true, session.session)
+    }
+}
+
+// Browse — invite discovered peers
+for await event in multipeerBrowserStream(myselfAsPeer: me, serviceType: "myapp").values {
+    if case .success(.foundPeer(let peer, _, let browser)) = event {
+        _ = await session.inviteTask(peer: peer, browser: browser, context: nil, timeout: 30)
+            .firstResultTask().run()
+    }
+}
 ```
 
-The failure type widens to `any Error` so the bridge can synthesize `EmptyPublisherError` when a failable publisher completes without ever emitting. Callers needing the original typed failure back can downcast with `as?` inside `.mapError`.
+`MultipeerSession` exposes `messagesStream` / `connectionsStream` as **multicast** publishers — backed by RC `PassthroughSubject`, so every subscriber receives every event — plus synchronous `send` and lazy `sendTask`:
+
+```swift
+for await msg in session.messagesStream.values {
+    if case .data(let data, let peer, _) = msg { handle(data, from: peer) }
+}
+_ = session.send(Data("hi".utf8), to: peer)   // Result<Void, Error>
+```
+
+---
 
 ## NetworkClient
 
@@ -425,40 +417,69 @@ let client = HTTPClient.override(
 
 Two composable atoms drive the decorators: `RequestMatch` (`.method`/`.path`/`.query`/`.header`/`.pathRegex`, combined with `&&`/`||`/`!`) and `StubResponse` (`.ok`/`.status`/`.json`/`.failure` + `.withStatus`/`.withHeader`/`.withBody`, composed with `<>`). See the [Mocking, Recording & Replaying](https://ios.lu/NetworkTools/documentation/networkclient/mockingrecordingreplaying) guide for the full walkthrough.
 
-## WebSocketClient
+## NetworkServer
 
-Full-duplex WebSocket client with **two parallel APIs**: a Combine `WebSocket` class and a
-lazy `WebSocketConnection` value for `DeferredTask` / `DeferredStream` composition.
-
-### Combine API
+An embedded HTTP server built on swift-nio (`NIOPosix`), with a **typed, functional routing DSL**. A `Router<Env>` is a value: routes compose left-to-right with Kleisli `>=>` (match -> decode body -> handle) and alternate with `<|>`; `Env` is your injected environment. Handlers return `Result<Response, ResponseError>` (sync) or `Publisher<Response, ResponseError>` (async).
 
 ```swift
-import Combine
+import NetworkServer
+import ReactiveConcurrency
+
+struct Env: Sendable {
+    let greeting: String
+    let decoder: JSONDecoder   // supplied to `decodeBody(using:)` via a key path
+}
+
+struct NewUser: Decodable, Sendable { let name: String }
+
+let router =
+    when(get("/hello") >=> ignoreBody() >=> response { _, env in .html(env.greeting) },
+         injecting: Env.self)
+    <|> when(
+        post("/users")
+            >=> decodeBody(using: \.decoder)
+            >=> response { (req: TypedRequest<Empty, Empty, NewUser>) in
+                .json(["created": req.body.name], encoder: JSONEncoder(), status: .created)
+            },
+        injecting: Env.self
+    )
+
+// `startServer` returns `Reader<Env, Result<Void, Error>>`; the boundary provides the environment.
+_ = startServer(host: "127.0.0.1", port: 8080, router: router)
+    .provide(Env(greeting: "hi there", decoder: JSONDecoder()))
+```
+
+Routes also support **typed URL params** (`get("/users/:id", params: .decode(UserParams.self, using: \.dictionaryDecoderFactory))`) and **typed query params**, surfaced on the `TypedRequest`. Response builders on `Result<Response, ResponseError>`: `.html`, `.json(_, encoder:)`, `.raw`, `.image`. An unmatched request falls through `<|>`; a total miss is a `404`.
+
+---
+
+## WebSocketClient
+
+Full-duplex WebSocket client exposing a **`WebSocketConnection`** — an ARC-managed value whose `receive`, `send`, and `ping` are ReactiveConcurrency `Publisher`s. The socket stays open while a reference is held; the last release (or `close()`) sends a normal-closure frame.
+
+```swift
+import ReactiveConcurrency
 import WebSocketClient
 
-var cancellables = Set<AnyCancellable>()
+// `webSocketConnection(with:)` returns a Publisher — nothing touches the network until subscribed.
+guard case let .success(conn)? = await URLSession.shared
+    .webSocketConnection(with: URL(string: "wss://echo.example.com")!)
+    .firstResultTask().run() else { return }
 
-let socket = URLSession.shared.webSocket(with: URL(string: "wss://echo.example.com")!)
+// Send
+_ = await conn.send(.text("hello")).firstResultTask().run()
 
-// Receive — task starts on first subscriber demand
-socket.publisher
-    .sink(
-        receiveCompletion: { print("closed:", $0) },
-        receiveValue: { message in
-            if case .string(let text) = message { print("←", text) }
-        }
-    )
-    .store(in: &cancellables)
+// Receive — multicast via `.share()`, so multiple subscribers each get every message
+for await result in conn.receive.values {
+    switch result {
+    case .success(.text(let text)): print("<-", text)
+    case .success(.data(let bytes)): print("<- \(bytes.count) bytes")
+    case .failure(let err): print("error:", err)
+    }
+}
 
-// Send — lazy: write fires only when subscribed
-socket.send("hello")
-    .sink(receiveCompletion: { _ in }, receiveValue: { print("sent") })
-    .store(in: &cancellables)
-
-// Periodic health-check
-socket.startPinging(every: 30)
-    .sink(receiveCompletion: { _ in }, receiveValue: { _ in })
-    .store(in: &cancellables)
+// Close cleanly (also happens automatically when the last reference is released)
+conn.close()
 ```
 
 Custom headers (auth):
@@ -466,312 +487,78 @@ Custom headers (auth):
 ```swift
 var req = URLRequest(url: URL(string: "wss://api.example.com/ws")!)
 req.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-let socket = URLSession.shared.webSocket(with: req)
-```
-
-Echo round-trip:
-
-```swift
-socket.publisher
-    .compactMap { if case .string(let t) = $0 { return t } else { return nil } }
-    .flatMap(maxPublishers: .max(1)) { socket.send("echo: \($0)") }
-    .sink(receiveCompletion: { _ in }, receiveValue: { })
-    .store(in: &cancellables)
-```
-
-### Async API (DeferredTask / DeferredStream)
-
-`webSocketConnection(with:)` returns `DeferredTask<WebSocketConnection>` — nothing touches
-the network until `.run()` is called, making connections safe to pass as pure values.
-
-```swift
-import FP
-import WebSocketClient
-
-let connectionTask = URLSession.shared.webSocketConnection(
-    with: URL(string: "wss://echo.example.com")!
-)
-
-// Open the connection (TCP + WebSocket upgrade happen here)
-let conn = await connectionTask.run()
-
-// Send immediately after opening
-_ = await conn.send(.string("hello")).run()
-
-// Stream incoming messages
-for await result in conn.receive {
-    switch result {
-    case .success(.string(let text)): print("←", text)
-    case .success(.data(let bytes)):  print("← \(bytes.count) bytes")
-    case .failure(let err):           print("error:", err); break
-    default: break
-    }
-}
-
-// Close cleanly
-conn.close()
-```
-
-Inside a SwiftRex `Behavior`:
-
-```swift
-import SwiftRex
-import WebSocketClient
-
-let chatBehavior = Behavior<AppAction, AppState, AppEnvironment> { action, _ in
-    guard case .connectChat(let url) = action else { return .doNothing }
-
-    return .produce { ctx in
-        Effect.task {
-            let conn = await ctx.environment.openWebSocket(url).run()
-            // Long-running receive loop
-            for await result in conn.receive {
-                if case .success(.string(let msg)) = result {
-                    return .chatMessageReceived(msg)
-                }
-            }
-            return .chatDisconnected
-        }
-    }
-}
+guard case let .success(conn)? = await URLSession.shared.webSocketConnection(with: req).firstResultTask().run() else { return }
 ```
 
 ### Testability
 
-`URLSessionWebSocketTaskProtocol` lets you inject a mock:
+`WebSocketConnection` is a plain value built from injectable closures/publishers, so a mock is a direct construction — no protocol needed:
 
 ```swift
-final class MockWebSocketTask: URLSessionWebSocketTaskProtocol {
-    var sentMessages: [URLSessionWebSocketTask.Message] = []
-    var nextResult: Result<URLSessionWebSocketTask.Message, Error>?
-
-    func resume() {}
-    func cancel(with code: URLSessionWebSocketTask.CloseCode, reason: Data?) {}
-    func sendPing(pongReceiveHandler: @escaping @Sendable (Error?) -> Void) { pongReceiveHandler(nil) }
-
-    func send(_ message: URLSessionWebSocketTask.Message,
-              completionHandler: @escaping @Sendable (Error?) -> Void) {
-        sentMessages.append(message); completionHandler(nil)
-    }
-
-    func receive(completionHandler: @escaping @Sendable (Result<URLSessionWebSocketTask.Message, Error>) -> Void) {
-        nextResult.map(completionHandler)
-    }
-}
+let mock = WebSocketConnection(
+    receive: .just(.text("hi")),   // Publisher<WebSocketMessage, Error>
+    send: { _ in .just(()) },
+    ping: .just(()),
+    cancel: {}
+)
 ```
 
 ---
 
 ## BonjourService
 
-Bonjour service **discovery** and **advertising** with both Combine publishers and
-`DeferredStream` async APIs. All four combinations are provided:
+Bonjour service **discovery**, **advertising**, and **resolution** — all exposed as ReactiveConcurrency `Publisher` streams. Events carry platform-agnostic value types (`BonjourServiceInfo`, `BonjourConnection`, `ResolvedServiceInfo`), not Apple-specific `NWEndpoint`s.
 
-| Direction | Combine | Async |
-|-----------|---------|-------|
-| Browse    | `NWBrowserPublisher` | `bonjourBrowserStream(...)` |
-| Advertise | `NWListenerPublisher` | `bonjourListenerStream(...)` |
-
-### Browse — Combine
+### Browse
 
 ```swift
-import Combine
+import ReactiveConcurrency
 import BonjourService
 
-var cancellables = Set<AnyCancellable>()
-
-NWBrowserPublisher(serviceType: "_myapp._tcp.", domain: nil)
-    .sink(
-        receiveCompletion: { completion in
-            switch completion {
-            case .finished: print("stopped")
-            case .failure(.bonjourPermissionDenied): print("need local-network permission")
-            case .failure(.didNotSearch(let err)):   print("error:", err)
-            }
-        },
-        receiveValue: { event in
-            switch event {
-            case .didFind(let endpoint, let txt):
-                print("found:", endpoint, "txt:", txt ?? [:])
-            case .didRemove(let endpoint, _):
-                print("gone:", endpoint)
-            case .didUpdate(_, let new, let txt, _):
-                print("updated to:", new, "txt:", txt ?? [:])
-            }
-        }
-    )
-    .store(in: &cancellables)
-```
-
-Track live service set:
-
-```swift
-NWBrowserPublisher(serviceType: "_http._tcp.", domain: nil)
-    .scan([NWEndpoint]()) { set, event in
-        switch event {
-        case .didFind(let ep, _):             return set + [ep]
-        case .didRemove(let ep, _):           return set.filter { $0 != ep }
-        case .didUpdate(let old, let new, _, _): return set.map { $0 == old ? new : $0 }
-        }
-    }
-    .sink { print("services:", $0) }
-    .store(in: &cancellables)
-```
-
-### Browse — Async
-
-```swift
-import FP
-import BonjourService
-
-Task {
-    for await result in bonjourBrowserStream(serviceType: "_myapp._tcp.") {
-        switch result {
-        case .success(.didFind(let endpoint, let txt)):
-            print("found:", endpoint, "txt:", txt ?? [:])
-        case .success(.didRemove(let endpoint, _)):
-            print("gone:", endpoint)
-        case .failure(let err):
-            print("error:", err)
-        default: break
-        }
+for await result in bonjourBrowserStream(serviceType: "_myapp._tcp.").values {
+    switch result {
+    case .success(.found(let info)):           print("found:", info.name, info.txt ?? [:])
+    case .success(.removed(let info)):         print("gone:", info.name)
+    case .success(.updated(let old, let new)): print("updated:", old.name, "->", new.name)
+    case .failure(let err):                    print("error:", err)
     }
 }
 ```
 
-### Advertise — Combine
+### Advertise
 
 ```swift
-// throws if the port is already in use
-let publisher = try NWListenerPublisher(
-    serviceType: "_myapp._tcp.",
-    serviceName: "My Device",
-    port: .any           // OS assigns; check the .ready event for the actual port
-)
-
-publisher
-    .sink(
-        receiveCompletion: { print("stopped:", $0) },
-        receiveValue: { event in
-            switch event {
-            case .ready(let port):
-                print("advertising on port", port ?? 0)
-            case .newConnection(let connection):
-                connection.start(queue: .main)
-                // set up receive / send on `connection`
-            case .serviceRegistrationChanged(let change):
-                print("registration:", change)
-            }
-        }
-    )
-    .store(in: &cancellables)
-```
-
-With TXT record metadata:
-
-```swift
-var txt = NWTXTRecord()
-txt["version"] = "1.0"
-txt["platform"] = "iOS"
-
-let publisher = try NWListenerPublisher(
-    serviceType: "_myapp._tcp.",
-    serviceName: "My iPhone",
-    txtRecord: txt
-)
-```
-
-### Advertise — Async
-
-```swift
-Task {
-    for await result in bonjourListenerStream(serviceType: "_myapp._tcp.", serviceName: "My Device") {
-        switch result {
-        case .success(.ready(let port)):
-            print("advertising on port", port ?? 0)
-        case .success(.newConnection(let connection)):
-            connection.start(queue: .main)
-            handleIncomingConnection(connection)
-        case .failure(let err):
-            print("error:", err)
-        default: break
-        }
+for await result in bonjourListenerStream(serviceType: "_myapp._tcp.", serviceName: "My Device").values {
+    switch result {
+    case .success(.ready(let port)):         print("advertising on port", port ?? 0)
+    case .success(.newConnection(let conn)): handleIncomingConnection(conn)   // already started
+    case .success(.registered):              print("registered")
+    case .failure(let err):                  print("error:", err)
+    default: break
     }
 }
 ```
 
-Inside a SwiftRex `Behavior`:
+With TXT record metadata, pass a `txtRecord: NWTXTRecord` (e.g. `txt["version"] = "1.0"`).
+
+### Resolve a discovered service
 
 ```swift
-let advertiserBehavior = Behavior<AppAction, AppState, AppEnvironment> { action, _ in
-    guard case .startAdvertising(let name) = action else { return .doNothing }
-    return .produce { _ in
-        Effect.stream {
-            bonjourListenerStream(serviceType: "_myapp._tcp.", serviceName: name)
-                .compactMap { result -> AppAction? in
-                    switch result {
-                    case .success(.ready(let port)):     return .advertisingStarted(port: port)
-                    case .success(.newConnection(let c)): return .clientConnected(c)
-                    case .failure(let err):              return .advertisingFailed(err)
-                    default:                             return nil
-                    }
-                }
-        }
-    }
+// BonjourServiceInfo (from browse) -> ResolvedServiceInfo (IPs, port, TXT)
+if case let .success(r)? = await bonjourResolve(info).firstResultTask().run() {
+    print("host:", r.host ?? "?", "ips:", r.ips, "port:", r.port ?? 0)
 }
 ```
 
-### Resolve endpoints
+### Connections
+
+An accepted `BonjourConnection` exposes `receive` / `send` as publishers:
 
 ```swift
-// Resolve a host/port to a concrete address
-NWEndpoint.hostPort(host: "api.example.com", port: 443)
-    .publisher()
-    .sink(receiveCompletion: { _ in }, receiveValue: { resolved in
-        print("host:", resolved.hostname ?? "?", "port:", resolved.port ?? 0)
-    })
-    .store(in: &cancellables)
-
-// Resolve a Bonjour service endpoint
-NWEndpoint.service(name: "My Server", type: "_http._tcp.", domain: "local.", interface: nil)
-    .publisher()
-    .sink(receiveCompletion: { _ in }, receiveValue: { resolved in
-        if case .service(let ns, _, _) = resolved {
-            print("IPs:", ns.parsedAddresses(), "port:", ns.port)
-        }
-    })
-    .store(in: &cancellables)
-```
-
-### Legacy NetService API
-
-```swift
-// Browse with NetServiceBrowser
-NetServiceBrowser()
-    .publisher(serviceOfType: "_ssh._tcp.", inDomain: "local.")
-    .sink(receiveCompletion: { _ in }, receiveValue: { event in
-        if case .didFind(let service, _) = event.type {
-            service.publisher(monitorDevice: .doNotMonitorTXTUpdates, timeout: 5)
-                .compactMap { e -> [String]? in
-                    guard case .didResolveAddress = e.type else { return nil }
-                    return e.netService.parsedAddresses()
-                }
-                .first()
-                .sink { print("SSH IPs:", $0) }
-                .store(in: &cancellables)
-        }
-    })
-    .store(in: &cancellables)
-
-// Monitor TXT record changes
-NetService(domain: "local.", type: "_airplay._tcp.", name: "Apple TV")
-    .publisher(monitorDevice: .keepMonitoringTXTUpdates)
-    .compactMap { e -> [String: Data]? in
-        guard case let .didUpdateTXTRecord(txt) = e.type else { return nil }
-        return txt
-    }
-    .sink { print("AirPlay TXT updated:", $0) }
-    .store(in: &cancellables)
+for await chunk in conn.receive.values {
+    if case .success(let data) = chunk { handle(data) }
+}
+_ = await conn.send(Data("hello".utf8)).firstResultTask().run()
 ```
 
 ### IP address helper
@@ -779,12 +566,9 @@ NetService(domain: "local.", type: "_airplay._tcp.", name: "Apple TV")
 ```swift
 let addr = IP("192.168.1.100")   // .ipv4
 let v6   = IP("::1")             // .ipv6
-
-print(addr?.ipString)    // "192.168.1.100"
-print(v6?.ipUrlString)   // "[::1]"   ← brackets for URL use
-
-// Prefer IPv6 over IPv4 in a list
-let preferred = [IP("192.168.1.1")!, IP("::1")!].preferredAddress // → .ipv6(::1)
+print(addr?.ipString)            // "192.168.1.100"
+print(v6?.ipUrlString)           // "[::1]"   <- brackets for URL use
+let preferred = [IP("192.168.1.1")!, IP("::1")!].preferredAddress // -> .ipv6(::1)
 ```
 
 ---
@@ -795,7 +579,7 @@ All three packages follow the same functional conventions via [`FP`](https://git
 
 - **`Reader`** for dependency injection (template environment, server environment, request threading). No `init` injection, no stored globals.
 - **`Result`** instead of `throws` at all public API boundaries. Errors are values.
-- **`DeferredTask`** for async work in the server (lazy, nothing runs until `.run()` is called). **`Publisher`** (Combine) for the HTTP client (composable, cancellable, backpressure-aware).
-- **`FunctionWrapper`** for any `(A) -> B` that should be composable — `RequestPublisher`, `DataDecoder`, `DataEncoder` all conform.
+- **`Publisher`** (ReactiveConcurrency — cold, lazy, composable) for all async work, across the client, server, and streaming APIs. No Combine.
+- **`FunctionWrapper`** for any `(A) -> B` that should be composable — `HTTPClient`, `Convert` / `DataDecoder` / `DataEncoder`, and `Endo` all conform.
 - **Alternative (`<|>`)** for router composition — tries left then right (only 404 falls through), identity is `Router.empty`.
 - **No crashing operations** — no force-unwrap, no `fatalError`, no `try!`. All failure paths return `Result` or publisher errors.

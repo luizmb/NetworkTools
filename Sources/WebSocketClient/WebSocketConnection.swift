@@ -18,9 +18,9 @@ import ReactiveConcurrency
 /// ## Usage
 ///
 /// ```swift
-/// let conn = await URLSession.shared
+/// guard case let .success(conn)? = await URLSession.shared
 ///     .webSocketConnection(with: URL(string: "wss://echo.example.com")!)
-///     .firstResultTask().run()
+///     .firstResultTask().run() else { return }
 ///
 /// // Send immediately
 /// _ = await conn.send(.text("hello")).firstResultTask().run()
