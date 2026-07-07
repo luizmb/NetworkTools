@@ -7,66 +7,36 @@ import ReactiveConcurrency
 ///
 /// `WebSocketConnection` is a **class** — the underlying socket stays open exactly
 /// as long as at least one reference to this object exists. When the last reference
-/// is released, `deinit` sends a normal-closure frame automatically, mirroring how
-/// the Combine `WebSocket` closes when its subscription is cancelled.
+/// is released, `deinit` sends a normal-closure frame automatically.
 ///
 /// Call ``close()`` to close explicitly before the last reference is released.
 ///
 /// The Apple implementation is produced by `URLSession.webSocketConnection(with:)`,
-/// which itself returns a `DeferredTask<WebSocketConnection>` so the TCP handshake
-/// and WebSocket upgrade remain lazy until the Store runs the task.
-///
-/// ## Lifecycle
-///
-/// ```
-/// DeferredTask<WebSocketConnection>   ← nothing happens until .run()
-///   └─ .run() → TCP + WebSocket upgrade, connection is live
-///         └─ hold reference → socket stays open
-///               └─ last reference released (deinit) OR close() called → normalClosure
-/// ```
+/// which returns a `Publisher<WebSocketConnection, Never>` so the TCP handshake and
+/// WebSocket upgrade remain lazy until the publisher is subscribed.
 ///
 /// ## Usage
 ///
 /// ```swift
-/// let connectionTask = URLSession.shared.webSocketConnection(
-///     with: URL(string: "wss://echo.example.com")!
-/// )
-///
-/// // Open the connection — nothing happens before this
-/// let conn = await connectionTask.run()
+/// let conn = await URLSession.shared
+///     .webSocketConnection(with: URL(string: "wss://echo.example.com")!)
+///     .firstResultTask().run()
 ///
 /// // Send immediately
-/// _ = await conn.send(.text("hello")).run()
+/// _ = await conn.send(.text("hello")).firstResultTask().run()
 ///
-/// // Receive in a loop — breaks when server or deinit closes the connection
-/// for await result in conn.receive {
+/// // Receive in a loop — ends when the server or deinit closes the connection
+/// for await result in conn.receive.values {
 ///     if case .success(.text(let msg)) = result { print("←", msg) }
 /// }
-/// // Exiting the for-await loop also closes the connection via onTermination.
+/// // Ending the loop also closes the connection.
 ///
 /// // Or close explicitly before releasing the last reference:
 /// conn.close()
 /// ```
-///
-/// ## Inside a SwiftRex Behavior
-///
-/// ```swift
-/// let wsBehavior = Behavior<AppAction, AppState, AppEnvironment> { action, _ in
-///     guard case .connect(let url) = action else { return .doNothing }
-///     return .produce { ctx in
-///         Effect.task {
-///             let conn = await ctx.environment.openWebSocket(url).run()
-///             for await result in conn.receive {
-///                 if case .success(let msg) = result { return .messageReceived(msg) }
-///             }
-///             return .disconnected
-///         }
-///     }
-/// }
-/// ```
 public final class WebSocketConnection: @unchecked Sendable {
-    /// A lazy stream of inbound messages. Iterating starts the receive loop;
-    /// terminating the iteration (or `deinit`) closes the connection.
+    /// A lazy `Publisher` of inbound messages. Subscribing starts the receive loop;
+    /// terminating the subscription (or `deinit`) closes the connection.
     public let receive: Publisher<WebSocketMessage, Error>
 
     /// Returns a lazy task that, when run, sends one message to the server.

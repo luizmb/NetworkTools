@@ -17,14 +17,12 @@ extension NWConnection {
         start(queue: queue)
         let box = NWConnectionBox(self)
         return BonjourConnection(
-            receive: DeferredStream {
-                AsyncStream { continuation in
-                    let delegate = NWConnectionReceiveDelegate(box: box, continuation: continuation)
-                    continuation.onTermination = { @Sendable _ in delegate.stop() }
-                    delegate.start()
-                }
-            }
-            .eraseToThrowingPublisher(),
+            receive: Publisher { continuation in
+                let delegate = NWConnectionReceiveDelegate(box: box, continuation: continuation)
+                delegate.start()
+                await continuation.suspendUntilCancelled()
+                delegate.stop()
+            },
             send: { data in
                 Publisher.future {
                     await withCheckedContinuation { continuation in
@@ -48,12 +46,12 @@ private final class NWConnectionBox: @unchecked Sendable {
 }
 
 /// Drives the recursive receive loop via completion callbacks — no `async`/`await`,
-/// no hidden `Task`. Pure callbacks feed the `AsyncStream.Continuation`.
+/// no hidden `Task`. Pure callbacks feed the `Publisher.Continuation`.
 private final class NWConnectionReceiveDelegate: @unchecked Sendable {
     private let box: NWConnectionBox
-    private let continuation: AsyncStream<Result<Data, Error>>.Continuation
+    private let continuation: Publisher<Data, Error>.Continuation
 
-    init(box: NWConnectionBox, continuation: AsyncStream<Result<Data, Error>>.Continuation) {
+    init(box: NWConnectionBox, continuation: Publisher<Data, Error>.Continuation) {
         self.box = box
         self.continuation = continuation
     }
@@ -65,12 +63,11 @@ private final class NWConnectionReceiveDelegate: @unchecked Sendable {
         box.connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [weak self] data, _, isComplete, error in
             guard let self else { return }
             if let error {
-                continuation.yield(.failure(error))
-                continuation.finish()
+                continuation.fail(error)
                 return
             }
             if let data, !data.isEmpty {
-                continuation.yield(.success(data))
+                continuation.yield(data)
             }
             if isComplete {
                 continuation.finish()

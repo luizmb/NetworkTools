@@ -10,37 +10,33 @@ import FP
 @preconcurrency import MultipeerConnectivity
 import ReactiveConcurrency
 
-/// Native ``DeferredStream`` wrapping `MCNearbyServiceBrowser`.
+/// A ReactiveConcurrency `Publisher` wrapping `MCNearbyServiceBrowser`.
 ///
-/// A fresh browser is created on each iteration; browsing stops when the iterator terminates.
-/// Emissions are `Result<MultipeerBrowserEvent, Error>` — `.failure` is sent if the browser
+/// A fresh browser is created on each subscription; browsing stops when the subscription
+/// terminates. Emissions are `MultipeerBrowserEvent`; a `.failure` is sent if the browser
 /// fails to start, followed by stream completion.
-///
-/// This implementation does not depend on Combine.
 public func multipeerBrowserStream(
     myselfAsPeer: MCPeerID,
     serviceType: String
 ) -> Publisher<MultipeerBrowserEvent, Error> {
-    DeferredStream {
-        AsyncStream { continuation in
-            let delegate = MultipeerBrowserStreamDelegate(
-                continuation: continuation,
-                peer: myselfAsPeer,
-                serviceType: serviceType
-            )
-            continuation.onTermination = { @Sendable _ in delegate.stop() }
-            delegate.start()
-        }
+    Publisher { continuation in
+        let delegate = MultipeerBrowserStreamDelegate(
+            continuation: continuation,
+            peer: myselfAsPeer,
+            serviceType: serviceType
+        )
+        delegate.start()
+        await continuation.suspendUntilCancelled()
+        delegate.stop()
     }
-    .eraseToThrowingPublisher()
 }
 
 private final class MultipeerBrowserStreamDelegate: NSObject, MCNearbyServiceBrowserDelegate, @unchecked Sendable {
-    private let continuation: AsyncStream<Result<MultipeerBrowserEvent, Error>>.Continuation
+    private let continuation: Publisher<MultipeerBrowserEvent, Error>.Continuation
     private let browser: MCNearbyServiceBrowser
 
     init(
-        continuation: AsyncStream<Result<MultipeerBrowserEvent, Error>>.Continuation,
+        continuation: Publisher<MultipeerBrowserEvent, Error>.Continuation,
         peer: MCPeerID,
         serviceType: String
     ) {
@@ -61,16 +57,15 @@ private final class MultipeerBrowserStreamDelegate: NSObject, MCNearbyServiceBro
     }
 
     func browser(_ browser: MCNearbyServiceBrowser, foundPeer peerID: MCPeerID, withDiscoveryInfo info: [String: String]?) {
-        continuation.yield(.success(.foundPeer(peerID: peerID, info: info, browser: browser)))
+        continuation.yield(.foundPeer(peerID: peerID, info: info, browser: browser))
     }
 
     func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {
-        continuation.yield(.success(.lostPeer(peerID: peerID)))
+        continuation.yield(.lostPeer(peerID: peerID))
     }
 
     func browser(_ browser: MCNearbyServiceBrowser, didNotStartBrowsingForPeers error: Error) {
-        continuation.yield(.failure(error))
-        continuation.finish()
+        continuation.fail(error)
     }
 }
 #endif

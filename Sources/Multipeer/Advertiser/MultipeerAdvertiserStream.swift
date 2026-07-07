@@ -10,39 +10,35 @@ import FP
 @preconcurrency import MultipeerConnectivity
 import ReactiveConcurrency
 
-/// Native ``DeferredStream`` wrapping `MCNearbyServiceAdvertiser`.
+/// A ReactiveConcurrency `Publisher` wrapping `MCNearbyServiceAdvertiser`.
 ///
-/// A fresh advertiser is created on each iteration (`for await`); advertising stops when the
-/// iterator terminates. Emissions are `Result<MultipeerAdvertiserEvent, Error>` — `.failure`
-/// is sent if the advertiser fails to start, followed by stream completion.
-///
-/// This implementation does not depend on Combine.
+/// A fresh advertiser is created on each subscription; advertising stops when the subscription
+/// terminates. Emissions are `MultipeerAdvertiserEvent`; a `.failure` is sent if the advertiser
+/// fails to start, followed by stream completion.
 public func multipeerAdvertiserStream(
     myselfAsPeer: MCPeerID,
     serviceType: String,
     discoveryInfo: [String: String]? = nil
 ) -> Publisher<MultipeerAdvertiserEvent, Error> {
-    DeferredStream {
-        AsyncStream { continuation in
-            let delegate = MultipeerAdvertiserStreamDelegate(
-                continuation: continuation,
-                peer: myselfAsPeer,
-                serviceType: serviceType,
-                discoveryInfo: discoveryInfo
-            )
-            continuation.onTermination = { @Sendable _ in delegate.stop() }
-            delegate.start()
-        }
+    Publisher { continuation in
+        let delegate = MultipeerAdvertiserStreamDelegate(
+            continuation: continuation,
+            peer: myselfAsPeer,
+            serviceType: serviceType,
+            discoveryInfo: discoveryInfo
+        )
+        delegate.start()
+        await continuation.suspendUntilCancelled()
+        delegate.stop()
     }
-    .eraseToThrowingPublisher()
 }
 
 private final class MultipeerAdvertiserStreamDelegate: NSObject, MCNearbyServiceAdvertiserDelegate, @unchecked Sendable {
-    private let continuation: AsyncStream<Result<MultipeerAdvertiserEvent, Error>>.Continuation
+    private let continuation: Publisher<MultipeerAdvertiserEvent, Error>.Continuation
     private let advertiser: MCNearbyServiceAdvertiser
 
     init(
-        continuation: AsyncStream<Result<MultipeerAdvertiserEvent, Error>>.Continuation,
+        continuation: Publisher<MultipeerAdvertiserEvent, Error>.Continuation,
         peer: MCPeerID,
         serviceType: String,
         discoveryInfo: [String: String]?
@@ -69,14 +65,11 @@ private final class MultipeerAdvertiserStreamDelegate: NSObject, MCNearbyService
         withContext context: Data?,
         invitationHandler: @escaping (Bool, MCSession?) -> Void
     ) {
-        continuation.yield(
-            .success(.didReceiveInvitationFromPeer(peerID, context: context, handler: invitationHandler))
-        )
+        continuation.yield(.didReceiveInvitationFromPeer(peerID, context: context, handler: invitationHandler))
     }
 
     func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didNotStartAdvertisingPeer error: Error) {
-        continuation.yield(.failure(error))
-        continuation.finish()
+        continuation.fail(error)
     }
 }
 #endif

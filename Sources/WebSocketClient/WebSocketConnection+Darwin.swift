@@ -8,39 +8,25 @@ import ReactiveConcurrency
 // MARK: - URLSession factory (Apple platforms only)
 
 public extension URLSession {
-    /// Returns a lazy task that, when run, opens a WebSocket to `url`.
+    /// Returns a lazy `Publisher` that, when subscribed, opens a WebSocket to `url`.
     ///
     /// ```swift
     /// let conn = await URLSession.shared
     ///     .webSocketConnection(with: URL(string: "wss://echo.example.com")!)
-    ///     .run()
-    /// _ = await conn.send(.text("hello")).run()
-    /// // conn goes out of scope → deinit → normal-closure frame sent
+    ///     .firstResultTask().run()
     /// ```
     func webSocketConnection(with url: URL) -> Publisher<WebSocketConnection, Never> {
         makeConnection(webSocketTask(with: url))
     }
 
-    /// Returns a lazy task that, when run, opens a WebSocket for `request`.
+    /// Returns a lazy `Publisher` that, when subscribed, opens a WebSocket for `request`.
     ///
-    /// Use this overload for custom headers such as `Authorization`:
-    ///
-    /// ```swift
-    /// var req = URLRequest(url: URL(string: "wss://api.example.com/ws")!)
-    /// req.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-    /// let conn = await URLSession.shared.webSocketConnection(with: req).run()
-    /// ```
+    /// Use this overload for custom headers such as `Authorization`.
     func webSocketConnection(with request: URLRequest) -> Publisher<WebSocketConnection, Never> {
         makeConnection(webSocketTask(with: request))
     }
 
-    /// Returns a lazy task that, when run, opens a WebSocket advertising the given subprotocols.
-    ///
-    /// ```swift
-    /// let conn = await URLSession.shared
-    ///     .webSocketConnection(with: URL(string: "wss://chat.example.com")!, protocols: ["chat", "v2"])
-    ///     .run()
-    /// ```
+    /// Returns a lazy `Publisher` that, when subscribed, opens a WebSocket advertising the given subprotocols.
     func webSocketConnection(with url: URL, protocols: [String]) -> Publisher<WebSocketConnection, Never> {
         makeConnection(webSocketTask(with: url, protocols: protocols))
     }
@@ -52,14 +38,14 @@ public extension URLSession {
             let box = WebSocketTaskBox(task)
             box.task.resume()
             return WebSocketConnection(
-                receive: DeferredStream {
-                    AsyncStream { continuation in
-                        let delegate = WebSocketReceiveDelegate(box: box, continuation: continuation)
-                        continuation.onTermination = { @Sendable _ in delegate.stop() }
-                        delegate.start()
-                    }
-                }
-                .eraseToThrowingPublisher(),
+                // `.share()` multicasts the single underlying `task.receive` loop: multiple subscribers
+                // each get every message, instead of competing for (and splitting) the message stream.
+                receive: Publisher { continuation in
+                    let delegate = WebSocketReceiveDelegate(box: box, continuation: continuation)
+                    delegate.start()
+                    await continuation.suspendUntilCancelled()
+                    delegate.stop()
+                }.share(),
                 send: { message in
                     Publisher.future {
                         await withCheckedContinuation { continuation in
@@ -114,14 +100,14 @@ private final class WebSocketTaskBox: @unchecked Sendable {
 }
 
 /// Drives the recursive receive loop via completion-handler callbacks — no `async`/`await`,
-/// no hidden `Task`. Pure callbacks feed the `AsyncStream.Continuation`.
+/// no hidden `Task`. Pure callbacks feed the `Publisher.Continuation`.
 private final class WebSocketReceiveDelegate: @unchecked Sendable {
     private let box: WebSocketTaskBox
-    private let continuation: AsyncStream<Result<WebSocketMessage, Error>>.Continuation
+    private let continuation: Publisher<WebSocketMessage, Error>.Continuation
 
     init(
         box: WebSocketTaskBox,
-        continuation: AsyncStream<Result<WebSocketMessage, Error>>.Continuation
+        continuation: Publisher<WebSocketMessage, Error>.Continuation
     ) {
         self.box = box
         self.continuation = continuation
@@ -136,12 +122,11 @@ private final class WebSocketReceiveDelegate: @unchecked Sendable {
             switch result {
             case let .success(message):
                 if let msg = message.asWebSocketMessage {
-                    continuation.yield(.success(msg))
+                    continuation.yield(msg)
                 }
                 receiveNext()
             case let .failure(error):
-                continuation.yield(.failure(error))
-                continuation.finish()
+                continuation.fail(error)
             }
         }
     }

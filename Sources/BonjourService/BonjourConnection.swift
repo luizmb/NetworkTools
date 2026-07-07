@@ -30,7 +30,7 @@ import ReactiveConcurrency
 /// for await result in bonjourListenerStream(serviceType: "_myapp._tcp.") {
 ///     if case .success(.newConnection(let conn)) = result {
 ///         // Read in a background task — conn stays alive as long as this Task runs
-///         Task {
+///         // consume in your own task:
 ///             for await dataResult in conn.receive {
 ///                 if case .success(let data) = dataResult {
 ///                     print("received \(data.count) bytes")

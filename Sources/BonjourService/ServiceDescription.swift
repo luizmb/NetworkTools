@@ -26,13 +26,12 @@ public struct ServiceDescription {
         self.domain = domain
     }
 
-    /// Converts a ``BonjourServiceInfo`` (async API) to a `ServiceDescription` (Combine API).
+    /// Converts a ``BonjourServiceInfo`` to a `ServiceDescription`.
     ///
     /// ```swift
     /// for await result in bonjourBrowserStream(serviceType: "_myapp._tcp.") {
     ///     if case .success(.found(let info)) = result {
     ///         let desc = ServiceDescription(info)
-    ///         NWBrowserPublisher(serviceDescription: desc).sink { ... }
     ///     }
     /// }
     /// ```
@@ -42,7 +41,7 @@ public struct ServiceDescription {
 }
 
 public extension BonjourServiceInfo {
-    /// Converts a `ServiceDescription` (Combine API) to a ``BonjourServiceInfo`` (async API).
+    /// Converts a `ServiceDescription` to a ``BonjourServiceInfo``.
     init(_ description: ServiceDescription) {
         self.init(name: description.serviceName, type: description.type, domain: description.domain)
     }

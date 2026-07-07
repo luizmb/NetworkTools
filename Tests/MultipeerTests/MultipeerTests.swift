@@ -5,59 +5,57 @@ import Foundation
 import FP
 @testable import Multipeer
 @preconcurrency import MultipeerConnectivity
+import ReactiveConcurrency
 import Testing
 
 // Smoke tests for surface API shape — full integration testing requires two devices and is
 // out of scope here. These tests cover deferred-execution semantics and lock-protected
 // multicast plumbing.
 
-// MARK: - AsyncMulticaster
+// MARK: - Multicast (PassthroughSubject)
 
-@Suite("AsyncMulticaster")
-struct AsyncMulticasterTests {
-    @Test func registerYieldsToAllSubscribers() async {
-        let multicaster = AsyncMulticaster<Int>()
-        let streamA = multicaster.register()
-        let streamB = multicaster.register()
+/// Verifies the multicast fan-out that `MultipeerSession`'s `messagesStream` / `connectionsStream`
+/// rely on (both are backed by RC `PassthroughSubject`).
+@Suite("Multicast")
+struct MulticastTests {
+    @Test func subjectFansOutToAllSubscribers() async {
+        let subject = PassthroughSubject<Int, Never>()
 
-        async let collectedA: [Int] = collect(stream: streamA, count: 3)
-        async let collectedB: [Int] = collect(stream: streamB, count: 3)
+        async let collectedA: [Int] = collect(subject.eraseToPublisher(), count: 3)
+        async let collectedB: [Int] = collect(subject.eraseToPublisher(), count: 3)
 
-        // Give the iterators a moment to start awaiting before we send.
-        try? await Task.sleep(nanoseconds: 10_000_000)
-        multicaster.send(1)
-        multicaster.send(2)
-        multicaster.send(3)
+        // Give both subscribers a moment to register before sending.
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        subject.send(1)
+        subject.send(2)
+        subject.send(3)
 
         let (resultA, resultB) = await (collectedA, collectedB)
         #expect(resultA == [1, 2, 3])
         #expect(resultB == [1, 2, 3])
     }
 
-    @Test func finishCompletesAllStreams() async {
-        let multicaster = AsyncMulticaster<Int>()
-        let stream = multicaster.register()
-
+    @Test func completionEndsAllSubscribers() async {
+        let subject = PassthroughSubject<Int, Never>()
         async let drained: [Int] = {
             var out: [Int] = []
-            for await element in stream {
-                out.append(element)
+            for await value in subject.eraseToPublisher().values {
+                out.append(value)
             }
             return out
         }()
 
-        try? await Task.sleep(nanoseconds: 10_000_000)
-        multicaster.send(42)
-        multicaster.finish()
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        subject.send(42)
+        subject.send(completion: .finished)
 
-        let result = await drained
-        #expect(result == [42])
+        #expect(await drained == [42])
     }
 
-    private func collect<E>(stream: AsyncStream<E>, count: Int) async -> [E] {
-        var out: [E] = []
-        for await element in stream {
-            out.append(element)
+    private func collect(_ publisher: Publisher<Int, Never>, count: Int) async -> [Int] {
+        var out: [Int] = []
+        for await value in publisher.values {
+            out.append(value)
             if out.count == count { break }
         }
         return out
@@ -87,13 +85,11 @@ struct StreamFactoryTests {
 
 @Suite("MultipeerSession")
 struct MultipeerSessionTests {
-    @Test func sessionExposesBothCombineAndDeferredStreamAPIs() {
+    @Test func sessionExposesPublisherAPIs() {
         let peer = MCPeerID(displayName: "tester")
         let session = MultipeerSession(myselfAsPeer: peer)
 
         // Just touch the API surface to ensure it type-checks and constructs.
-        _ = session.messages
-        _ = session.connections
         _ = session.messagesStream
         _ = session.connectionsStream
         _ = session.sendTask(Data(), to: peer)

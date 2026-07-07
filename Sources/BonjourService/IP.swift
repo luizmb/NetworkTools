@@ -9,7 +9,7 @@ import Network
 /// `IP` provides a uniform representation for both address families with consistent string
 /// formatting suitable for logging, display, and URL construction.
 ///
-/// This type is used by `NWEndpointPublisher.ResolvedEndpoint` when a hostname resolves to
+/// This type is used by `ResolvedServiceInfo` when a hostname resolves to
 /// a concrete address.
 ///
 /// ## Creating an IP address

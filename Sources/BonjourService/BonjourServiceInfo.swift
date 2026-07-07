@@ -7,7 +7,7 @@ import Foundation
 /// Platform-agnostic description of a discovered Bonjour service.
 ///
 /// `BonjourServiceInfo` is the element type of ``BonjourBrowseEvent`` and replaces
-/// `NWEndpoint` in the DeferredStream browsing API, making browse results safe to
+/// `NWEndpoint` in the browsing API, making browse results safe to
 /// reference from Linux and other non-Apple platforms.
 ///
 /// Note that `host` and `port` are not populated from browsing alone — Bonjour
