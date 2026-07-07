@@ -33,12 +33,12 @@ public struct HTTPRequester: FunctionWrapper, Sendable {
     }
 }
 
-// MARK: - Applying a transform
-
-public extension HTTPRequester {
-    /// Applies a pure requester transform. Build transforms with `overriding` / `recording` /
-    /// `replaying`, composing several with `<>`: `base.applying(recording(to: store) <> overriding(mocks))`.
-    func applying(_ transform: Endo<HTTPRequester>) -> HTTPRequester {
-        transform.runEndo(self)
-    }
-}
+// Each decorator (`overriding`, `recording`, `replaying`, `delaying`) is an `Endo<HTTPRequester>` — a
+// callable value. Apply one by calling it on a base: `overriding(rules)(base)`. Layer several by
+// nesting, which keeps the order of execution explicit and reads inside-out (base first):
+//
+//     delaying(.seconds(3), when: .path("/slow"), clock: clock)(   // …then delay the result
+//         overriding(mocks)(                                       // base is overridden first…
+//             base
+//         )
+//     )

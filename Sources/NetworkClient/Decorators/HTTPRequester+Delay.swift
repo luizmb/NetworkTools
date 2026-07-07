@@ -16,9 +16,10 @@ public extension HTTPRequester {
     /// requester directly to delay live traffic.
     ///
     /// ```swift
-    /// // Serve /slow from a mock, but three seconds late:
-    /// base.applying(HTTPRequester.delaying(.seconds(3), when: .path("/slow"), clock: ContinuousClock())
-    ///                 <> HTTPRequester.overriding(mocks))
+    /// // Serve /slow from a mock, but three seconds late — delay wraps the override:
+    /// HTTPRequester.delaying(.seconds(3), when: .path("/slow"), clock: ContinuousClock())(
+    ///     HTTPRequester.overriding(mocks)(base)
+    /// )
     /// ```
     ///
     /// - Parameters:

@@ -23,10 +23,10 @@ public extension HTTPRequester {
     /// that match no rule pass through to the wrapped requester untouched.
     ///
     /// ```swift
-    /// let client = session.httpRequester.applying(HTTPRequester.overriding([
+    /// let client = HTTPRequester.overriding([
     ///     Rule(.method("GET") && .path("/currencies"), respond: .ok(body: canned)),
     ///     Rule(.pathPrefix("/flaky"),                   respond: .failure(.network(URLError(.timedOut)))),
-    /// ]))
+    /// ])(session.httpRequester)
     /// ```
     ///
     /// Latency is a separate concern — compose ``delaying(_:when:clock:)`` to simulate a slow response.

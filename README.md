@@ -393,17 +393,19 @@ A composable HTTP client with two parallel APIs: `RequestPublisher<A>` (Combine)
 
 The cross-platform `HTTPRequester` (a plain `@Sendable (URLRequest) -> Publisher<(Data, HTTPURLResponse), HTTPError>`) can be layered with **pure decorators** — `Endo<HTTPRequester>` values that compose with `<>`:
 
+Each decorator is a callable `Endo<HTTPRequester>`; apply it by calling it on a base (`overriding(rules)(base)`) and layer several by nesting.
+
 - **`overriding`** — short-circuit matching requests with a canned response (mock an endpoint that isn't built yet, or force an empty/500/timeout/slow case).
 - **`recording`** — tee every real exchange to a serialized, on-disk `RecordStore` (any encoder: JSON/Plist/XML/YAML).
 - **`replaying`** — serve recorded responses from a snapshot, **consume-once** (so a polled endpoint can return `pending → pending → done` across a test), turning a flaky shared-staging e2e suite into a deterministic one.
 
 ```swift
-let client = URLSession.shared.httpRequester.applying(
+// Decorators are callable values — apply by calling, layer by nesting (order = execution order):
+let client = HTTPRequester.delaying(.seconds(3), when: .path("/slow"), clock: ContinuousClock())(
     HTTPRequester.overriding([
         Rule(.method("GET") && .path("/currencies"),
              respond: .json(["MXN", "ARS", "COP", "BRL"], encoder: JSONEncoder())),
-    ])
-    <> HTTPRequester.delaying(.seconds(3), when: .path("/slow"), clock: ContinuousClock())
+    ])(URLSession.shared.httpRequester)
 )
 ```
 

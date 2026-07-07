@@ -9,10 +9,14 @@ The client is a plain function: `@Sendable (URLRequest) -> Publisher<(Data, HTTP
 wrapped as ``HTTPRequester`` (ReactiveConcurrency) or ``Requester`` (Combine). Because it's *just a
 function*, behaviour is layered on with **decorators** — `Endo<HTTPRequester>` values that compose:
 
+Each decorator is an `Endo<HTTPRequester>` — a callable value. Apply one by calling it on a base;
+layer several by **nesting**, which keeps the order of execution explicit (base first, inside-out):
+
 ```swift
-let client = URLSession.shared.httpRequester.applying(
-    HTTPRequester.recording(to: store)          // outermost: capture everything…
-        <> HTTPRequester.overriding(rules)          // …including mocked responses
+let client = HTTPRequester.recording(to: store)(   // …then capture everything, mocks included
+    HTTPRequester.overriding(rules)(               // base is overridden first…
+        URLSession.shared.httpRequester
+    )
 )
 ```
 

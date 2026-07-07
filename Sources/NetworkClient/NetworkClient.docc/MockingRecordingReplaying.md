@@ -5,7 +5,7 @@ tests into deterministic ones — all by composing pure decorators onto your HTT
 
 ## Overview
 
-A decorator is an `Endo<HTTPRequester>` — a pure `(HTTPRequester) -> HTTPRequester`. Three are provided:
+A decorator is an `Endo<HTTPRequester>` — a pure, callable `(HTTPRequester) -> HTTPRequester`. Four are provided:
 
 | Decorator | Purpose |
 |---|---|
@@ -14,7 +14,9 @@ A decorator is an `Endo<HTTPRequester>` — a pure `(HTTPRequester) -> HTTPReque
 | ``HTTPRequester/replaying(_:matching:fallback:)`` | Serve recorded responses from a ``RequestPlayback`` snapshot, once each. |
 | ``HTTPRequester/delaying(_:when:clock:)`` | Add artificial latency to matching responses (injected clock). |
 
-They compose with `<>` and read against two shared atoms: ``RequestMatch`` (which request) and
+You apply one by calling it on a base — `overriding(rules)(base)` — and layer several by nesting
+(`b(a(base))`), which keeps the order of execution explicit. They read against two shared atoms:
+``RequestMatch`` (which request) and
 ``StubResponse`` (what response).
 
 ## Matching requests — ``RequestMatch``
@@ -59,7 +61,7 @@ let mocks = HTTPRequester.overriding([
          respond: .json(["MXN", "ARS", "COP", "BRL"], encoder: JSONEncoder())),
 ])
 
-let client = URLSession.shared.httpRequester.applying(mocks)
+let client = mocks(URLSession.shared.httpRequester)
 // GET /currencies → your canned JSON; every other request hits the real network.
 ```
 
@@ -74,9 +76,10 @@ HTTPRequester.overriding([
     Rule(.path("/feed"),       respond: .failure(.network(URLError(.timedOut)))), // transport failure
 ])
 
-// …and slow /slow down by three seconds to exercise the spinner (a separate, composable decorator):
-HTTPRequester.delaying(.seconds(3), when: .path("/slow"), clock: ContinuousClock())
-    <> HTTPRequester.overriding([Rule(.path("/slow"), respond: .ok(body: page))])
+// …and slow /slow down by three seconds to exercise the spinner (a separate decorator wrapping the mock):
+HTTPRequester.delaying(.seconds(3), when: .path("/slow"), clock: ContinuousClock())(
+    HTTPRequester.overriding([Rule(.path("/slow"), respond: .ok(body: page))])(base)
+)
 ```
 
 Rules are first-match-wins; unmatched requests pass straight through to the wrapped client.
@@ -99,9 +102,7 @@ let store = RecordStore(
 )
 await store.reset()                   // start the session clean
 
-let recordingClient = liveStagingClient.applying(
-    HTTPRequester.recording(to: store, now: { Date() })       // inject the clock at the boundary
-)
+let recordingClient = HTTPRequester.recording(to: store, now: { Date() })(liveStagingClient)  // clock injected at the boundary
 // run the suite once through `recordingClient`; every exchange is captured to `snapshotURL`.
 ```
 
@@ -113,7 +114,7 @@ and it **surfaces** write failures instead of swallowing them.
 ```swift
 guard let playback = RequestPlayback.load(url: snapshotURL, decoder: JSONDecoder()) else { return }
 let noNetwork = HTTPRequester { _ in Publisher.fail(.network(URLError(.badURL))) }
-let testClient = noNetwork.applying(HTTPRequester.replaying(playback, fallback: .notFound))
+let testClient = HTTPRequester.replaying(playback, fallback: .notFound)(noNetwork)
 // every recorded call replays its exact status, headers and body — same result every run.
 ```
 
@@ -144,12 +145,15 @@ wrapped client — see ``ReplayFallback``).
 
 ## Composing them
 
-Decorators are values; combine with `<>`. Put `recording` *outside* `overriding` so mocked responses
-are captured too; put `replaying` *over* a live client to get replay-or-fallback-to-network:
+Decorators are callable values; **nest** them to layer. The nesting order *is* the execution order —
+innermost runs first — so it's never ambiguous which wraps which. Put `recording` on the *outside* of
+`overriding` so mocked responses are captured too:
 
 ```swift
-// Capture a session that also includes local mocks:
-let capture = HTTPRequester.recording(to: store, now: { Date() })
-    <> HTTPRequester.overriding(rules)
-let client  = URLSession.shared.httpRequester.applying(capture)
+// Capture a session that also includes local mocks (recording wraps overriding wraps the live client):
+let client = HTTPRequester.recording(to: store, now: { Date() })(
+    HTTPRequester.overriding(rules)(
+        URLSession.shared.httpRequester
+    )
+)
 ```
