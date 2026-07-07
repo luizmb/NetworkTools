@@ -1,13 +1,13 @@
 # ``Core``
 
-Shared foundations for the NetworkTools suite — codecs, the `DemandBuffer`, and the Combine/FP
-helpers every other package builds on.
+Shared foundations for the NetworkTools suite — the `Convert` codec layer (`DataEncoder` /
+`DataDecoder` and their factories) every other package builds on.
 
 ## Overview
 
 **NetworkTools** is a suite of composable Swift networking packages built on functional programming
 principles (via [`FP`](https://github.com/luizmb/FP)): `Reader` for dependency injection, `Result`
-for errors, `Publisher` / `DeferredTask` for async, and `FunctionWrapper` for composable functions.
+for errors, ReactiveConcurrency's `Publisher` for async, and `FunctionWrapper` for composable functions.
 No force-unwraps, no `fatalError`, no silent failures.
 
 `Core` is the base module. The suite's other products layer on top of it:

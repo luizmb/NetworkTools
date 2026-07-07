@@ -30,7 +30,7 @@ Every public API is built on functional foundations from [`FP`](https://github.c
 - **`Reader`** for dependency injection — effects (filesystem, network, clock) are injected, never
   reached for ambiently.
 - **`Result`** for error handling — no `throws`, no silent failures.
-- **`Publisher` / `DeferredTask`** for async work — lazy and composable.
+- **`Publisher`** (ReactiveConcurrency) for async work — cold, lazy, and composable.
 
 ## Platform availability
 
