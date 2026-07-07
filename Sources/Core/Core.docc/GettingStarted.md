@@ -7,7 +7,7 @@ Add NetworkTools and pick the products you need.
 Add the package to your `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/luizmb/NetworkTools.git", from: "0.6.0")
+.package(url: "https://github.com/luizmb/NetworkTools.git", from: "0.7.0")
 ```
 
 Each capability is a separate product — depend only on what you use:

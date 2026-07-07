@@ -50,7 +50,7 @@ Android is expected to behave like Linux for the portable products but is not ye
 
 ```swift
 // Package.swift
-.package(url: "https://github.com/luizmb/NetworkTools.git", from: "0.6.0")
+.package(url: "https://github.com/luizmb/NetworkTools.git", from: "0.7.0")
 ```
 
 Add individual products to your targets as needed:
