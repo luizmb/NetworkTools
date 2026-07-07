@@ -38,12 +38,14 @@ public extension URLSession {
             let box = WebSocketTaskBox(task)
             box.task.resume()
             return WebSocketConnection(
+                // `.share()` multicasts the single underlying `task.receive` loop: multiple subscribers
+                // each get every message, instead of competing for (and splitting) the message stream.
                 receive: Publisher { continuation in
                     let delegate = WebSocketReceiveDelegate(box: box, continuation: continuation)
                     delegate.start()
                     await continuation.suspendUntilCancelled()
                     delegate.stop()
-                },
+                }.share(),
                 send: { message in
                     Publisher.future {
                         await withCheckedContinuation { continuation in

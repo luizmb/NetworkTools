@@ -8,11 +8,15 @@ import ReactiveConcurrency
 
 /// A Multipeer session exposing its messages, connection events and invitations as ReactiveConcurrency
 /// `Publisher`s.
+///
+/// `messagesStream` and `connectionsStream` are **multicast**: the underlying `MCSessionDelegate` is a
+/// single, always-on source, so both are backed by a `PassthroughSubject` — every subscriber receives
+/// every event from the moment it subscribes.
 public class MultipeerSession: NSObject, MCSessionDelegate, @unchecked Sendable {
     public let session: MCSession
 
-    private let messagesMulticaster = AsyncMulticaster<MultipeerSessionReceivedMessage>()
-    private let connectionsMulticaster = AsyncMulticaster<MultipeerSessionConnectionStatusEvent>()
+    private let messagesSubject = PassthroughSubject<MultipeerSessionReceivedMessage, Never>()
+    private let connectionsSubject = PassthroughSubject<MultipeerSessionConnectionStatusEvent, Never>()
 
     public init(myselfAsPeer: MCPeerID) {
         session = MCSession(peer: myselfAsPeer, securityIdentity: nil, encryptionPreference: .required)
@@ -21,8 +25,8 @@ public class MultipeerSession: NSObject, MCSessionDelegate, @unchecked Sendable 
     }
 
     deinit {
-        messagesMulticaster.finish()
-        connectionsMulticaster.finish()
+        messagesSubject.send(completion: .finished)
+        connectionsSubject.send(completion: .finished)
     }
 
     public func send(_ data: Data, to peer: MCPeerID, reliable: Bool = true) -> Result<Void, Error> {
@@ -37,39 +41,32 @@ public class MultipeerSession: NSObject, MCSessionDelegate, @unchecked Sendable 
         }
     }
 
-    // MARK: - Publisher API
+    // MARK: - Publisher API (multicast)
 
-    public var messagesStream: ReactiveConcurrency.Publisher<MultipeerSessionReceivedMessage, Never> {
-        Publisher { [multicaster = messagesMulticaster] continuation in
-            for await value in multicaster.register() {
-                continuation.yield(value)
-            }
-        }
+    public var messagesStream: Publisher<MultipeerSessionReceivedMessage, Never> {
+        messagesSubject.eraseToPublisher()
     }
 
-    public var connectionsStream: ReactiveConcurrency.Publisher<MultipeerSessionConnectionStatusEvent, Never> {
-        Publisher { [multicaster = connectionsMulticaster] continuation in
-            for await value in multicaster.register() {
-                continuation.yield(value)
-            }
-        }
+    public var connectionsStream: Publisher<MultipeerSessionConnectionStatusEvent, Never> {
+        connectionsSubject.eraseToPublisher()
     }
 
     /// Invites a peer and suspends until it first becomes connected.
     ///
     /// Returns the peer on connection, or `nil` if the session ends before the peer connects.
-    /// The continuation is registered before the invite is issued, so the connection event is
-    /// never lost to a race with the invite call.
+    /// The invite is issued as the subscription starts; because a Multipeer connection requires a
+    /// network round-trip, the `.peerConnected` event always arrives well after the subscription is
+    /// established.
     public func inviteTask(
         peer: MCPeerID,
         browser: MCNearbyServiceBrowser,
         context: Data?,
         timeout: TimeInterval
-    ) -> ReactiveConcurrency.Publisher<MCPeerID?, Never> {
-        ReactiveConcurrency.Publisher.future { [self] in
-            let stream = connectionsMulticaster.register()
+    ) -> Publisher<MCPeerID?, Never> {
+        Publisher.future { [self] in
+            let events = connectionsSubject.eraseToPublisher()
             browser.invitePeer(peer, to: session, withContext: context, timeout: timeout)
-            for await event in stream {
+            for await event in events.values {
                 if case let .peerConnected(connected, _) = event, connected == peer {
                     return connected
                 }
@@ -78,16 +75,16 @@ public class MultipeerSession: NSObject, MCSessionDelegate, @unchecked Sendable 
         }
     }
 
-    public func sendTask(_ data: Data, to peer: MCPeerID, reliable: Bool = true) -> ReactiveConcurrency.Publisher<Void, Error> {
-        ReactiveConcurrency.Publisher.future { [self] in
+    public func sendTask(_ data: Data, to peer: MCPeerID, reliable: Bool = true) -> Publisher<Void, Error> {
+        Publisher.future { [self] in
             Result {
                 try session.send(data, toPeers: [peer], with: reliable ? .reliable : .unreliable)
             }
         }
     }
 
-    public func sendToAllTask(_ data: Data, reliable: Bool = true) -> ReactiveConcurrency.Publisher<Void, Error> {
-        ReactiveConcurrency.Publisher.future { [self] in
+    public func sendToAllTask(_ data: Data, reliable: Bool = true) -> Publisher<Void, Error> {
+        Publisher.future { [self] in
             Result {
                 try session.send(data, toPeers: session.connectedPeers, with: reliable ? .reliable : .unreliable)
             }
@@ -104,17 +101,15 @@ public class MultipeerSession: NSObject, MCSessionDelegate, @unchecked Sendable 
         @unknown default: nil
         }
         guard let event else { return }
-        connectionsMulticaster.send(event)
+        connectionsSubject.send(event)
     }
 
     public func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {
-        let event = MultipeerSessionReceivedMessage.data(data, from: peerID, session: session)
-        messagesMulticaster.send(event)
+        messagesSubject.send(.data(data, from: peerID, session: session))
     }
 
     public func session(_ session: MCSession, didReceive stream: InputStream, withName streamName: String, fromPeer peerID: MCPeerID) {
-        let event = MultipeerSessionReceivedMessage.stream(stream, streamName: streamName, from: peerID, session: session)
-        messagesMulticaster.send(event)
+        messagesSubject.send(.stream(stream, streamName: streamName, from: peerID, session: session))
     }
 
     public func session(
@@ -123,13 +118,12 @@ public class MultipeerSession: NSObject, MCSessionDelegate, @unchecked Sendable 
         fromPeer peerID: MCPeerID,
         with progress: Progress
     ) {
-        let event = MultipeerSessionReceivedMessage.didStartReceivingResource(
+        messagesSubject.send(.didStartReceivingResource(
             resourceName: resourceName,
             from: peerID,
             progress: progress,
             session: session
-        )
-        messagesMulticaster.send(event)
+        ))
     }
 
     public func session(
@@ -139,14 +133,14 @@ public class MultipeerSession: NSObject, MCSessionDelegate, @unchecked Sendable 
         at localURL: URL?,
         withError error: Error?
     ) {
-        let event = MultipeerSessionReceivedMessage.didFinishReceivingResource(
+        messagesSubject.send(.didFinishReceivingResource(
             resourceName: resourceName,
             from: peerID,
             localURL: localURL,
             error: error,
             session: session
-        )
-        messagesMulticaster.send(event)
+        ))
     }
 }
+
 #endif
