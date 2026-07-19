@@ -30,8 +30,8 @@ let package = Package(
         .library(name: "BonjourService", targets: ["BonjourService"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/luizmb/FP.git", from: "1.14.0"),
-        .package(url: "https://github.com/luizmb/ReactiveConcurrency.git", from: "0.5.0"),
+        .package(url: "https://github.com/luizmb/FP.git", from: "2.1.0"),
+        .package(url: "https://github.com/luizmb/ReactiveConcurrency.git", from: "1.0.0"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.4.0"),
     ],
