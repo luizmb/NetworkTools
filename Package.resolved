@@ -1,13 +1,13 @@
 {
-  "originHash" : "38d78dbe4be8223544ebd38b760f93bdc17e2e6c63a8349bacabb9437683618d",
+  "originHash" : "baedf050d2f46ccf51dafd3cd172d7065ab51b032887fe63f34f428503924ee6",
   "pins" : [
     {
       "identity" : "fp",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/luizmb/FP.git",
       "state" : {
-        "revision" : "d72df5ffaa2ec6b26d8fcbd624e3b66fa3d811c9",
-        "version" : "2.1.0"
+        "revision" : "3ff729badf4be84773f9681350e63513dddd4339",
+        "version" : "2.2.0"
       }
     },
     {
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/luizmb/ReactiveConcurrency.git",
       "state" : {
-        "revision" : "c93c77e136c454216f8fa9d745f1f04270f5a8f0",
-        "version" : "1.0.1"
+        "revision" : "35ac52966c4c514bca05ed23bd3f2f621ea77e0f",
+        "version" : "1.1.0"
       }
     },
     {
@@ -87,8 +87,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-system.git",
       "state" : {
-        "revision" : "b5544ba79a70a0cb3563e75bf26dc198d6b40ed3",
-        "version" : "1.7.4"
+        "revision" : "50688cacbd41d547e9eb9f7a213542340b7c442b",
+        "version" : "1.7.5"
       }
     }
   ],
