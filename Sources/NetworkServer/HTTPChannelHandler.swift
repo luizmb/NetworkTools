@@ -27,8 +27,8 @@ final class HTTPChannelHandler: ChannelInboundHandler, @unchecked Sendable {
             method = head.method
             uri = head.uri
             body = []
-        case var .body(buf):
-            body.append(contentsOf: buf.readBytes(length: buf.readableBytes) ?? [])
+        case let .body(buf):
+            body.append(contentsOf: buf.readableBytesView)
         case .end:
             let request = Request(method: method, uri: uri, body: Data(body))
             let publisher = requestHandler(request)

@@ -120,16 +120,16 @@ public enum TemplateError: Error {
 ### `render`
 
 ```swift
-func render(_ template: String, _ context: Context) -> Reader<HTMLEnvironment, Result<String, TemplateError>>
+func render(_ template: String, _ context: Context) -> ReaderTResult<HTMLEnvironment, TemplateError, String>
 ```
 
-The entry point. Returns a `Reader` that must be run with an `HTMLEnvironment` to produce a `Result<String, TemplateError>`.
+The entry point. Returns a `ReaderTResult` stack (wrapping `Reader<HTMLEnvironment, Result<String, TemplateError>>`); leave with `.rawValue` and run it with an `HTMLEnvironment`.
 
 ```swift
 let env = HTMLEnvironment.live(path: "/path/to/templates")
 
 let result = render("Hello, {{name}}!", ["name": .string("World")])
-    .runReader(env)
+    .rawValue.runReader(env)
 
 // result == .success("Hello, World!")
 ```
@@ -144,14 +144,14 @@ let ctx: Context = [
     "title": .string("My Page"),
     "body":  .string("Welcome!"),
 ]
-let html = try render(template, ctx).runReader(env).get()
+let html = try render(template, ctx).rawValue.runReader(env).get()
 // "<title>My Page</title><p>Welcome!</p>"
 ```
 
 Booleans render as `"true"` or `"false"`:
 
 ```swift
-render("Active: {{active}}", ["active": .bool(true)]).runReader(env)
+render("Active: {{active}}", ["active": .bool(true)]).rawValue.runReader(env)
 // .success("Active: true")
 ```
 
@@ -171,7 +171,7 @@ let ctx: Context = [
 ]
 
 let template = "<ul>{{#each players row}}</ul>"
-let html = try render(template, ctx).runReader(env).get()
+let html = try render(template, ctx).rawValue.runReader(env).get()
 // "<ul><li>Alice — 42</li><li>Bob — 37</li></ul>"
 ```
 
@@ -190,7 +190,7 @@ let ctx: Context = [
     "username": .string("alice"),
     "isAdmin":  .bool(true),
 ]
-let html = try render(template, ctx).runReader(env).get()
+let html = try render(template, ctx).rawValue.runReader(env).get()
 // "<p>alice<span class=\"admin\">Admin</span></p>"
 ```
 
@@ -217,7 +217,7 @@ let ctx: Context = [
     "content":  .string("<p>Hello</p>"),
     "year":     .string("2025"),
 ]
-let html = try render(template, ctx).runReader(env).get()
+let html = try render(template, ctx).rawValue.runReader(env).get()
 ```
 
 Includes compose freely — a fragment can itself contain `#include`, `#each`, and `#if` directives. Errors propagate outward through the `Result`.
@@ -236,7 +236,7 @@ escAttr(#"say "hello""#)
 
 ### Template loader
 
-`loadTemplate` reads a named `.template` file via the environment and returns a `Reader` just like `render`. Compose them with `flatMap` so the environment is injected once:
+`loadTemplate` reads a named `.template` file via the environment and returns the same `ReaderTResult` stack as `render`. Chain them with `>>-` so the environment is injected once and a load failure skips the render:
 
 ```swift
 let ctx: Context = ["title": .string("Home"), "body": .string("<p>Hello</p>")]
@@ -245,36 +245,36 @@ let ctx: Context = ["title": .string("Home"), "body": .string("<p>Hello</p>")]
 let page = loadTemplate("index") >>- { source in render(source, ctx) }
 
 // Direct filesystem:
-let html = page.runReader(.live(path: "/app/templates"))
+let html = page.rawValue.runReader(.live(path: "/app/templates"))
 
 // Bundle:
-let html = page.runReader(.live(bundle: .main))
+let html = page.rawValue.runReader(.live(bundle: .main))
 
 // Testing — no filesystem, no bundle:
-let html = page.runReader(.mockSuccess(contents: "<p>{{body}}</p>"))
+let html = page.rawValue.runReader(.mockSuccess(contents: "<p>{{body}}</p>"))
 ```
 
 ### Composing with Reader
 
-Because `render` returns a `Reader`, you can swap the environment entirely without touching the template logic:
+Because `render` reads its environment, you can swap the environment entirely without touching the template logic:
 
 ```swift
-let pageReader: Reader<HTMLEnvironment, Result<String, TemplateError>> =
+let pageReader: ReaderTResult<HTMLEnvironment, TemplateError, String> =
     render("{{#include layout}}", [
         "title":   .string("Dashboard"),
         "content": .string(bodyHTML),
     ])
 
 // Production: filesystem-based.
-let prodHTML = pageReader.runReader(.live(path: "/app/templates"))
+let prodHTML = pageReader.rawValue.runReader(.live(path: "/app/templates"))
 // Or bundle-based:
-// let prodHTML = pageReader.runReader(.live(bundle: .main))
+// let prodHTML = pageReader.rawValue.runReader(.live(bundle: .main))
 
 // Testing: every fragment load succeeds with a fixed string.
-let testHTML = pageReader.runReader(.mockSuccess(contents: "<html>{{content}}</html>"))
+let testHTML = pageReader.rawValue.runReader(.mockSuccess(contents: "<html>{{content}}</html>"))
 
 // Testing: every fragment load fails — verifies error propagation.
-let failHTML = pageReader.runReader(.mockFailure(error: URLError(.fileDoesNotExist)))
+let failHTML = pageReader.rawValue.runReader(.mockFailure(error: URLError(.fileDoesNotExist)))
 ```
 
 All IO is fully contained in the environment — `render` never touches the filesystem directly.
@@ -419,11 +419,12 @@ Two composable atoms drive the decorators: `RequestMatch` (`.method`/`.path`/`.q
 
 ## NetworkServer
 
-An embedded HTTP server built on swift-nio (`NIOPosix`), with a **typed, functional routing DSL**. A `Router<Env>` is a value: routes compose left-to-right with Kleisli `>=>` (match -> decode body -> handle) and alternate with `<|>`; `Env` is your injected environment. Handlers return `Result<Response, ResponseError>` (sync) or `Publisher<Response, ResponseError>` (async).
+An embedded HTTP server built on swift-nio (`NIOPosix`), with a **typed, functional routing DSL**. A `Router<Env>` is a value: routes compose left-to-right with Kleisli `>=>` (match -> decode body -> handle) and alternate with `<|>`. Each step is a Kleisli arrow into the `ReaderTPublisher` stack (`RouteEffect<Env, O>`), so `>=>` is its lawful bind: the first failure skips the remaining steps; `Env` is your injected environment. Handlers return `Result<Response, ResponseError>` (sync) or `Publisher<Response, ResponseError>` (async).
 
 ```swift
 import NetworkServer
 import ReactiveConcurrency
+import ReactiveConcurrencyOperators // >=> on the ReaderTPublisher stack
 
 struct Env: Sendable {
     let greeting: String

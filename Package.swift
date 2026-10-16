@@ -30,8 +30,8 @@ let package = Package(
         .library(name: "BonjourService", targets: ["BonjourService"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/luizmb/FP.git", from: "2.2.0"),
-        .package(url: "https://github.com/luizmb/ReactiveConcurrency.git", from: "1.1.0"),
+        .package(url: "https://github.com/luizmb/FP.git", from: "3.0.0"),
+        .package(url: "https://github.com/luizmb/ReactiveConcurrency.git", from: "2.0.0"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.4.0"),
     ],
@@ -90,7 +90,10 @@ let package = Package(
         ),
         .testTarget(
             name: "HTMLTemplatingTests",
-            dependencies: ["HTMLTemplating"]
+            dependencies: [
+                "HTMLTemplating",
+                .product(name: "FP", package: "FP"),
+            ]
         ),
         .testTarget(
             name: "MultipeerTests",
