@@ -321,6 +321,37 @@ struct RouterTests {
         #expect(String(data: (await h(req(.GET, "/b")).provide(()).run()).response.body, encoding: .utf8) == "B")
     }
 
+    @Test func emptyIsIdentityForAlt() async {
+        let router = when(get("/a") >=> ignoreBody() >=> response { _ in .html("A") }, injecting: Void.self)
+        for candidate in [Router<Void>.empty <|> router, router <|> Router<Void>.empty] {
+            let body = (await candidate.handle(req(.GET, "/a")).provide(()).run()).response.body
+            #expect(String(data: body, encoding: .utf8) == "A")
+        }
+    }
+
+    @Test func altIsAssociative() async {
+        let routers = ["a", "b", "c"].map { name in
+            when(get("/\(name)") >=> ignoreBody() >=> response { _ in .html(name) }, injecting: Void.self)
+        }
+        let left = (routers[0] <|> routers[1]) <|> routers[2]
+        let right = routers[0] <|> (routers[1] <|> routers[2])
+        for path in ["/a", "/b", "/c", "/d"] {
+            let l = await left.handle(req(.GET, path)).provide(()).run().response
+            let r = await right.handle(req(.GET, path)).provide(()).run().response
+            #expect(l.status == r.status)
+            #expect(l.body == r.body)
+        }
+    }
+
+    @Test func nonNotFoundFailureDoesNotFallThrough() async {
+        let failing = when(
+            get("/x") >=> ignoreBody() >=> response { (_: TypedRequest<Empty, Empty, Empty>) in .failure(.badRequest("no")) },
+            injecting: Void.self
+        )
+        let fallback = when(get("/x") >=> ignoreBody() >=> response { _ in .html("fallback") }, injecting: Void.self)
+        #expect(await (failing <|> fallback).handle(req(.GET, "/x")).provide(()).run().response.status == .badRequest)
+    }
+
     @Test func decodesURLParams() async {
         struct UserParams: Decodable, Sendable { let id: String }
         struct Env: HasDictionaryDecoderFactory, Sendable {

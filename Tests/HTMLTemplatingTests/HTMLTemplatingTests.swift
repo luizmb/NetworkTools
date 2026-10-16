@@ -37,6 +37,8 @@ struct EscTests {
     @Test func noSpecials() { #expect(esc("hello") == "hello") }
     @Test func combined() { #expect(esc("<a&b>") == "&lt;a&amp;b&gt;") }
     @Test func empty() { #expect(esc("").isEmpty) }
+    @Test func multiByteTextIsKept() { #expect(esc("café <ü> 🎉&") == "café &lt;ü&gt; 🎉&amp;") }
+    @Test func quotesAreKept() { #expect(esc(#""q""#) == #""q""#) }
 }
 
 @Suite("escAttr")
@@ -341,6 +343,23 @@ struct LoadTemplateTests {
             Issue.record("Expected .failure(.readError), got \(result)")
             return
         }
+    }
+
+    @Test func fragmentIsReadOncePerRender() throws {
+        final class Reads: @unchecked Sendable { var names: [String] = [] }
+        let reads = Reads()
+        let files = ["row.template": "<li>{{name}}{{#include badge}}</li>", "badge.template": "*"]
+        let env = HTMLEnvironment(
+            find: { URL(fileURLWithPath: "/t/\($0)") },
+            readFile: { url in
+                reads.names.append(url.lastPathComponent)
+                return files[url.lastPathComponent].map(Result.success) ?? .failure(URLError(.fileDoesNotExist))
+            }
+        )
+        let ctx: Context = ["items": .list([["name": .string("a")], ["name": .string("b")], ["name": .string("c")]])]
+        let out = try render("{{#each items row}}", ctx).rawValue.runReader(env).get()
+        #expect(out == "<li>a*</li><li>b*</li><li>c*</li>")
+        #expect(reads.names.sorted() == ["badge.template", "row.template"])
     }
 
     @Test func bindsIntoRender() throws {

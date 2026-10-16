@@ -10,6 +10,8 @@ public struct Request: Sendable {
     public let method: HTTPMethod
     public let uri: String
     public let body: Data
+    /// `uri` up to the query string. Stored, since every route of a router matches against it.
+    public let path: String
 
     public init(
         method: HTTPMethod,
@@ -19,10 +21,7 @@ public struct Request: Sendable {
         self.method = method
         self.uri = uri
         self.body = body
-    }
-
-    public var path: String {
-        String(uri.prefix(while: { $0 != "?" }))
+        path = String(uri.prefix(while: { $0 != "?" }))
     }
 
     public var queryParams: [String: String] {

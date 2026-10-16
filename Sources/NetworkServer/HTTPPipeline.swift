@@ -16,11 +16,12 @@ public func receive<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Senda
     params: RouteParam<U, Env>,
     query: RouteParam<Q, Env>
 ) -> RouteMatcher<U, Q, Env> {
-    { request in
+    let pattern = PathPattern(path)
+    return { request in
         RouteEffect(Reader { env in
             Publisher.future {
                 guard request.method == method,
-                      let pathDict = matchPath(request.path, against: path)
+                      let pathDict = pattern.match(request.path)
                 else { return .failure(.notFound) }
 
                 guard case let .success(urlParams) = params.run(env, pathDict)
