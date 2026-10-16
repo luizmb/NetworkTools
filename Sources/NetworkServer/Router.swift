@@ -5,22 +5,28 @@ import Core
 import Foundation
 import FP
 import ReactiveConcurrency
+import ReactiveConcurrencyTransformers
 
 public struct Router<Env: Sendable>: @unchecked Sendable {
-    public let handle: RoutePipeline<Env>
+    public let pipeline: RoutePipeline<Env>
 
-    public init(_ handle: @escaping RoutePipeline<Env>) {
-        self.handle = handle
+    public init(_ pipeline: @escaping RoutePipeline<Env>) {
+        self.pipeline = pipeline
+    }
+
+    /// Runs the pipeline for one request, leaving the stack: read `Env`, then publish the response.
+    public func handle(_ request: Request) -> Reader<Env, Publisher<Response, ResponseError>> {
+        pipeline(request).rawValue
     }
 
     /// The empty router — always returns 404. Identity for `<|>`.
     public static var empty: Router<Env> {
-        Router { _ in Reader { _ in Publisher.future { .failure(.notFound) } } }
+        Router { _ in RouteEffect(Reader { _ in Publisher.fail(.notFound) }) }
     }
 
     public func contramap<World: Sendable>(_ f: @escaping @Sendable (World) -> Env) -> Router<World> {
-        Router<World>({ [handle] request in
-            Reader { world in handle(request)(f(world)) }
+        Router<World>({ [pipeline] request in
+            pipeline(request).mapReaderT { $0.contramapEnvironment(f) }
         })
     }
 }
@@ -36,12 +42,12 @@ public extension Router {
     /// Ordered choice: try `lhs`; fall through to `rhs` only on `.failure(.notFound)`.
     static func alt(_ lhs: Router<Env>, _ rhs: @autoclosure () -> Router<Env>) -> Router<Env> {
         let rhs = rhs()
-        return Router { [lh = lhs.handle, rh = rhs.handle] request in
-            Reader { env in
-                lh(request)(env).catch { error in
-                    error.status == .notFound ? rh(request)(env) : Publisher.fail(error)
+        return Router { [lh = lhs.pipeline, rh = rhs.pipeline] request in
+            RouteEffect(Reader { env in
+                lh(request).rawValue(env).catch { error in
+                    error.status == .notFound ? rh(request).rawValue(env) : Publisher.fail(error)
                 }
-            }
+            })
         }
     }
 }

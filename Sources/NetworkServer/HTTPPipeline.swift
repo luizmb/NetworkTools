@@ -6,6 +6,7 @@ import Foundation
 import FP
 import NIOHTTP1
 import ReactiveConcurrency
+import ReactiveConcurrencyTransformers
 
 // MARK: - Core receive — explicit RouteParam injection
 
@@ -16,7 +17,7 @@ public func receive<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Senda
     query: RouteParam<Q, Env>
 ) -> RouteMatcher<U, Q, Env> {
     { request in
-        Reader { env in
+        RouteEffect(Reader { env in
             Publisher.future {
                 guard request.method == method,
                       let pathDict = matchPath(request.path, against: path)
@@ -32,7 +33,7 @@ public func receive<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Senda
                     return .failure(.badRequest(error.localizedDescription))
                 }
             }
-        }
+        })
     }
 }
 
@@ -184,10 +185,10 @@ public func options<U: Decodable & Sendable, Q: Decodable & Sendable, Env: Senda
 
 // MARK: - when — Router wrapper
 
-/// Wraps a Kleisli chain into a `Router<Env>`.
+/// Wraps a Kleisli chain (steps composed with `>=>` in the `ReaderTPublisher` stack) into a `Router<Env>`.
 ///
 /// ```swift
-/// when(get("/ping") >=> ignoreBody() >=> .response { _ in .html("pong") }, injecting: Void.self)
+/// when(get("/ping") >=> ignoreBody() >=> response { _ in .html("pong") }, injecting: Void.self)
 /// startServer(port: 8080, router: router).runReader(())
 /// ```
 public func when<Env: Sendable>(
@@ -202,9 +203,7 @@ public func when<Env: Sendable>(
 /// Passes a matched route through with an `Empty` body — no `Decodable` constraint imposed.
 public func ignoreBody<U, Q, Env: Sendable>() -> BodyDecoder<U, Q, Empty, Env> {
     { matched in
-        Reader { _ in
-            Publisher.pure(TypedRequest(urlParams: matched.urlParams, queryParams: matched.queryParams, body: .value, raw: matched.raw))
-        }
+        RouteEffect.pure(TypedRequest(urlParams: matched.urlParams, queryParams: matched.queryParams, body: .value, raw: matched.raw))
     }
 }
 
@@ -222,7 +221,7 @@ public func decodeBody<U, Q, B: Decodable & Sendable, Env: Sendable>(
     using decoderLens: @escaping @Sendable (Env) -> DataDecoder<B>
 ) -> BodyDecoder<U, Q, B, Env> {
     { matched in
-        Reader { env in
+        RouteEffect(Reader { env in
             let bodyData = matched.raw.body.isEmpty ? Data("{}".utf8) : matched.raw.body
             return Publisher.future {
                 decoderLens(env).run(bodyData)
@@ -236,7 +235,7 @@ public func decodeBody<U, Q, B: Decodable & Sendable, Env: Sendable>(
                     }
                     .mapError { ResponseError.badRequest($0.localizedDescription) }
             }
-        }
+        })
     }
 }
 

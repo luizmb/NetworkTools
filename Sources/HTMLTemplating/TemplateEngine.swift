@@ -5,15 +5,15 @@ import FP
 
 // MARK: - Environment
 
-public struct HTMLEnvironment {
+public struct HTMLEnvironment: Sendable {
     /// Resolves a filename (including extension) to a URL, or `nil` if not found.
-    public let find: (String) -> URL?
+    public let find: @Sendable (String) -> URL?
     /// Reads the contents of a URL, returning an error on failure.
-    public let readFile: (URL) -> Result<String, Error>
+    public let readFile: @Sendable (URL) -> Result<String, Error>
 
     public init(
-        find: @escaping (String) -> URL?,
-        readFile: @escaping (URL) -> Result<String, Error>
+        find: @escaping @Sendable (String) -> URL?,
+        readFile: @escaping @Sendable (URL) -> Result<String, Error>
     ) {
         self.find = find
         self.readFile = readFile
@@ -81,18 +81,21 @@ public enum TemplateError: Error {
 
 /// Renders `template`, resolving `{{key}}`, `{{#each key fragment}}`,
 /// `{{#if key fragment}}` and `{{#include fragment}}` directives.
-public func render(_ template: String, _ context: Context) -> Reader<HTMLEnvironment, Result<String, TemplateError>> {
-    renderImpl(template, context)
+///
+/// Returns the `ReaderTResult` stack, so it chains with `>>-` (`loadTemplate("index") >>- { render($0, ctx) }`);
+/// leave with `.rawValue` to run it.
+public func render(_ template: String, _ context: Context) -> ReaderTResult<HTMLEnvironment, TemplateError, String> {
+    ReaderTResult(renderImpl(template, context))
 }
 
 // MARK: - Bundle-based loader
 
 /// Resolves `name` via `env.findResource`, then reads its contents via `env.readFile`.
-public func loadTemplate(_ name: String) -> Reader<HTMLEnvironment, Result<String, TemplateError>> {
-    Reader { env in
+public func loadTemplate(_ name: String) -> ReaderTResult<HTMLEnvironment, TemplateError, String> {
+    ReaderTResult(Reader { env in
         guard let url = env.find("\(name).template") else { return .failure(.notFound(name)) }
         return env.readFile(url).mapError { .readError(name, $0) }
-    }
+    })
 }
 
 // MARK: - HTML escaping

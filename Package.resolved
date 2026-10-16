@@ -1,13 +1,13 @@
 {
-  "originHash" : "baedf050d2f46ccf51dafd3cd172d7065ab51b032887fe63f34f428503924ee6",
+  "originHash" : "a7e0d08725f366f2c640d419bd80bc1b8aa318b39d194fdf5f9742396b5d9062",
   "pins" : [
     {
       "identity" : "fp",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/luizmb/FP.git",
       "state" : {
-        "revision" : "3ff729badf4be84773f9681350e63513dddd4339",
-        "version" : "2.2.0"
+        "revision" : "a825632d12443a554c53039f8871d1fc59f687f1",
+        "version" : "3.0.0"
       }
     },
     {
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/luizmb/ReactiveConcurrency.git",
       "state" : {
-        "revision" : "35ac52966c4c514bca05ed23bd3f2f621ea77e0f",
-        "version" : "1.1.0"
+        "revision" : "d417be0d55ecd2c737c90d6cd2e32d360bd84309",
+        "version" : "2.0.0"
       }
     },
     {
