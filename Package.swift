@@ -28,6 +28,11 @@ let package = Package(
         .library(name: "NetworkServer", targets: ["NetworkServer"]),
         .library(name: "WebSocketClient", targets: ["WebSocketClient"]),
         .library(name: "BonjourService", targets: ["BonjourService"]),
+        .library(name: "MQTT", targets: ["MQTT"]),
+        .library(name: "MQTTClient", targets: ["MQTTClient"]),
+        .library(name: "MQTTNWConnection", targets: ["MQTTNWConnection"]),
+        .library(name: "MQTTNIO", targets: ["MQTTNIO"]),
+        .library(name: "MQTTWebSocket", targets: ["MQTTWebSocket"]),
     ],
     dependencies: [
         .package(url: "https://github.com/luizmb/FP.git", from: "3.0.0"),
@@ -86,6 +91,83 @@ let package = Package(
             dependencies: [
                 "Core",
                 .product(name: "FP", package: "FP"),
+            ] + rc
+        ),
+        .target(
+            name: "MQTT",
+            dependencies: [
+                "Core",
+                .product(name: "FP", package: "FP"),
+            ] + rc
+        ),
+        .target(
+            name: "MQTTClient",
+            dependencies: [
+                "MQTT",
+                .product(name: "FP", package: "FP"),
+            ] + rc
+        ),
+        // Network.framework transport: Apple platforms only (sources are `#if canImport(Network)`).
+        .target(
+            name: "MQTTNWConnection",
+            dependencies: [
+                "MQTT",
+                .product(name: "FP", package: "FP"),
+            ] + rc
+        ),
+        // SwiftNIO transport: same platform gating as NetworkServer (NIOPosix has no Windows support).
+        .target(
+            name: "MQTTNIO",
+            dependencies: [
+                "MQTT",
+                .product(name: "FP", package: "FP"),
+                .product(name: "NIOCore", package: "swift-nio", condition: .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .visionOS, .linux])),
+                .product(name: "NIOPosix", package: "swift-nio", condition: .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .visionOS, .linux])),
+            ] + rc
+        ),
+        .target(
+            name: "MQTTWebSocket",
+            dependencies: [
+                "MQTT",
+                "WebSocketClient",
+                .product(name: "FP", package: "FP"),
+            ] + rc
+        ),
+        .testTarget(
+            name: "CoreTests",
+            dependencies: [
+                "Core",
+                .product(name: "FP", package: "FP"),
+            ]
+        ),
+        .testTarget(
+            name: "MQTTTests",
+            dependencies: [
+                "Core",
+                "MQTT",
+                .product(name: "FP", package: "FP"),
+            ] + rc
+        ),
+        .testTarget(
+            name: "MQTTClientTests",
+            dependencies: [
+                "MQTT",
+                "MQTTClient",
+                .product(name: "FP", package: "FP"),
+            ] + rc
+        ),
+        .testTarget(
+            name: "MQTTTransportTests",
+            dependencies: [
+                "MQTT",
+                "MQTTClient",
+                "MQTTNIO",
+                "MQTTNWConnection",
+                "MQTTWebSocket",
+                "WebSocketClient",
+                .product(name: "FP", package: "FP"),
+                .product(name: "NIOCore", package: "swift-nio", condition: .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .visionOS, .linux])),
+                .product(name: "NIOPosix", package: "swift-nio", condition: .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .visionOS, .linux])),
             ] + rc
         ),
         .testTarget(
