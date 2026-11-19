@@ -29,7 +29,9 @@ public struct Transport: Sendable {
 /// Bytes arrive in arbitrary chunks — ``PacketStream`` reassembles packets from them.
 public struct TransportConnection: Sendable {
     /// Inbound bytes. Subscribe once. Finishes when the peer closes the connection; fails when
-    /// the connection breaks.
+    /// the connection breaks. Bytes arriving before the subscription are buffered, and
+    /// cancelling the subscription closes the connection — so cancelling a session that
+    /// consumes `receive` always releases the socket.
     public let receive: Publisher<[UInt8], TransportError>
     /// Writes bytes. Completes (emitting `()`) once they are handed to the network.
     public let send: @Sendable ([UInt8]) -> Publisher<Void, TransportError>

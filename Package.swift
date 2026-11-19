@@ -29,6 +29,7 @@ let package = Package(
         .library(name: "WebSocketClient", targets: ["WebSocketClient"]),
         .library(name: "BonjourService", targets: ["BonjourService"]),
         .library(name: "MQTT", targets: ["MQTT"]),
+        .library(name: "MQTTClient", targets: ["MQTTClient"]),
     ],
     dependencies: [
         .package(url: "https://github.com/luizmb/FP.git", from: "3.0.0"),
@@ -96,6 +97,13 @@ let package = Package(
                 .product(name: "FP", package: "FP"),
             ] + rc
         ),
+        .target(
+            name: "MQTTClient",
+            dependencies: [
+                "MQTT",
+                .product(name: "FP", package: "FP"),
+            ] + rc
+        ),
         .testTarget(
             name: "CoreTests",
             dependencies: [
@@ -108,6 +116,14 @@ let package = Package(
             dependencies: [
                 "Core",
                 "MQTT",
+                .product(name: "FP", package: "FP"),
+            ] + rc
+        ),
+        .testTarget(
+            name: "MQTTClientTests",
+            dependencies: [
+                "MQTT",
+                "MQTTClient",
                 .product(name: "FP", package: "FP"),
             ] + rc
         ),
