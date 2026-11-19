@@ -37,7 +37,9 @@ public enum PacketType: UInt8, Sendable, Hashable, CaseIterable {
     var requiredFlags: UInt8? {
         switch self {
         case .publish: nil
-        case .pubRel, .subscribe, .unsubscribe: 0b0010
+        case .pubRel,
+             .subscribe,
+             .unsubscribe: 0b0010
         default: 0
         }
     }

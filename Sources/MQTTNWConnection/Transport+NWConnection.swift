@@ -61,12 +61,14 @@ private final class ConnectionBox: @unchecked Sendable {
                 switch state {
                 case .ready:
                     resolve(continuation, .success(()))
-                case let .failed(error), let .waiting(error):
+                case let .failed(error),
+                     let .waiting(error):
                     connection.cancel()
                     resolve(continuation, .failure(.connectionFailed(String(describing: error))))
                 case .cancelled:
                     resolve(continuation, .failure(.connectionFailed("cancelled")))
-                case .setup, .preparing:
+                case .setup,
+                     .preparing:
                     break
                 @unknown default:
                     break
@@ -86,7 +88,7 @@ private final class ConnectionBox: @unchecked Sendable {
 
     var transportConnection: TransportConnection {
         TransportConnection(
-            receive: Publisher<[UInt8], TransportError> { (continuation) async throws(TransportError) in
+            receive: Publisher<[UInt8], TransportError> { continuation async throws(TransportError) in
                 await withTaskCancellationHandler {
                     await self.receiveLoop(continuation)
                 } onCancel: {
@@ -97,7 +99,7 @@ private final class ConnectionBox: @unchecked Sendable {
                 .future { () async -> Result<Void, TransportError> in await self.send(bytes) }
             },
             close: {
-                Publisher<Void, Never> { (continuation) async throws(Never) in
+                Publisher<Void, Never> { continuation async throws(Never) in
                     self.connection.cancel()
                     continuation.yield(())
                 }

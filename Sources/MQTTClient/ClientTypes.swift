@@ -2,6 +2,9 @@
 
 import MQTT
 
+// An absent password (flag bit off) and an empty one are different things on the wire, so `[UInt8]?` is intended.
+// swiftlint:disable discouraged_optional_collection
+
 /// How a client connects.
 public struct ClientOptions: Sendable, Hashable {
     /// The protocol version to speak.
@@ -60,6 +63,8 @@ public struct ClientOptions: Sendable, Hashable {
         )
     }
 }
+
+// swiftlint:enable discouraged_optional_collection
 
 /// An application message to publish.
 public struct OutgoingMessage: Sendable, Hashable {

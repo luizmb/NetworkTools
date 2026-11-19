@@ -83,7 +83,8 @@ public struct TopicFilter: RawRepresentable, Sendable, Hashable, CustomStringCon
         switch (filter.first, topic.first) {
         case (.none, .none): true
         case ("#", _): true
-        case (.none, .some), (.some, .none): false
+        case (.none, .some),
+             (.some, .none): false
         case let (.some(level), .some(name)):
             (level == "+" || level == name) && match(filter.dropFirst(), topic.dropFirst())
         }

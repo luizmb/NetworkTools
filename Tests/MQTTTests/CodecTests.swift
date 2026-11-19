@@ -6,14 +6,16 @@ import Testing
 @Suite struct CodecRoundTripTests {
     @Test(arguments: everyPacketV5)
     func roundTripsInV5(packet: Packet) {
-        let decoded = packet.encode(for: .v5).mapError(CodecFailure.encoding)
+        let decoded = packet.encode(for: .v5)
+            .mapError(CodecFailure.encoding)
             .flatMap { Packet.decode($0, for: .v5).mapError(CodecFailure.decoding) }
         #expect(decoded == .success(packet))
     }
 
     @Test(arguments: everyPacketV311)
     func roundTripsInV311(packet: Packet) {
-        let decoded = packet.encode(for: .v3_1_1).mapError(CodecFailure.encoding)
+        let decoded = packet.encode(for: .v3_1_1)
+            .mapError(CodecFailure.encoding)
             .flatMap { Packet.decode($0, for: .v3_1_1).mapError(CodecFailure.decoding) }
         #expect(decoded == .success(packet))
     }

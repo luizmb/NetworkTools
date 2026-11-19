@@ -93,11 +93,9 @@ func subscribeAndReceive(over transport: Transport) async throws -> [ClientEvent
     return try #require(try result?.get())
 }
 
-func lastPayload(_ events: [ClientEvent]) -> [UInt8]? {
-    events.last.flatMap { event in
-        guard case let .message(publish) = event else { return nil }
-        return publish.payload
-    }
+func lastPayload(_ events: [ClientEvent]) -> [UInt8] {
+    guard case let .message(publish) = events.last else { return [] }
+    return publish.payload
 }
 
 @Suite struct NIOTransportTests {

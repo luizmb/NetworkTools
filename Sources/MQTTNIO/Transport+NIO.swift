@@ -52,7 +52,7 @@ private func openChannel(_ bootstrap: ClientBootstrap, host: String, port: Int) 
 
 private func transportConnection(_ channel: any Channel, inbound: AsyncStream<Result<[UInt8], TransportError>>) -> TransportConnection {
     TransportConnection(
-        receive: Publisher<[UInt8], TransportError> { (continuation) async throws(TransportError) in
+        receive: Publisher<[UInt8], TransportError> { continuation async throws(TransportError) in
             await withTaskCancellationHandler {
                 for await chunk in inbound {
                     switch chunk {
@@ -76,7 +76,7 @@ private func transportConnection(_ channel: any Channel, inbound: AsyncStream<Re
             }
         },
         close: {
-            Publisher<Void, Never> { (continuation) async throws(Never) in
+            Publisher<Void, Never> { continuation async throws(Never) in
                 channel.close(promise: nil)
                 continuation.yield(())
             }

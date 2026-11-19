@@ -9,7 +9,7 @@
 /// MQTT 3.1 (`MQIsdp`, level 3) is not supported.
 public enum ProtocolVersion: UInt8, Sendable, Hashable, CaseIterable {
     /// MQTT 3.1.1 (OASIS Standard, 2014). Protocol level 4.
-    case v3_1_1 = 4
+    case v3_1_1 = 4 // swiftlint:disable:this identifier_name
     /// MQTT 5.0 (OASIS Standard, 2019). Protocol level 5.
     case v5 = 5
 }

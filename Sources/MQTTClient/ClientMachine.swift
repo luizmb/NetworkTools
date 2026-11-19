@@ -75,7 +75,8 @@ public enum ClientMachine {
 
     private static func keepAlive(_ state: inout ClientState) -> [ClientOutput] {
         switch (state.phase, state.pingOutstanding) {
-        case (.connecting, true), (.connected, true):
+        case (.connecting, true),
+             (.connected, true):
             return end(&state, [.fail(.keepAliveTimeout)])
         case (.connecting, false):
             state.pingOutstanding = true
@@ -83,7 +84,8 @@ public enum ClientMachine {
         case (.connected, false):
             state.pingOutstanding = true
             return [.send(.pingReq)]
-        case (.idle, _), (.closed, _):
+        case (.idle, _),
+             (.closed, _):
             return []
         }
     }
@@ -179,9 +181,11 @@ public enum ClientMachine {
         switch (state.phase, packet) {
         case let (.connecting, .connAck(ack)):
             return connected(ack, &state)
-        case let (.connecting, .auth(auth)), let (.connected, .auth(auth)):
+        case let (.connecting, .auth(auth)),
+             let (.connected, .auth(auth)):
             return [.event(.authenticationChallenge(auth))]
-        case let (.connecting, .disconnect(disconnect)), let (.connected, .disconnect(disconnect)):
+        case let (.connecting, .disconnect(disconnect)),
+             let (.connected, .disconnect(disconnect)):
             return end(&state, [.event(.disconnected(disconnect, byServer: true)), .close])
         case let (.connected, .publish(publish)):
             return incoming(publish, &state)
@@ -239,13 +243,15 @@ public enum ClientMachine {
     private static func acknowledge(_ ack: Acknowledgement, _ type: PacketType, _ state: inout ClientState) -> [ClientOutput] {
         let identifier = ack.packetIdentifier
         switch (type, state.inFlight[identifier]) {
-        case let (.pubAck, .awaitingPubAck(publish)), let (.pubComp, .awaitingPubComp(publish)):
+        case let (.pubAck, .awaitingPubAck(publish)),
+             let (.pubComp, .awaitingPubComp(publish)):
             state.inFlight[identifier] = nil
             return [.event(.published(publish, ack))]
         case let (.pubRec, .awaitingPubRec(publish)) where ack.reasonCode.isFailure:
             state.inFlight[identifier] = nil
             return [.event(.published(publish, ack))]
-        case let (.pubRec, .awaitingPubRec(publish)), let (.pubRec, .awaitingPubComp(publish)):
+        case let (.pubRec, .awaitingPubRec(publish)),
+             let (.pubRec, .awaitingPubComp(publish)):
             state.inFlight[identifier] = .awaitingPubComp(publish)
             return [.send(.pubRel(.success(identifier)))]
         default:

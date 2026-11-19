@@ -117,7 +117,7 @@ public enum ByteEncoders {
     ///   - endianness: Its byte order.
     /// - Returns: An encoder of lengths.
     public static func length<T: FixedWidthInteger & UnsignedInteger, E: ByteEncodeFailure>(
-        _ type: T.Type,
+        _: T.Type,
         _ endianness: Endianness
     ) -> ByteEncoder<Int, E> {
         ByteEncoder<Int, E> { count in

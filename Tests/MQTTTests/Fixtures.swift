@@ -97,7 +97,11 @@ let everyPacketV311: [Packet] = [
     .pubRec(.success(id(2))),
     .pubRel(.success(id(3))),
     .pubComp(.success(id(4))),
-    .subscribe(Subscribe(packetIdentifier: id(5), subscriptions: [Subscription(filter: filter("#"), options: .qos(.atLeastOnce))], properties: [])),
+    .subscribe(Subscribe(
+        packetIdentifier: id(5),
+        subscriptions: [Subscription(filter: filter("#"), options: .qos(.atLeastOnce))],
+        properties: []
+    )),
     .subAck(SubAck(packetIdentifier: id(5), reasonCodes: [.grantedQoS1, .unspecifiedError], properties: [])),
     .unsubscribe(Unsubscribe(packetIdentifier: id(6), filters: [filter("#")], properties: [])),
     .unsubAck(UnsubAck(packetIdentifier: id(6), reasonCodes: [], properties: [])),

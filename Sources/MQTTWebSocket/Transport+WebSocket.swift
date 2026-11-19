@@ -46,7 +46,7 @@ private func webSocketConnection(_ socket: WebSocketConnection) -> TransportConn
             socket.send(.data(Data(payload))).mapError { TransportError.sendFailed(String(describing: $0)) }
         },
         close: {
-            Publisher<Void, Never> { (continuation) async throws(Never) in
+            Publisher<Void, Never> { continuation async throws(Never) in
                 socket.close()
                 continuation.yield(())
             }

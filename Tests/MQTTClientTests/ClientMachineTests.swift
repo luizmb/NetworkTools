@@ -194,13 +194,17 @@ private func message(_ qos: QoS) -> OutgoingMessage {
     }
 
     @Test func incomingQoS1IsAcknowledged() {
-        let incoming = Publish(topic: topic("t"), payload: [], delivery: .atLeastOnce(id(5)), retain: false, duplicate: false, properties: [])
+        let incoming = Publish(
+            topic: topic("t"), payload: [], delivery: .atLeastOnce(id(5)), retain: false, duplicate: false, properties: []
+        )
         let (outputs, _) = run([.received(wire(.publish(incoming)))], from: connected())
         #expect(outputs == [.event(.message(incoming)), .send(.pubAck(.success(id(5))))])
     }
 
     @Test func incomingQoS2IsDeliveredOnce() {
-        let incoming = Publish(topic: topic("t"), payload: [], delivery: .exactlyOnce(id(6)), retain: false, duplicate: false, properties: [])
+        let incoming = Publish(
+            topic: topic("t"), payload: [], delivery: .exactlyOnce(id(6)), retain: false, duplicate: false, properties: []
+        )
         var duplicate = incoming
         duplicate.duplicate = true
         let (outputs, state) = run(
@@ -218,7 +222,8 @@ private func message(_ qos: QoS) -> OutgoingMessage {
 
     @Test func unknownPubRelStillCompletes() {
         let (outputs, _) = run([.received(wire(.pubRel(.success(id(8)))))], from: connected())
-        #expect(outputs == [.send(.pubComp(Acknowledgement(packetIdentifier: id(8), reasonCode: .packetIdentifierNotFound, properties: [])))])
+        let notFound = Acknowledgement(packetIdentifier: id(8), reasonCode: .packetIdentifierNotFound, properties: [])
+        #expect(outputs == [.send(.pubComp(notFound))])
     }
 }
 

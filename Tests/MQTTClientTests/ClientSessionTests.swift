@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import FP
 import Foundation
+import FP
 import MQTT
 import MQTTClient
 import ReactiveConcurrency
@@ -47,8 +47,10 @@ private final class FakeBroker: @unchecked Sendable {
     var transport: Transport {
         Transport {
             .just(TransportConnection(
-                receive: Publisher<[UInt8], TransportError> { (continuation) async throws(TransportError) in
-                    for await chunk in self.inbound { continuation.yield(chunk) }
+                receive: Publisher<[UInt8], TransportError> { continuation async throws(TransportError) in
+                    for await chunk in self.inbound {
+                        continuation.yield(chunk)
+                    }
                 },
                 send: { bytes in
                     Publisher.future { () async -> Result<Void, TransportError> in
@@ -97,8 +99,11 @@ private func world(_ transport: Transport) -> ClientWorld {
     @Test func fullSessionAgainstAFakeBroker() async {
         let broker = FakeBroker(reply: printerLikeBroker)
         let subscriptions = [Subscription(filter: statusFilter, options: .qos(.atMostOnce))]
-        let command = OutgoingMessage(topic: commandTopic, payload: Array("{\"type\":\"PING\"}".utf8), qos: .atLeastOnce, retain: false, properties: [])
-        let requests: Publisher<ClientRequest, Never> = [ClientRequest.subscribe(subscriptions, properties: []), .publish(command)].publisher
+        let command = OutgoingMessage(
+            topic: commandTopic, payload: Array("{\"type\":\"PING\"}".utf8), qos: .atLeastOnce, retain: false, properties: []
+        )
+        let requests: Publisher<ClientRequest, Never> =
+            [ClientRequest.subscribe(subscriptions, properties: []), .publish(command)].publisher
 
         let result = await MQTTClient.session(options(), requests: requests)
             .runReader(world(broker.transport))
