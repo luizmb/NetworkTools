@@ -10,9 +10,9 @@ import ReactiveConcurrency
 public extension Transport {
     /// A transport over Apple's Network.framework.
     ///
-    /// Every subscription to ``Transport/connect`` creates and starts a new `NWConnection` and
+    /// Every subscription to `Transport/connect` creates and starts a new `NWConnection` and
     /// emits once it is ready. A connection that fails, or that has to wait for a network path
-    /// (no route, host unreachable), fails with ``TransportError/connectionFailed(_:)`` instead
+    /// (no route, host unreachable), fails with `TransportError/connectionFailed(_:)` instead
     /// of waiting forever.
     ///
     /// ```swift

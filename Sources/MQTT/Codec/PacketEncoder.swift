@@ -3,7 +3,7 @@
 import Core
 import FP
 
-/// An MQTT encoder: a ``Core/ByteEncoder`` failing with ``MQTTEncodingError``.
+/// An MQTT encoder: a `Core.ByteEncoder` failing with ``MQTTEncodingError``.
 public typealias MQTTEncoder<A> = ByteEncoder<A, MQTTEncodingError>
 
 public extension Packet {

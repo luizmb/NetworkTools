@@ -8,8 +8,8 @@ import WebSocketClient
 
 public extension Transport {
     /// MQTT over WebSocket: each binary frame carries MQTT bytes (a frame may hold part of a
-    /// packet or several packets; ``PacketStream`` reassembles them). Text frames are a
-    /// protocol error and fail with ``TransportError/unexpectedData(_:)``.
+    /// packet or several packets; `PacketStream` reassembles them). Text frames are a
+    /// protocol error and fail with `TransportError/unexpectedData(_:)`.
     ///
     /// The WebSocket itself comes from any `WebSocketClient` implementation; the server must be
     /// offered the `mqtt` subprotocol.

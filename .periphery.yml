@@ -11,6 +11,15 @@ targets:
   - BonjourService
   - WebSocketClient
   - Multipeer
+  - MQTT
+  - MQTTClient
+  - MQTTNWConnection
+  - MQTTNIO
+  - MQTTWebSocket
   - HTMLTemplatingTests
   - NetworkClientTests
   - NetworkServerTests
+  - CoreTests
+  - MQTTTests
+  - MQTTClientTests
+  - MQTTTransportTests

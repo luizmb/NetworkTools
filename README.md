@@ -22,6 +22,7 @@ A suite of Swift packages for HTML templating, HTTP client networking, and HTTP 
 - [NetworkServer](#networkserver) — embedded NIO-backed HTTP server with a typed functional routing DSL
 - [WebSocketClient](#websocketclient) — full-duplex WebSocket client exposing a `WebSocketConnection` with `Publisher`-based receive/send
 - [BonjourService](#bonjourservice) — Bonjour discovery and advertising exposed as `Publisher` streams
+- [MQTT](#mqtt) — MQTT 3.1.1 and 5 packet model and codec, a pure client state machine (`MQTTClient`), and one target per transport (`MQTTNWConnection`, `MQTTNIO`, `MQTTWebSocket`)
 
 ---
 
@@ -39,6 +40,10 @@ Swift + `FP` and run everywhere; the others depend on platform-specific technolo
 | **NetworkServer** | ✅ | ✅ | ❌ | ⚠️ | swift-nio `NIOPosix` (Posix-only; gated out of Windows in `Package.swift`) |
 | **Multipeer** | ✅ | ❌ | ❌ | ❌ | `MultipeerConnectivity` — Apple frameworks only |
 | **BonjourService** | ✅ | ❌ | ❌ | ❌ | `MultipeerConnectivity` / `Network` — Apple frameworks only |
+| **MQTT** / **MQTTClient** | ✅ | ✅ | ✅ | ✅ | Pure `FP` + ReactiveConcurrency; no transport inside |
+| **MQTTNWConnection** | ✅ | ❌ | ❌ | ❌ | `Network.framework` — Apple frameworks only |
+| **MQTTNIO** | ✅ | ✅ | ❌ | ⚠️ | swift-nio `NIOPosix`, same gating as NetworkServer |
+| **MQTTWebSocket** | ✅ | ⚠️ | ⚠️ | ⚠️ | Any `WebSocketClient` connection; the `URLSession` factory is Darwin-only |
 
 On non-Apple platforms the Apple-only modules compile to empty (`#if canImport(...)` gated), so
 depending on them is safe — they simply expose no API there. CI builds macOS, Linux, and Windows;
@@ -62,6 +67,11 @@ Add individual products to your targets as needed:
 .product(name: "NetworkServer",   package: "NetworkTools"),
 .product(name: "WebSocketClient", package: "NetworkTools"),
 .product(name: "BonjourService",  package: "NetworkTools"),
+.product(name: "MQTT",            package: "NetworkTools"),
+.product(name: "MQTTClient",      package: "NetworkTools"),
+.product(name: "MQTTNWConnection", package: "NetworkTools"),
+.product(name: "MQTTNIO",         package: "NetworkTools"),
+.product(name: "MQTTWebSocket",   package: "NetworkTools"),
 ```
 
 ---
@@ -337,6 +347,30 @@ let stringDecoder: Convert<String, User, DecodingError> =
 
 > Decoding/encoding values flowing through a `Publisher` lives with the client that produces them — see NetworkClient's `Publisher.validateStatusCode()` / `.decode(using:)`.
 
+### Binary codecs — `ByteParser` / `ByteEncoder`
+
+Building blocks for binary wire formats, shared by every protocol package (MQTT today; mDNS, PTP/IP, MIDI SysEx… later).
+
+`ByteParser<A, Failure>` is FP's `StatefulTResult` over `ArraySlice<UInt8>` — a parser monad with every FP operator — plus byte primitives (big/little-endian integers, variable-length integers, UTF-8) and combinators (`ByteParsers.isolate`, `manyUntilEnd`, `count`, `optional`, backtracking `<|>`):
+
+```swift
+typealias P<A: Sendable> = ByteParser<A, BinaryParseError>
+
+let string: P<String> = P<UInt16>.integer(.big) >>- { P<String>.utf8(count: Int($0)) }
+string.parseAll([0x00, 0x02, 0x68, 0x69])   // .success("hi")
+```
+
+`ByteEncoder<A, Failure>` is `Convert<A, [UInt8], Failure>`. `Convert` is now a `Monoid` whenever its output is, so encoders compose with `<>`, each field `contramap`-ped onto its encoder:
+
+```swift
+typealias Enc<A> = ByteEncoder<A, BinaryEncodeError>
+
+let point: Enc<Point> = Enc<UInt16>.integer(.big).contramap(\.x) <> Enc<UInt16>.integer(.big).contramap(\.y)
+point.run(Point(x: 1, y: 2))   // .success([0x00, 0x01, 0x00, 0x02])
+```
+
+Primitives are generic over `ByteParseFailure` / `ByteEncodeFailure`, so a protocol works in its own error type — an enum with `case binary(BinaryParseError)` conforms with no extra code.
+
 ## Multipeer
 
 A `MultipeerConnectivity` wrapper exposing advertiser, browser, and session events as ReactiveConcurrency `Publisher`s.
@@ -573,6 +607,74 @@ let preferred = [IP("192.168.1.1")!, IP("::1")!].preferredAddress // -> .ipv6(::
 ```
 
 ---
+
+## MQTT
+
+MQTT 3.1.1 and 5.0, split by responsibility:
+
+| Target | What it holds |
+|---|---|
+| `MQTT` | Role-neutral core: every packet type, every v5 property and reason code, a codec in both directions, topic matching, `PacketStream`, and the `Transport` witness. Pure — no sockets, no clocks. |
+| `MQTTClient` | The client protocol as a pure state machine, plus the session interpreter. |
+| `MQTTNWConnection` | `Transport` over Network.framework (Apple only). |
+| `MQTTNIO` | `Transport` over SwiftNIO TCP (Apple + Linux). |
+| `MQTTWebSocket` | `Transport` over `WebSocketClient` (binary frames, `mqtt` subprotocol). |
+
+A broker (`MQTTBroker`) and a bridge (`MQTTBridge`) will sit next to `MQTTClient`, on the same core.
+
+### Packets and codec
+
+One MQTT 5-shaped model serves both versions; the codec decides what each version can carry and fails with a typed error rather than dropping data:
+
+```swift
+let publish = Packet.publish(Publish(
+    topic: topic,
+    payload: Array(#"{"id":1,"method":1001}"#.utf8),
+    delivery: .atLeastOnce(identifier),
+    retain: false,
+    duplicate: false,
+    properties: [.contentType("application/json")]
+))
+
+publish.encode(for: .v5)        // .success([0x32, …])
+publish.encode(for: .v3_1_1)    // .failure(.unsupported(.properties, in: .v3_1_1))
+Packet.decode(bytes, for: .v5)  // Result<Packet, MQTTDecodingError>
+```
+
+`PacketStream.feed(chunk)` is a `Stateful<PacketStream, Result<[Packet], PacketStreamError>>` step that reassembles packets from whatever chunks a transport delivers.
+
+### Client
+
+The whole client protocol — handshake, keep-alive, QoS 0/1/2 in both directions, packet identifiers, requests queued before CONNACK, protocol violations — is one pure function, tested by feeding inputs and comparing outputs:
+
+```swift
+ClientMachine.step(_ input: ClientInput) -> Stateful<ClientState, [ClientOutput]>
+```
+
+`MQTTClient.session` runs it: requests in, events out, the world injected through `Reader`:
+
+```swift
+let world = ClientWorld(
+    transport: .nwConnection(host: "10.0.1.49", port: 1883, parameters: .tcp, queue: queue),
+    keepAliveTimer: { seconds in
+        Publisher<ContinuousClock.Instant, Never>.timer(every: .seconds(Int(seconds)), clock: clock).map(ignore)
+    }
+)
+
+let events: Publisher<ClientEvent, ClientError> = MQTTClient.session(options, requests: requests).runReader(world)
+```
+
+Nothing runs until `events` is subscribed; cancelling it closes the connection. The session finishes after a DISCONNECT and fails with a typed `ClientError` otherwise.
+
+### Transports
+
+| | |
+|---|---|
+| `Transport.nwConnection(host:port:parameters:queue:)` | Network.framework |
+| `Transport.nio(host:port:group:)` | SwiftNIO; the event loop group is injected |
+| `Transport.webSocket(url:session:)` / `Transport.webSocket(_:)` | MQTT over WebSocket |
+
+`Transport` is a plain struct of effects, so tests use an in-memory one.
 
 ## Design principles
 

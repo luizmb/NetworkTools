@@ -42,6 +42,11 @@ jobs:
             --target Multipeer \
             --target WebSocketClient \
             --target BonjourService \
+            --target MQTT \
+            --target MQTTClient \
+            --target MQTTNWConnection \
+            --target MQTTNIO \
+            --target MQTTWebSocket \
             --enable-experimental-combined-documentation \
             --output-path .docs \
             --transform-for-static-hosting \

@@ -10,9 +10,9 @@ import ReactiveConcurrency
 public extension Transport {
     /// A transport over SwiftNIO TCP (Apple platforms and Linux).
     ///
-    /// Every subscription to ``Transport/connect`` opens a new channel on `group`. Inbound
+    /// Every subscription to `Transport/connect` opens a new channel on `group`. Inbound
     /// bytes are buffered from the moment the channel is active, so nothing is lost before the
-    /// session subscribes to ``TransportConnection/receive``.
+    /// session subscribes to `TransportConnection/receive`.
     ///
     /// ```swift
     /// let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)

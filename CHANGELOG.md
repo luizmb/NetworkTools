@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `Core`: binary codec building blocks. `ByteParser` (FP's `StatefulTResult` over `ArraySlice<UInt8>`) with
+  integer, variable-length integer, UTF-8, `isolate`, repetition and backtracking (`<|>`) combinators;
+  `ByteEncoder` (`Convert<A, [UInt8], E>`), now a `Monoid` under `<>` thanks to a new
+  `Convert: Monoid where Output: Monoid` conformance.
+- `MQTT`: the MQTT 3.1.1 and 5.0 packet model (all fifteen packet types, every v5 property and reason code),
+  a codec for every packet in both directions, topic name/filter validation and matching, `PacketStream`
+  for reassembling packets from byte chunks, and the `Transport` witness. Encoding a feature the target
+  version cannot express fails with a typed error instead of dropping it.
+- `MQTTClient`: the client protocol as a pure state machine (`ClientMachine.step`) — handshake, keep-alive,
+  QoS 0/1/2 in both directions, packet identifiers, request queueing, protocol violations — and
+  `MQTTClient.session`, a `Reader<ClientWorld, Publisher<ClientEvent, ClientError>>` interpreter.
+- MQTT transports, one target each: `MQTTNWConnection` (Network.framework, Apple only), `MQTTNIO`
+  (SwiftNIO, Apple + Linux) and `MQTTWebSocket` (binary frames over `WebSocketClient`).
+
 ### Changed
 - **Breaking:** depends on FP 3.0.0 and ReactiveConcurrency 2.0.0.
 - **Breaking:** route steps are Kleisli arrows into the `ReaderTPublisher` stack (`RouteEffect<Env, O>`), so `>=>`

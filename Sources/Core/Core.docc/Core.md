@@ -1,7 +1,8 @@
 # ``Core``
 
 Shared foundations for the NetworkTools suite — the `Convert` codec layer (`DataEncoder` /
-`DataDecoder` and their factories) every other package builds on.
+`DataDecoder` and their factories) and the binary parsing and encoding combinators every
+other package builds on.
 
 ## Overview
 
@@ -19,6 +20,8 @@ No force-unwraps, no `fatalError`, no silent failures.
 | `NetworkServer` | Embedded swift-nio HTTP server with a typed routing DSL (Posix platforms) |
 | `WebSocketClient` | Full-duplex WebSocket client |
 | `Multipeer` / `BonjourService` | Apple-only peer discovery and connectivity |
+| `MQTT` / `MQTTClient` | MQTT 3.1.1 and 5 packet model, codec and client state machine |
+| `MQTTNWConnection` / `MQTTNIO` / `MQTTWebSocket` | MQTT transports |
 
 See the [platform-support matrix](https://github.com/luizmb/NetworkTools#platform-support) — not
 every product is available on every platform.
@@ -27,3 +30,6 @@ every product is available on every platform.
 
 ### Getting Started
 - <doc:GettingStarted>
+
+### Binary Codecs
+- <doc:BinaryCodecs>

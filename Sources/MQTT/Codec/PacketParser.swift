@@ -3,7 +3,7 @@
 import Core
 import FP
 
-/// An MQTT parser: a ``Core/ByteParser`` failing with ``MQTTDecodingError``.
+/// An MQTT parser: a `Core.ByteParser` failing with ``MQTTDecodingError``.
 public typealias MQTTParser<A: Sendable> = ByteParser<A, MQTTDecodingError>
 
 public extension Packet {

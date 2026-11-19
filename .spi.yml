@@ -10,6 +10,11 @@ builder:
         - NetworkServer
         - WebSocketClient
         - BonjourService
+        - MQTT
+        - MQTTClient
+        - MQTTNWConnection
+        - MQTTNIO
+        - MQTTWebSocket
     - platform: ios
     - platform: tvos
     - platform: watchos
