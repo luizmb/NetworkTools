@@ -89,6 +89,13 @@ let package = Package(
             ] + rc
         ),
         .testTarget(
+            name: "CoreTests",
+            dependencies: [
+                "Core",
+                .product(name: "FP", package: "FP"),
+            ]
+        ),
+        .testTarget(
             name: "HTMLTemplatingTests",
             dependencies: [
                 "HTMLTemplating",
