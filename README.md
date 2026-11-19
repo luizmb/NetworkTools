@@ -655,7 +655,7 @@ ClientMachine.step(_ input: ClientInput) -> Stateful<ClientState, [ClientOutput]
 
 ```swift
 let world = ClientWorld(
-    transport: .nwConnection(host: "10.0.1.49", port: 1883, parameters: .tcp, queue: queue),
+    transport: .nwConnection(host: "192.168.1.20", port: 1883, parameters: .tcp, queue: queue),
     keepAliveTimer: { seconds in
         Publisher<ContinuousClock.Instant, Never>.timer(every: .seconds(Int(seconds)), clock: clock).map(ignore)
     }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-/// The topic an application message is published to, e.g. `elegoo/F0130/api_status`.
+/// The topic an application message is published to, e.g. `elegoo/SERIAL/api_status`.
 ///
 /// A topic name never contains the wildcards `+` or `#`, nor the null character, and its
 /// UTF-8 encoding fits in 65 535 bytes. It may be empty only in MQTT 5, where a PUBLISH can

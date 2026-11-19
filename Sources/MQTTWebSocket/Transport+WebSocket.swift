@@ -25,7 +25,7 @@ public extension Transport {
     /// MQTT over WebSocket using `URLSession`, offering the `mqtt` subprotocol.
     ///
     /// ```swift
-    /// let transport = Transport.webSocket(url: URL(string: "ws://10.0.1.49:9001/mqtt")!, session: session)
+    /// let transport = Transport.webSocket(url: URL(string: "ws://192.168.1.20:9001/mqtt")!, session: session)
     /// ```
     /// - Parameters:
     ///   - url: The `ws://` or `wss://` endpoint.

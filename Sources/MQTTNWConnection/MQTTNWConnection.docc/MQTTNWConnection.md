@@ -6,7 +6,7 @@ An MQTT `Transport` over Apple's Network.framework (`NWConnection`). Apple platf
 
 ```swift
 let transport = Transport.nwConnection(
-    host: "10.0.1.49",
+    host: "192.168.1.20",
     port: 1883,
     parameters: .tcp,
     queue: DispatchQueue(label: "mqtt")

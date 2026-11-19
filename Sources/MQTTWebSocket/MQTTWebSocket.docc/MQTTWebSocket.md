@@ -9,7 +9,7 @@ A frame may carry part of a packet or several packets — the session's `PacketS
 reassembles them — and text frames fail with `TransportError/unexpectedData(_:)`.
 
 ```swift
-let transport = Transport.webSocket(url: URL(string: "ws://10.0.1.49:9001/mqtt")!, session: session)
+let transport = Transport.webSocket(url: URL(string: "ws://192.168.1.20:9001/mqtt")!, session: session)
 
 // or with any WebSocketClient implementation:
 let custom = Transport.webSocket { openMyWebSocket() }

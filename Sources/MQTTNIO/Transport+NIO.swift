@@ -16,7 +16,7 @@ public extension Transport {
     ///
     /// ```swift
     /// let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-    /// let transport = Transport.nio(host: "10.0.1.49", port: 1883, group: group)
+    /// let transport = Transport.nio(host: "192.168.1.20", port: 1883, group: group)
     /// ```
     /// - Parameters:
     ///   - host: The broker's host name or IP address.
