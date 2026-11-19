@@ -14,9 +14,9 @@ public extension Packet {
     /// - Parameter version: The connection's protocol version.
     /// - Returns: The packet parser.
     static func parser(for version: ProtocolVersion) -> MQTTParser<Packet> {
-        MQTTParser<UInt8>.byte >>- { header in
+        Read.byte >>- { header in
             Read.variableByteInteger >>- { length in
-                ByteParsers.isolate(Int(length), Parsers.body(header: header, version: version))
+                ByteParsers.isolate(Int(length), Parsers.body(header: header, version: version), errors: Read.errors)
             }
         }
     }
@@ -27,7 +27,7 @@ public extension Packet {
     ///   - version: The connection's protocol version.
     /// - Returns: The packet, or why the bytes are not one valid packet.
     static func decode(_ bytes: [UInt8], for version: ProtocolVersion) -> Result<Packet, MQTTDecodingError> {
-        parser(for: version).parseAll(bytes)
+        parser(for: version).parseAll(bytes[...], errors: Read.errors)
     }
 }
 
@@ -209,7 +209,7 @@ enum Parsers {
                 Subscribe(packetIdentifier: identifier, subscriptions: subscriptions, properties: properties)
             }(
                 Read.properties(version),
-                ByteParsers.manyUntilEnd(subscription(version))
+                ByteParsers.manyUntilEnd(subscription(version), errors: Read.errors)
                     .ensure({ !$0.isEmpty }, else: const(.emptyTopicList(.subscribe)))
             )
         }
@@ -226,7 +226,7 @@ enum Parsers {
         Read.packetIdentifier >>- { identifier in
             MQTTParser<SubAck>.liftA2 { properties, codes in
                 SubAck(packetIdentifier: identifier, reasonCodes: codes, properties: properties)
-            }(Read.properties(version), ByteParsers.manyUntilEnd(Read.reasonCode))
+            }(Read.properties(version), ByteParsers.manyUntilEnd(Read.reasonCode, errors: Read.errors))
         }
     }
 
@@ -236,7 +236,7 @@ enum Parsers {
                 Unsubscribe(packetIdentifier: identifier, filters: filters, properties: properties)
             }(
                 Read.properties(version),
-                ByteParsers.manyUntilEnd(Read.topicFilter)
+                ByteParsers.manyUntilEnd(Read.topicFilter, errors: Read.errors)
                     .ensure({ !$0.isEmpty }, else: const(.emptyTopicList(.unsubscribe)))
             )
         }
@@ -246,7 +246,7 @@ enum Parsers {
         Read.packetIdentifier >>- { identifier in
             MQTTParser<UnsubAck>.liftA2 { properties, codes in
                 UnsubAck(packetIdentifier: identifier, reasonCodes: codes, properties: properties)
-            }(Read.properties(version), version == .v5 ? ByteParsers.manyUntilEnd(Read.reasonCode) : .pure([]))
+            }(Read.properties(version), version == .v5 ? ByteParsers.manyUntilEnd(Read.reasonCode, errors: Read.errors) : .pure([]))
         }
     }
 }

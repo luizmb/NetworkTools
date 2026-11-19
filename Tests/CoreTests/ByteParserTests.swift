@@ -4,7 +4,7 @@ import Core
 import FP
 import Testing
 
-private typealias P<A: Sendable> = ByteParser<A, BinaryParseError>
+private typealias P<A: Sendable> = BinaryParser<A>
 
 @Suite struct ByteParserTests {
     @Test func byteConsumesOne() {
@@ -74,12 +74,12 @@ private typealias P<A: Sendable> = ByteParser<A, BinaryParseError>
     }
 
     @Test func isolateLimitsTheRegion() {
-        let parser = ByteParsers.isolate(2, ByteParsers.manyUntilEnd(P<UInt8>.byte)) <* P<UInt8>.byte
+        let parser = ByteParsers.isolate(2, ByteParsers.manyUntilEnd(P<UInt8>.byte, errors: .id), errors: .id) <* P<UInt8>.byte
         #expect(parser.parseAll([0x01, 0x02, 0x03]) == .success([0x01, 0x02]))
     }
 
     @Test func isolateRequiresFullConsumption() {
-        #expect(ByteParsers.isolate(2, P<UInt8>.byte).parseAll([0x01, 0x02]) == .failure(.trailingBytes(count: 1, offset: 1)))
+        #expect(ByteParsers.isolate(2, P<UInt8>.byte, errors: .id).parseAll([0x01, 0x02]) == .failure(.trailingBytes(count: 1, offset: 1)))
     }
 
     @Test func orElseBacktracks() {
@@ -98,7 +98,7 @@ private typealias P<A: Sendable> = ByteParser<A, BinaryParseError>
     }
 
     @Test func manyUntilEndDetectsNoProgress() {
-        #expect(ByteParsers.manyUntilEnd(P<Int>.offset).parseAll([0x01]) == .failure(.noProgress(offset: 0)))
+        #expect(ByteParsers.manyUntilEnd(P<Int>.offset, errors: .id).parseAll([0x01]) == .failure(.noProgress(offset: 0)))
     }
 
     @Test func ensureRejects() {
@@ -106,4 +106,28 @@ private typealias P<A: Sendable> = ByteParser<A, BinaryParseError>
         #expect(even.parseAll([3]) == .failure(.noProgress(offset: 99)))
         #expect(even.parseAll([4]) == .success(4))
     }
+
+    @Test func embedLiftsFailuresThroughAPrism() {
+        let embedded = P<UInt8>.byte.embed(wrapped)
+        #expect(embedded.parse([][...]).map(\.value) == .failure(.binary(.unexpectedEnd(needed: 1, offset: 0))))
+        #expect(embedded.parse([7][...]).map(\.value) == .success(7))
+    }
+
+    @Test func combinatorsReportTheirOwnFailuresThroughThePrism() {
+        let region = ByteParsers.isolate(3, P<UInt8>.byte.embed(wrapped), errors: wrapped)
+        #expect(region.parse([1, 2, 3][...]).map(\.value) == .failure(.binary(.trailingBytes(count: 2, offset: 1))))
+    }
 }
+
+private enum Wrapped: Error, Equatable {
+    case binary(BinaryParseError)
+    case other
+}
+
+private let wrapped = Prism<Wrapped, BinaryParseError>(
+    preview: { (error: Wrapped) in
+        guard case let .binary(inner) = error else { return nil }
+        return inner
+    },
+    review: Wrapped.binary
+)

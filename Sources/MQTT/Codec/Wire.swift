@@ -9,7 +9,11 @@ enum Wire {
     static let byte: MQTTEncoder<UInt8> = .byte
     static let uint16: MQTTEncoder<UInt16> = .integer(.big)
     static let uint32: MQTTEncoder<UInt32> = .integer(.big)
-    static let variableByteInteger: MQTTEncoder<UInt32> = .variableLength(maxBytes: 4)
+    /// Lifts byte-level failures into ``MQTTEncodingError``.
+    static let errors = MQTTEncodingError.prism.binary
+
+    static let variableByteInteger: MQTTEncoder<UInt32> = ByteEncoder<UInt32, BinaryEncodeError>.variableLength(maxBytes: 4).embed(errors)
+    static let length16: MQTTEncoder<Int> = ByteEncoders.length(UInt16.self, .big).embed(errors)
     static let reasonCode: MQTTEncoder<ReasonCode> = byte.contramap(\.rawValue)
     static let packetIdentifier: MQTTEncoder<PacketIdentifier> = uint16.contramap(\.rawValue)
 
@@ -23,10 +27,10 @@ enum Wire {
     /// UTF-8 Encoded String: two-byte length, then the bytes. Rejects U+0000.
     static let string: MQTTEncoder<String> =
         require({ !$0.contains("\u{0000}") }, { .nullCharacter($0) })
-        <> ByteEncoders.prefixed(by: ByteEncoders.length(UInt16.self, .big), .utf8)
+        <> ByteEncoders.prefixed(by: length16, .utf8)
 
     /// Binary Data: two-byte length, then the bytes.
-    static let binary: MQTTEncoder<[UInt8]> = ByteEncoders.prefixed(by: ByteEncoders.length(UInt16.self, .big), .raw)
+    static let binary: MQTTEncoder<[UInt8]> = ByteEncoders.prefixed(by: length16, .raw)
 
     /// UTF-8 String Pair (User Property).
     static let stringPair: MQTTEncoder<(name: String, value: String)> =

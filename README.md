@@ -354,7 +354,7 @@ Building blocks for binary wire formats, shared by every protocol package (MQTT 
 `ByteParser<A, Failure>` is FP's `StatefulTResult` over `ArraySlice<UInt8>` — a parser monad with every FP operator — plus byte primitives (big/little-endian integers, variable-length integers, UTF-8) and combinators (`ByteParsers.isolate`, `manyUntilEnd`, `count`, `optional`, backtracking `<|>`):
 
 ```swift
-typealias P<A: Sendable> = ByteParser<A, BinaryParseError>
+typealias P<A: Sendable> = BinaryParser<A>
 
 let string: P<String> = P<UInt16>.integer(.big) >>- { P<String>.utf8(count: Int($0)) }
 string.parseAll([0x00, 0x02, 0x68, 0x69])   // .success("hi")
@@ -369,7 +369,12 @@ let point: Enc<Point> = Enc<UInt16>.integer(.big).contramap(\.x) <> Enc<UInt16>.
 point.run(Point(x: 1, y: 2))   // .success([0x00, 0x01, 0x00, 0x02])
 ```
 
-Primitives are generic over `ByteParseFailure` / `ByteEncodeFailure`, so a protocol works in its own error type — an enum with `case binary(BinaryParseError)` conforms with no extra code.
+Fallible primitives fail with `BinaryParseError` / `BinaryEncodeError`. A protocol lifts them into its own error type with `embed(_:)` through a `Prism` onto its `binary` case, and passes the same prism to the combinators that can fail on their own (`isolate`, `manyUntilEnd`, `parseAll(_:errors:)`):
+
+```swift
+let errors = MQTTDecodingError.prism.binary
+let byte: ByteParser<UInt8, MQTTDecodingError> = BinaryParser<UInt8>.byte.embed(errors)
+```
 
 ## Multipeer
 

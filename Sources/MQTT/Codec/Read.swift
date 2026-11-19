@@ -6,10 +6,13 @@ import FP
 // MARK: - Field readers
 
 enum Read {
-    static let byte: MQTTParser<UInt8> = .byte
-    static let uint16: MQTTParser<UInt16> = .integer(.big)
-    static let uint32: MQTTParser<UInt32> = .integer(.big)
-    static let variableByteInteger: MQTTParser<UInt32> = .variableLength(maxBytes: 4)
+    /// Lifts byte-level failures into ``MQTTDecodingError``.
+    static let errors = MQTTDecodingError.prism.binary
+
+    static let byte: MQTTParser<UInt8> = BinaryParser<UInt8>.byte.embed(errors)
+    static let uint16: MQTTParser<UInt16> = BinaryParser<UInt16>.integer(.big).embed(errors)
+    static let uint32: MQTTParser<UInt32> = BinaryParser<UInt32>.integer(.big).embed(errors)
+    static let variableByteInteger: MQTTParser<UInt32> = BinaryParser<UInt32>.variableLength(maxBytes: 4).embed(errors)
     static let reasonCode: MQTTParser<ReasonCode> = byte.map(ReasonCode.init(rawValue:))
 
     static let packetIdentifier: MQTTParser<PacketIdentifier> = uint16.refine { raw in
@@ -19,13 +22,15 @@ enum Read {
     /// UTF-8 Encoded String: two-byte length, then the bytes. Rejects U+0000.
     static let string: MQTTParser<String> = MQTTParser<Int>.offset >>- { offset in
         uint16 >>- { length in
-            MQTTParser<String>.utf8(count: Int(length))
+            BinaryParser<String>
+                .utf8(count: Int(length))
+                .embed(errors)
                 .ensure({ !$0.contains("\u{0000}") }, else: const(.nullCharacter(offset: offset)))
         }
     }
 
     /// Binary Data: two-byte length, then the bytes.
-    static let binary: MQTTParser<[UInt8]> = uint16 >>- { MQTTParser<[UInt8]>.bytes(count: Int($0)) }
+    static let binary: MQTTParser<[UInt8]> = uint16 >>- { BinaryParser<[UInt8]>.bytes(count: Int($0)).embed(errors) }
 
     static func topicName(_ version: ProtocolVersion) -> MQTTParser<TopicName> {
         string.refine { raw in
@@ -43,7 +48,10 @@ enum Read {
     static func properties(_ version: ProtocolVersion) -> MQTTParser<[Property]> {
         switch version {
         case .v3_1_1: .pure([])
-        case .v5: variableByteInteger >>- { ByteParsers.isolate(Int($0), ByteParsers.manyUntilEnd(property)) }
+        case .v5:
+            variableByteInteger >>- { length in
+                ByteParsers.isolate(Int(length), ByteParsers.manyUntilEnd(property, errors: errors), errors: errors)
+            }
         }
     }
 

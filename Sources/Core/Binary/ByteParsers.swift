@@ -14,30 +14,35 @@ public enum ByteParsers {
     /// - Parameters:
     ///   - count: The size of the region.
     ///   - parser: The parser for the region.
+    ///   - errors: Embeds this combinator's own byte-level failures into `E`.
     /// - Returns: A parser that consumes exactly `count` bytes.
-    public static func isolate<A: Sendable, E: ByteParseFailure>(
+    public static func isolate<A: Sendable, E: Error>(
         _ count: Int,
-        _ parser: ByteParser<A, E>
+        _ parser: ByteParser<A, E>,
+        errors: Prism<E, BinaryParseError>
     ) -> ByteParser<A, E> {
         ByteParser<A, E>(Stateful { input in
             guard count >= 0, input.count >= count else {
-                return .failure(.binary(.unexpectedEnd(needed: count, offset: input.startIndex)))
+                return .failure(errors.review(.unexpectedEnd(needed: count, offset: input.startIndex)))
             }
             let region = input.prefix(count)
             input = input.dropFirst(count)
-            return parser.parseAll(region)
+            return parser.parseAll(region, errors: errors)
         })
     }
 
     /// Runs `parser` repeatedly until the input is exhausted.
     ///
-    /// Meant for an ``isolate(_:_:)``-d region whose content is a list (e.g. a list of
+    /// Meant for an ``isolate(_:_:errors:)``-d region whose content is a list (e.g. a list of
     /// subscriptions). A parser that succeeds without consuming input fails the loop rather
     /// than spinning forever.
-    /// - Parameter parser: The element parser.
+    /// - Parameters:
+    ///   - parser: The element parser.
+    ///   - errors: Embeds this combinator's own byte-level failure into `E`.
     /// - Returns: A parser of every element, in order.
-    public static func manyUntilEnd<A: Sendable, E: ByteParseFailure>(
-        _ parser: ByteParser<A, E>
+    public static func manyUntilEnd<A: Sendable, E: Error>(
+        _ parser: ByteParser<A, E>,
+        errors: Prism<E, BinaryParseError>
     ) -> ByteParser<[A], E> {
         ByteParser<[A], E>(Stateful { input in
             var values: [A] = []
@@ -47,7 +52,7 @@ public enum ByteParsers {
                 case let .success(value) where input.startIndex > before:
                     values.append(value)
                 case .success:
-                    return .failure(.binary(.noProgress(offset: before)))
+                    return .failure(errors.review(.noProgress(offset: before)))
                 case let .failure(error):
                     return .failure(error)
                 }
@@ -61,7 +66,7 @@ public enum ByteParsers {
     ///   - count: How many elements to parse.
     ///   - parser: The element parser.
     /// - Returns: A parser of `count` elements.
-    public static func count<A: Sendable, E: ByteParseFailure>(
+    public static func count<A: Sendable, E: Error>(
         _ count: Int,
         _ parser: ByteParser<A, E>
     ) -> ByteParser<[A], E> {
@@ -73,7 +78,7 @@ public enum ByteParsers {
     /// Optionally runs `parser`, backtracking to `nil` if it fails.
     /// - Parameter parser: The parser to try.
     /// - Returns: The value, or `nil` (input untouched) when it fails.
-    public static func optional<A: Sendable, E: ByteParseFailure>(
+    public static func optional<A: Sendable, E: Error>(
         _ parser: ByteParser<A, E>
     ) -> ByteParser<A?, E> {
         parser.map(Optional.some).orElse(.pure(nil))
@@ -84,7 +89,7 @@ public enum ByteParsers {
     ///   - condition: Whether the field is present (typically a flag bit read earlier).
     ///   - parser: The field parser.
     /// - Returns: The value when present.
-    public static func when<A: Sendable, E: ByteParseFailure>(
+    public static func when<A: Sendable, E: Error>(
         _ condition: Bool,
         _ parser: ByteParser<A, E>
     ) -> ByteParser<A?, E> {
@@ -96,7 +101,7 @@ public enum ByteParsers {
 
 /// Backtracking choice: runs `lhs`, and on failure rewinds and runs `rhs`.
 /// (<|>) :: Parser a -> Parser a -> Parser a
-public func <|> <A: Sendable, E: ByteParseFailure>(
+public func <|> <A: Sendable, E: Error>(
     _ lhs: ByteParser<A, E>,
     _ rhs: ByteParser<A, E>
 ) -> ByteParser<A, E> {

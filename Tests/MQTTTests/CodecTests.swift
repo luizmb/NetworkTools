@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import Core
 import MQTT
 import Testing
 
@@ -261,5 +262,20 @@ enum CodecFailure: Error, Equatable {
 
     @Test func trailingBytesInsideRemainingLength() {
         #expect(Packet.decode([0xC0, 0x01, 0x00], for: .v5) == .failure(.binary(.trailingBytes(count: 1, offset: 2))))
+    }
+}
+
+@Suite struct ErrorPrismTests {
+    @Test func decodingPrismRoundTrips() {
+        let inner = BinaryParseError.invalidUTF8(offset: 3)
+        #expect(MQTTDecodingError.prism.binary.review(inner) == .binary(inner))
+        #expect(MQTTDecodingError.prism.binary.preview(.binary(inner)) == inner)
+        #expect(MQTTDecodingError.prism.binary.preview(.zeroPacketIdentifier) == nil)
+    }
+
+    @Test func encodingPrismRoundTrips() {
+        let inner = BinaryEncodeError.lengthTooLarge(count: 70_000, max: 65_535)
+        #expect(MQTTEncodingError.prism.binary.review(inner) == .binary(inner))
+        #expect(MQTTEncodingError.prism.binary.preview(.nullCharacter("a")) == nil)
     }
 }

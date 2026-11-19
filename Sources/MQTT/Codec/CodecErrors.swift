@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import Core
+import FP
 
 /// Why bytes could not be decoded into a ``Packet``.
-public enum MQTTDecodingError: Error, Sendable, Hashable, ByteParseFailure {
+public enum MQTTDecodingError: Error, Sendable, Hashable {
     /// A byte-level failure (truncated field, bad UTF-8, malformed variable-length integer, …).
     case binary(BinaryParseError)
     /// The packet type nibble is `0`, or `15` (AUTH) on an MQTT 3.1.1 connection.
@@ -37,7 +38,7 @@ public enum MQTTDecodingError: Error, Sendable, Hashable, ByteParseFailure {
 }
 
 /// Why a ``Packet`` could not be encoded.
-public enum MQTTEncodingError: Error, Sendable, Hashable, ByteEncodeFailure {
+public enum MQTTEncodingError: Error, Sendable, Hashable {
     /// A byte-level failure (string or packet too long for its length field).
     case binary(BinaryEncodeError)
     /// The packet uses something the target protocol version cannot express.
@@ -46,6 +47,42 @@ public enum MQTTEncodingError: Error, Sendable, Hashable, ByteEncodeFailure {
     case nullCharacter(String)
     /// A SUBSCRIBE or UNSUBSCRIBE without any topic filter.
     case emptyTopicList(PacketType)
+}
+
+public extension MQTTDecodingError {
+    /// Prisms onto the cases that wrap another error (the `@Prisms([.prisms])` shape).
+    struct Prisms: Sendable {
+        /// Focuses on ``MQTTDecodingError/binary(_:)``: byte-level parsers are lifted into
+        /// ``MQTTDecodingError`` through it.
+        public let binary: Prism<MQTTDecodingError, BinaryParseError> = CoreFP.prism(
+            preview: { (error: MQTTDecodingError) in
+                guard case let .binary(inner) = error else { return nil }
+                return inner
+            },
+            review: MQTTDecodingError.binary
+        )
+    }
+
+    /// The case prisms.
+    static var prism: Prisms { Prisms() }
+}
+
+public extension MQTTEncodingError {
+    /// Prisms onto the cases that wrap another error (the `@Prisms([.prisms])` shape).
+    struct Prisms: Sendable {
+        /// Focuses on ``MQTTEncodingError/binary(_:)``: byte-level encoders are lifted into
+        /// ``MQTTEncodingError`` through it.
+        public let binary: Prism<MQTTEncodingError, BinaryEncodeError> = CoreFP.prism(
+            preview: { (error: MQTTEncodingError) in
+                guard case let .binary(inner) = error else { return nil }
+                return inner
+            },
+            review: MQTTEncodingError.binary
+        )
+    }
+
+    /// The case prisms.
+    static var prism: Prisms { Prisms() }
 }
 
 /// Things MQTT 5 can say that MQTT 3.1.1 cannot.

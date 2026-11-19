@@ -69,7 +69,7 @@ public struct PacketStream: Sendable, Hashable {
         _ input: ByteInput,
         maximumPacketSize: Int
     ) -> Result<(packet: ByteInput, rest: ByteInput)?, PacketStreamError> {
-        let header = MQTTParser<UInt8>.byte *> Read.variableByteInteger
+        let header = Read.byte *> Read.variableByteInteger
         return switch header.parse(input) {
         case let .success((length, body)):
             frame(input, headerSize: input.count - body.count, bodySize: Int(length), maximumPacketSize: maximumPacketSize)

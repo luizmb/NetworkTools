@@ -45,30 +45,42 @@ extension Convert: Monoid where Output: Monoid {
     public static var identity: Convert { .pure(.identity) }
 }
 
+// MARK: - Changing the failure type
+
+public extension Convert {
+    /// Changes the failure type to a larger one that contains it, e.g. a protocol error with a
+    /// `case binary(BinaryEncodeError)`: every failure goes through the prism's `review`.
+    /// - Parameter prism: Focuses the larger error type on this conversion's failure type.
+    /// - Returns: The same conversion, failing in the larger error type.
+    func embed<Outer: Error>(_ prism: Prism<Outer, Failure>) -> Convert<Input, Output, Outer> {
+        mapError(prism.review)
+    }
+}
+
 // MARK: - Primitives
 
-public extension Convert where Output == [UInt8], Failure: ByteEncodeFailure, Input == UInt8 {
+public extension Convert where Output == [UInt8], Input == UInt8 {
     /// Writes a single byte.
     static var byte: ByteEncoder<UInt8, Failure> {
         Convert { .success([$0]) }
     }
 }
 
-public extension Convert where Output == [UInt8], Failure: ByteEncodeFailure, Input == [UInt8] {
+public extension Convert where Output == [UInt8], Input == [UInt8] {
     /// Writes the bytes as they are.
     static var raw: ByteEncoder<[UInt8], Failure> {
         Convert(Result.success)
     }
 }
 
-public extension Convert where Output == [UInt8], Failure: ByteEncodeFailure, Input == String {
+public extension Convert where Output == [UInt8], Input == String {
     /// Writes the string's UTF-8 bytes (no length, no terminator).
     static var utf8: ByteEncoder<String, Failure> {
         Convert { .success(Array($0.utf8)) }
     }
 }
 
-public extension Convert where Output == [UInt8], Failure: ByteEncodeFailure, Input: FixedWidthInteger & UnsignedInteger {
+public extension Convert where Output == [UInt8], Input: FixedWidthInteger & UnsignedInteger {
     /// Writes a fixed-width unsigned integer in the given byte order.
     /// - Parameter endianness: The byte order on the wire.
     /// - Returns: An encoder of the integer.
@@ -78,7 +90,9 @@ public extension Convert where Output == [UInt8], Failure: ByteEncodeFailure, In
             return .success(endianness == .big ? bigEndian : bigEndian.reversed())
         }
     }
+}
 
+public extension Convert where Output == [UInt8], Failure == BinaryEncodeError, Input: FixedWidthInteger & UnsignedInteger {
     /// Writes an unsigned LEB128-style variable-length integer (7 bits per byte, least
     /// significant group first, continuation bit on every byte but the last).
     /// - Parameter maxBytes: The most bytes the encoding may use; larger values fail with
@@ -92,7 +106,7 @@ public extension Convert where Output == [UInt8], Failure: ByteEncodeFailure, In
                 .map { UInt8($0 & 0x7F) }
             let digits = groups.isEmpty ? [UInt8.zero] : groups
             guard digits.count <= maxBytes else {
-                return .failure(.binary(.valueTooLarge(value: wide, maxBytes: maxBytes)))
+                return .failure(.valueTooLarge(value: wide, maxBytes: maxBytes))
             }
             return .success(digits.enumerated().map { index, digit in index < digits.count - 1 ? digit | 0x80 : digit })
         }
@@ -103,26 +117,19 @@ public extension Convert where Output == [UInt8], Failure: ByteEncodeFailure, In
 
 /// Byte-level encoder combinators.
 public enum ByteEncoders {
-    /// Writes fixed bytes, ignoring the input.
-    /// - Parameter bytes: The bytes to write.
-    /// - Returns: A constant encoder.
-    public static func constant<A, E: ByteEncodeFailure>(_ bytes: [UInt8]) -> ByteEncoder<A, E> {
-        .pure(bytes)
-    }
-
     /// A length writer: encodes an `Int` count as the fixed-width unsigned integer `T`, failing with
     /// ``BinaryEncodeError/lengthTooLarge(count:max:)`` when it does not fit.
     /// - Parameters:
     ///   - type: The integer type of the length field.
     ///   - endianness: Its byte order.
     /// - Returns: An encoder of lengths.
-    public static func length<T: FixedWidthInteger & UnsignedInteger, E: ByteEncodeFailure>(
+    public static func length<T: FixedWidthInteger & UnsignedInteger>(
         _: T.Type,
         _ endianness: Endianness
-    ) -> ByteEncoder<Int, E> {
-        ByteEncoder<Int, E> { count in
-            (T(exactly: count).map(Result.success) ?? .failure(.binary(.lengthTooLarge(count: count, max: UInt64(T.max)))))
-                .flatMap(ByteEncoder<T, E>.integer(endianness).run)
+    ) -> ByteEncoder<Int, BinaryEncodeError> {
+        ByteEncoder<Int, BinaryEncodeError> { count in
+            (T(exactly: count).map(Result.success) ?? .failure(.lengthTooLarge(count: count, max: UInt64(T.max))))
+                .flatMap(ByteEncoder<T, BinaryEncodeError>.integer(endianness).run)
         }
     }
 
@@ -131,7 +138,7 @@ public enum ByteEncoders {
     ///   - length: The encoder of the length field (see ``length(_:_:)``).
     ///   - body: The encoder of the content.
     /// - Returns: A length-prefixed encoder.
-    public static func prefixed<A, E: ByteEncodeFailure>(
+    public static func prefixed<A, E: Error>(
         by length: ByteEncoder<Int, E>,
         _ body: ByteEncoder<A, E>
     ) -> ByteEncoder<A, E> {
@@ -141,14 +148,14 @@ public enum ByteEncoders {
     /// Writes nothing for `nil`, and `encoder` otherwise.
     /// - Parameter encoder: The encoder of the wrapped value.
     /// - Returns: An encoder of the optional.
-    public static func optional<A, E: ByteEncodeFailure>(_ encoder: ByteEncoder<A, E>) -> ByteEncoder<A?, E> {
+    public static func optional<A, E: Error>(_ encoder: ByteEncoder<A, E>) -> ByteEncoder<A?, E> {
         Convert { value in value.map(encoder.run) ?? .success([]) }
     }
 
     /// Writes every element with `encoder`, concatenated in order.
     /// - Parameter encoder: The element encoder.
     /// - Returns: An encoder of the array.
-    public static func many<A, E: ByteEncodeFailure>(_ encoder: ByteEncoder<A, E>) -> ByteEncoder<[A], E> {
+    public static func many<A, E: Error>(_ encoder: ByteEncoder<A, E>) -> ByteEncoder<[A], E> {
         Convert { values in
             values.reduce(Result<[UInt8], E>.success([])) { acc, value in
                 acc.flatMap { bytes in encoder.run(value).map { bytes + $0 } }
@@ -165,21 +172,4 @@ public enum BinaryEncodeError: Error, Hashable, Sendable {
     case valueTooLarge(value: UInt64, maxBytes: Int)
     /// A length-prefixed region holds `count` bytes but the length field can only express `max`.
     case lengthTooLarge(count: Int, max: UInt64)
-}
-
-/// A protocol-specific failure type that can embed a ``BinaryEncodeError``.
-///
-/// An enum case `case binary(BinaryEncodeError)` satisfies the requirement on its own.
-public protocol ByteEncodeFailure: Error {
-    /// Embeds a byte-level failure.
-    /// - Parameter error: The underlying byte-level failure.
-    /// - Returns: The protocol-specific failure.
-    static func binary(_ error: BinaryEncodeError) -> Self
-}
-
-extension BinaryEncodeError: ByteEncodeFailure {
-    /// A ``BinaryEncodeError`` embeds itself.
-    /// - Parameter error: The byte-level failure.
-    /// - Returns: `error` unchanged.
-    public static func binary(_ error: BinaryEncodeError) -> BinaryEncodeError { error }
 }

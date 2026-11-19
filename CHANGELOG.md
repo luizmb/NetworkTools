@@ -11,7 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Core`: binary codec building blocks. `ByteParser` (FP's `StatefulTResult` over `ArraySlice<UInt8>`) with
   integer, variable-length integer, UTF-8, `isolate`, repetition and backtracking (`<|>`) combinators;
   `ByteEncoder` (`Convert<A, [UInt8], E>`), now a `Monoid` under `<>` thanks to a new
-  `Convert: Monoid where Output: Monoid` conformance.
+  `Convert: Monoid where Output: Monoid` conformance. Fallible primitives fail with
+  `BinaryParseError` / `BinaryEncodeError`; `embed(_:)` lifts parsers and encoders into a protocol's
+  error type through a `Prism`.
 - `MQTT`: the MQTT 3.1.1 and 5.0 packet model (all fifteen packet types, every v5 property and reason code),
   a codec for every packet in both directions, topic name/filter validation and matching, `PacketStream`
   for reassembling packets from byte chunks, and the `Transport` witness. Encoding a feature the target

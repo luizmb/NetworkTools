@@ -16,15 +16,22 @@ public typealias ByteInput = ArraySlice<UInt8>
 /// a parser monad needs on top: reading integers, isolating a length-delimited region,
 /// repetition and backtracking choice.
 ///
+/// Primitives that can fail (reading past the end, invalid UTF-8, …) fail with
+/// ``BinaryParseError``. A protocol layer with its own error type lifts them with
+/// `embed(_:)` through a `Prism` from its error to ``BinaryParseError``.
+///
 /// ```swift
-/// typealias P<A> = ByteParser<A, BinaryParseError>
+/// typealias P<A: Sendable> = BinaryParser<A>
 ///
 /// // A big-endian length-prefixed UTF-8 string, tacitly:
-/// let string: P<String> = P<UInt16>.uint16(.big) >>- { P<String>.utf8(count: Int($0)) }
+/// let string: P<String> = P<UInt16>.integer(.big) >>- { P<String>.utf8(count: Int($0)) }
 ///
 /// string.parseAll([0x00, 0x02, 0x68, 0x69])   // .success("hi")
 /// ```
 public typealias ByteParser<A, Failure: Error> = StatefulTResult<ByteInput, Failure, A>
+
+/// A ``ByteParser`` failing with the byte-level ``BinaryParseError``.
+public typealias BinaryParser<A> = ByteParser<A, BinaryParseError>
 
 /// Byte order of a fixed-width integer on the wire.
 public enum Endianness: Sendable, Equatable {
@@ -36,7 +43,7 @@ public enum Endianness: Sendable, Equatable {
 
 // MARK: - Primitives
 
-public extension StatefulTResult where S == ByteInput, E: ByteParseFailure, A: Sendable {
+public extension StatefulTResult where S == ByteInput, A: Sendable {
     /// Fails without consuming input.
     /// - Parameter error: The failure to produce.
     /// - Returns: A parser that always fails with `error`.
@@ -95,10 +102,29 @@ public extension StatefulTResult where S == ByteInput, E: ByteParseFailure, A: S
     }
 
     /// Runs the parser against `input` and requires every byte to be consumed.
+    /// - Parameters:
+    ///   - input: The bytes to parse.
+    ///   - errors: Embeds the ``BinaryParseError/trailingBytes(count:offset:)`` failure into `E`.
+    /// - Returns: The value, or a failure.
+    func parseAll(_ input: ByteInput, errors: Prism<E, BinaryParseError>) -> Result<A, E> {
+        (self <* BinaryParser<Void>.end.embed(errors)).parse(input).map(\.value)
+    }
+
+    /// Changes the failure type to a larger one that contains it, e.g. a protocol error with a
+    /// `case binary(BinaryParseError)`: every failure goes through the prism's `review`.
+    /// - Parameter prism: Focuses the larger error type on this parser's failure type.
+    /// - Returns: The same parser, failing in the larger error type.
+    func embed<Outer: Error>(_ prism: Prism<Outer, E>) -> ByteParser<A, Outer> {
+        ByteParser<A, Outer>(Stateful { input in rawValue.run(&input).mapError(prism.review) })
+    }
+}
+
+public extension StatefulTResult where S == ByteInput, E == BinaryParseError, A: Sendable {
+    /// Runs the parser against `input` and requires every byte to be consumed.
     /// - Parameter input: The bytes to parse.
     /// - Returns: The value, or a failure (including ``BinaryParseError/trailingBytes(count:offset:)``).
     func parseAll(_ input: ByteInput) -> Result<A, E> {
-        (self <* ByteParser<Void, E>.end).parse(input).map(\.value)
+        parseAll(input, errors: .id)
     }
 
     /// Runs the parser against a whole byte array and requires every byte to be consumed.
@@ -109,37 +135,39 @@ public extension StatefulTResult where S == ByteInput, E: ByteParseFailure, A: S
     }
 }
 
-public extension StatefulTResult where S == ByteInput, E: ByteParseFailure, A == UInt8 {
+public extension StatefulTResult where S == ByteInput, E == BinaryParseError, A == UInt8 {
     /// Reads one byte.
     static var byte: ByteParser<UInt8, E> {
         ByteParser<UInt8, E>(Stateful { input in
-            input.popFirst().map(Result.success) ?? .failure(.binary(.unexpectedEnd(needed: 1, offset: input.startIndex)))
+            input.popFirst().map(Result.success) ?? .failure(.unexpectedEnd(needed: 1, offset: input.startIndex))
         })
     }
 
     /// Looks at the next byte without consuming it.
     static var peek: ByteParser<UInt8, E> {
         ByteParser<UInt8, E>(Stateful { input in
-            input.first.map(Result.success) ?? .failure(.binary(.unexpectedEnd(needed: 1, offset: input.startIndex)))
+            input.first.map(Result.success) ?? .failure(.unexpectedEnd(needed: 1, offset: input.startIndex))
         })
     }
 }
 
-public extension StatefulTResult where S == ByteInput, E: ByteParseFailure, A == [UInt8] {
+public extension StatefulTResult where S == ByteInput, E == BinaryParseError, A == [UInt8] {
     /// Reads exactly `count` bytes.
     /// - Parameter count: How many bytes to read.
     /// - Returns: A parser of the bytes read.
     static func bytes(count: Int) -> ByteParser<[UInt8], E> {
         ByteParser<[UInt8], E>(Stateful { input in
             guard count >= 0, input.count >= count else {
-                return .failure(.binary(.unexpectedEnd(needed: count, offset: input.startIndex)))
+                return .failure(.unexpectedEnd(needed: count, offset: input.startIndex))
             }
             let taken = Array(input.prefix(count))
             input = input.dropFirst(count)
             return .success(taken)
         })
     }
+}
 
+public extension StatefulTResult where S == ByteInput, A == [UInt8] {
     /// Reads every remaining byte (always succeeds, possibly with an empty array).
     static var rest: ByteParser<[UInt8], E> {
         ByteParser<[UInt8], E>(Stateful { input in
@@ -150,11 +178,11 @@ public extension StatefulTResult where S == ByteInput, E: ByteParseFailure, A ==
     }
 }
 
-public extension StatefulTResult where S == ByteInput, E: ByteParseFailure, A == Void {
+public extension StatefulTResult where S == ByteInput, E == BinaryParseError, A == Void {
     /// Succeeds only when the input is exhausted.
     static var end: ByteParser<Void, E> {
         ByteParser<Void, E>(Stateful { input in
-            input.isEmpty ? .success(()) : .failure(.binary(.trailingBytes(count: input.count, offset: input.startIndex)))
+            input.isEmpty ? .success(()) : .failure(.trailingBytes(count: input.count, offset: input.startIndex))
         })
     }
 
@@ -166,14 +194,14 @@ public extension StatefulTResult where S == ByteInput, E: ByteParseFailure, A ==
     }
 }
 
-public extension StatefulTResult where S == ByteInput, E: ByteParseFailure, A == Bool {
+public extension StatefulTResult where S == ByteInput, A == Bool {
     /// `true` when there is no more input. Consumes nothing.
     static var isAtEnd: ByteParser<Bool, E> {
         ByteParser<Bool, E>(Stateful { input in .success(input.isEmpty) })
     }
 }
 
-public extension StatefulTResult where S == ByteInput, E: ByteParseFailure, A == Int {
+public extension StatefulTResult where S == ByteInput, A == Int {
     /// The absolute offset of the next unread byte. Consumes nothing.
     static var offset: ByteParser<Int, E> {
         ByteParser<Int, E>(Stateful { input in .success(input.startIndex) })
@@ -185,7 +213,7 @@ public extension StatefulTResult where S == ByteInput, E: ByteParseFailure, A ==
     }
 }
 
-public extension StatefulTResult where S == ByteInput, E: ByteParseFailure, A: FixedWidthInteger & UnsignedInteger & Sendable {
+public extension StatefulTResult where S == ByteInput, E == BinaryParseError, A: FixedWidthInteger & UnsignedInteger & Sendable {
     /// Reads a fixed-width unsigned integer in the given byte order.
     /// - Parameter endianness: The byte order on the wire.
     /// - Returns: A parser of the integer.
@@ -206,16 +234,16 @@ public extension StatefulTResult where S == ByteInput, E: ByteParseFailure, A: F
             let start = input.startIndex
             let groups = input.prefix(maxBytes)
             guard let last = groups.firstIndex(where: { $0 & 0x80 == 0 }) else {
-                return .failure(.binary(
+                return .failure(
                     groups.count < maxBytes
                         ? .unexpectedEnd(needed: groups.count + 1, offset: start)
                         : .malformedVariableLength(offset: start)
-                ))
+                )
             }
             let encoded = groups[start...last]
             let value = encoded.reversed().reduce(UInt64.zero) { ($0 << 7) | UInt64($1 & 0x7F) }
             guard let fitting = A(exactly: value) else {
-                return .failure(.binary(.malformedVariableLength(offset: start)))
+                return .failure(.malformedVariableLength(offset: start))
             }
             input = input[(last + 1)...]
             return .success(fitting)
@@ -223,7 +251,7 @@ public extension StatefulTResult where S == ByteInput, E: ByteParseFailure, A: F
     }
 }
 
-public extension StatefulTResult where S == ByteInput, E: ByteParseFailure, A == String {
+public extension StatefulTResult where S == ByteInput, E == BinaryParseError, A == String {
     /// Reads `count` bytes and decodes them as UTF-8, rejecting invalid sequences.
     /// - Parameter count: The number of bytes the string occupies.
     /// - Returns: A parser of the string.
@@ -231,7 +259,7 @@ public extension StatefulTResult where S == ByteInput, E: ByteParseFailure, A ==
         ByteParser<Int, E>.offset.flatMap { offset in
             ByteParser<[UInt8], E>.bytes(count: count).refine { bytes in
                 String(bytes: bytes, encoding: .utf8).map(Result.success)
-                    ?? .failure(.binary(.invalidUTF8(offset: offset)))
+                    ?? .failure(.invalidUTF8(offset: offset))
             }
         }
     }
