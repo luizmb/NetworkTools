@@ -28,7 +28,7 @@ public extension Transport {
             .future { () async -> Result<TransportConnection, TransportError> in
                 let (inbound, sink) = AsyncStream<Result<[UInt8], TransportError>>.makeStream()
                 let bootstrap = ClientBootstrap(group: group)
-                    .channelOption(ChannelOptions.socketOption(.tcp_nodelay), value: 1)
+                    .channelOption(ChannelOptions.tcpOption(.tcp_nodelay), value: 1)
                     .channelInitializer { channel in
                         channel.eventLoop.makeCompletedFuture {
                             try channel.pipeline.syncOperations.addHandler(InboundBytes(sink))
