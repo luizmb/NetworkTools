@@ -160,7 +160,7 @@ public enum ByteEncoders {
 // MARK: - Errors
 
 /// The protocol-agnostic ways a byte-level encode can fail.
-public enum BinaryEncodeError: Error, Equatable, Sendable {
+public enum BinaryEncodeError: Error, Hashable, Sendable {
     /// A variable-length integer needs more than `maxBytes` bytes.
     case valueTooLarge(value: UInt64, maxBytes: Int)
     /// A length-prefixed region holds `count` bytes but the length field can only express `max`.

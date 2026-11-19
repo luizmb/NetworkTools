@@ -4,7 +4,7 @@
 ///
 /// Every case carries the absolute `offset` in the original input where the problem was
 /// detected, so protocol layers can produce precise diagnostics.
-public enum BinaryParseError: Error, Equatable, Sendable {
+public enum BinaryParseError: Error, Hashable, Sendable {
     /// The input ended while `needed` more bytes were required at `offset`.
     case unexpectedEnd(needed: Int, offset: Int)
     /// A parse that had to consume all input left `count` bytes unread at `offset`.
