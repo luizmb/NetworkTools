@@ -20,7 +20,7 @@ A suite of Swift packages for HTML templating, HTTP client networking, and HTTP 
 - [Multipeer](#multipeer) — `MultipeerConnectivity` wrapper exposing advertiser/browser/session events as `Publisher`s
 - [NetworkClient](#networkclient) — composable HTTP client: one `HTTPClient` type + pure decorators for mocking, recording, and replaying
 - [NetworkServer](#networkserver) — embedded NIO-backed HTTP server with a typed functional routing DSL
-- [WebSocketClient](#websocketclient) — full-duplex WebSocket client exposing a `WebSocketConnection` with `Publisher`-based receive/send
+- [WebSocketClient](#websocketclient) — full-duplex WebSocket client exposing a `WebSocketConnection` with `Publisher`-based receive/send; `WebSocketClientNIO` opens one over swift-nio
 - [BonjourService](#bonjourservice) — Bonjour discovery and advertising exposed as `Publisher` streams
 - [MQTT](#mqtt) — MQTT 3.1.1 and 5 packet model and codec, a pure client state machine (`MQTTClient`), and one target per transport (`MQTTNWConnection`, `MQTTNIO`, `MQTTWebSocket`)
 
@@ -37,14 +37,15 @@ Android on an emulator, Windows); ❌ means the product does nothing there.
 | **HTMLTemplating** | ✅ | ✅ | ✅ | ✅ | Pure `FP` + Foundation |
 | **NetworkClient** | ✅ | ✅ | ✅ | ✅ | `URLSession` (`FoundationNetworking` off Apple) |
 | **NetworkServer** | ✅ | ✅ | ✅ | ❌ | swift-nio; `NIOPosix` has no Windows support |
-| **WebSocketClient** | ✅ | ❌ | ❌ | ❌ | Opens connections with `URLSessionWebSocketTask` (Darwin) |
+| **WebSocketClient** | ✅ | ✅ | ✅ | ❌ | `URLSessionWebSocketTask` on Apple; anywhere else through `WebSocketClientNIO` |
+| **WebSocketClientNIO** | ✅ | ✅ | ✅ | ❌ | swift-nio WebSocket (`ws://`) |
 | **Multipeer** | ✅ | ❌ | ❌ | ❌ | `MultipeerConnectivity` |
 | **BonjourService** | ✅ | ❌ | ❌ | ❌ | `Network` / `NetService` |
 | **MQTT** | ✅ | ✅ | ✅ | ✅ | Packet model, codec, topic matching — pure |
 | **MQTTClient** | ✅ | ✅ | ✅ | ❌ | Connecting needs a transport below; none runs on Windows yet |
 | **MQTTNWConnection** | ✅ | ❌ | ❌ | ❌ | `Network.framework` |
 | **MQTTNIO** | ✅ | ✅ | ✅ | ❌ | swift-nio TCP |
-| **MQTTWebSocket** | ✅ | ❌ | ❌ | ❌ | Runs on whatever `WebSocketClient` can open |
+| **MQTTWebSocket** | ✅ | ✅ | ✅ | ❌ | URLSession on Apple, `WebSocketClientNIO` everywhere it runs |
 
 Products marked ❌ still compile on that platform (their sources are `#if canImport(...)` gated), so
 a cross-platform package can depend on them without conditional dependencies.
@@ -66,6 +67,7 @@ Add individual products to your targets as needed:
 .product(name: "NetworkClient",   package: "NetworkTools"),
 .product(name: "NetworkServer",   package: "NetworkTools"),
 .product(name: "WebSocketClient", package: "NetworkTools"),
+.product(name: "WebSocketClientNIO", package: "NetworkTools"),
 .product(name: "BonjourService",  package: "NetworkTools"),
 .product(name: "MQTT",            package: "NetworkTools"),
 .product(name: "MQTTClient",      package: "NetworkTools"),
@@ -530,6 +532,22 @@ req.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 guard case let .success(conn)? = await URLSession.shared.webSocketConnection(with: req).firstResultTask().run() else { return }
 ```
 
+### SwiftNIO — `WebSocketClientNIO`
+
+On Linux and Android (and on Apple platforms, if you prefer swift-nio), `WebSocketClientNIO` opens the same `WebSocketConnection` with an HTTP/1.1 upgrade over swift-nio. Fragmented messages are reassembled, pings are answered, and every client frame is masked. The random handshake and masking keys are FP `Gen` values (`WebSocketKeys`); they run against the generator in a `WebSocketNIOWorld` that the application supplies at its boundary, together with the event loop group. Plain `ws://` only.
+
+```swift
+import NIOPosix
+import WebSocketClientNIO
+
+let world = WebSocketNIOWorld(group: MultiThreadedEventLoopGroup(numberOfThreads: 1), random: SystemRandomNumberGenerator())
+let conn: Publisher<WebSocketConnection, WebSocketNIOError> = WebSocketConnection
+    .nio(host: "192.168.1.20", port: 9001, path: "/mqtt", protocols: ["mqtt"], maximumMessageSize: 1 << 20)
+    .runReader(world)
+```
+
+It is a separate product: apps that only need Apple platforms keep the URLSession factory and never link swift-nio.
+
 ### Testability
 
 `WebSocketConnection` is a plain value built from injectable closures/publishers, so a mock is a direct construction — no protocol needed:
@@ -677,7 +695,7 @@ Nothing runs until `events` is subscribed; cancelling it closes the connection. 
 |---|---|
 | `Transport.nwConnection(host:port:parameters:queue:)` | Network.framework |
 | `Transport.nio(host:port:group:)` | SwiftNIO; the event loop group is injected |
-| `Transport.webSocket(url:session:)` / `Transport.webSocket(_:)` | MQTT over WebSocket |
+| `Transport.webSocket(url:session:)` / `Transport.webSocket(_:)` | MQTT over WebSocket — URLSession, or any `WebSocketConnection` publisher such as `WebSocketConnection.nio(…)` |
 
 `Transport` is a plain struct of effects, so tests use an in-memory one.
 

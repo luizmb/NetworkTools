@@ -9,6 +9,7 @@ builder:
         - NetworkClient
         - NetworkServer
         - WebSocketClient
+        - WebSocketClientNIO
         - BonjourService
         - MQTT
         - MQTTClient
