@@ -534,22 +534,16 @@ guard case let .success(conn)? = await URLSession.shared.webSocketConnection(wit
 
 ### SwiftNIO — `WebSocketClientNIO`
 
-On Linux and Android (and on Apple platforms, if you prefer swift-nio), `WebSocketClientNIO` opens the same `WebSocketConnection` with an HTTP/1.1 upgrade over swift-nio. Fragmented messages are reassembled, pings are answered, and every client frame is masked. The handshake and masking keys come from an injected `WebSocketRandomness` — `.system` in production, fixed values in tests. Plain `ws://` only.
+On Linux and Android (and on Apple platforms, if you prefer swift-nio), `WebSocketClientNIO` opens the same `WebSocketConnection` with an HTTP/1.1 upgrade over swift-nio. Fragmented messages are reassembled, pings are answered, and every client frame is masked. The random handshake and masking keys are FP `Gen` values (`WebSocketKeys`); they run against the generator in a `WebSocketNIOWorld` that the application supplies at its boundary, together with the event loop group. Plain `ws://` only.
 
 ```swift
 import NIOPosix
 import WebSocketClientNIO
 
-let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-let conn: Publisher<WebSocketConnection, WebSocketNIOError> = WebSocketConnection.nio(
-    host: "192.168.1.20",
-    port: 9001,
-    path: "/mqtt",
-    protocols: ["mqtt"],
-    maximumMessageSize: 1 << 20,
-    group: group,
-    randomness: .system
-)
+let world = WebSocketNIOWorld(group: MultiThreadedEventLoopGroup(numberOfThreads: 1), random: SystemRandomNumberGenerator())
+let conn: Publisher<WebSocketConnection, WebSocketNIOError> = WebSocketConnection
+    .nio(host: "192.168.1.20", port: 9001, path: "/mqtt", protocols: ["mqtt"], maximumMessageSize: 1 << 20)
+    .runReader(world)
 ```
 
 It is a separate product: apps that only need Apple platforms keep the URLSession factory and never link swift-nio.

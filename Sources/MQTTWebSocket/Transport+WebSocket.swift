@@ -16,11 +16,11 @@ public extension Transport {
     ///
     /// ```swift
     /// // SwiftNIO (Apple platforms, Linux, Android):
+    /// let world = WebSocketNIOWorld(group: group, random: SystemRandomNumberGenerator())
     /// let transport = Transport.webSocket {
-    ///     WebSocketConnection.nio(
-    ///         host: "192.168.1.20", port: 9001, path: "/mqtt", protocols: ["mqtt"],
-    ///         maximumMessageSize: 1 << 20, group: group, randomness: .system
-    ///     )
+    ///     WebSocketConnection
+    ///         .nio(host: "192.168.1.20", port: 9001, path: "/mqtt", protocols: ["mqtt"], maximumMessageSize: 1 << 20)
+    ///         .runReader(world)
     /// }
     /// ```
     /// - Parameter open: Opens the WebSocket when subscribed; its failure becomes

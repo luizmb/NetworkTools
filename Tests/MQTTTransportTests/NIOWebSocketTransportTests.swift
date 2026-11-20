@@ -74,21 +74,10 @@ private func startWebSocketServer(
         .get()
 }
 
-private let fixedRandomness = WebSocketRandomness(
-    requestKey: const("dGhlIHNhbXBsZSBub25jZQ=="),
-    maskingKey: const(WebSocketMaskingKey([0x01, 0x02, 0x03, 0x04])!) // swiftlint:disable:this force_unwrapping
-)
-
 private func open(port: Int, group: any EventLoopGroup) -> Publisher<WebSocketConnection, WebSocketNIOError> {
-    WebSocketConnection.nio(
-        host: "127.0.0.1",
-        port: port,
-        path: "/mqtt",
-        protocols: ["mqtt"],
-        maximumMessageSize: 1 << 16,
-        group: group,
-        randomness: fixedRandomness
-    )
+    WebSocketConnection
+        .nio(host: "127.0.0.1", port: port, path: "/mqtt", protocols: ["mqtt"], maximumMessageSize: 1 << 16)
+        .runReader(WebSocketNIOWorld(group: group, random: SplitMix64(seed: 42)))
 }
 
 @Suite struct NIOWebSocketTransportTests {

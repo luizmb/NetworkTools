@@ -10,32 +10,6 @@ import NIOWebSocket
 import ReactiveConcurrency
 import WebSocketClient
 
-/// The random values a WebSocket client needs, injected so connecting stays a pure description.
-///
-/// RFC 6455 requires a fresh random `Sec-WebSocket-Key` per handshake and a fresh masking key per
-/// client frame. ``system`` uses SwiftNIO's generators; tests pass fixed values.
-public struct WebSocketRandomness: Sendable {
-    /// Produces the base64 `Sec-WebSocket-Key` of a handshake.
-    public let requestKey: @Sendable () -> String
-    /// Produces the masking key of one outgoing frame.
-    public let maskingKey: @Sendable () -> WebSocketMaskingKey
-
-    /// Creates a randomness source.
-    /// - Parameters:
-    ///   - requestKey: Produces handshake keys.
-    ///   - maskingKey: Produces frame masking keys.
-    public init(requestKey: @escaping @Sendable () -> String, maskingKey: @escaping @Sendable () -> WebSocketMaskingKey) {
-        self.requestKey = requestKey
-        self.maskingKey = maskingKey
-    }
-
-    /// SwiftNIO's system random generators.
-    public static let system = WebSocketRandomness(
-        requestKey: { NIOWebSocketClientUpgrader.randomRequestKey() },
-        maskingKey: { WebSocketMaskingKey.random() }
-    )
-}
-
 /// Why a SwiftNIO WebSocket could not be opened or used.
 public enum WebSocketNIOError: Error, Sendable, Hashable {
     /// The TCP connection could not be opened.
@@ -51,17 +25,19 @@ public enum WebSocketNIOError: Error, Sendable, Hashable {
 public extension WebSocketConnection {
     /// Opens a WebSocket over SwiftNIO (Apple platforms, Linux and Android).
     ///
-    /// Each subscription performs a new HTTP/1.1 upgrade handshake on `group` and emits the open
-    /// connection once the server has switched protocols. Fragmented messages are reassembled,
-    /// pings are answered automatically, and every outgoing frame is masked as RFC 6455 requires.
-    /// Plain `ws://` only: TLS is not part of this target.
+    /// Each subscription performs a new HTTP/1.1 upgrade handshake and emits the open connection
+    /// once the server has switched protocols. Fragmented messages are reassembled, pings are
+    /// answered automatically, and every outgoing frame is masked as RFC 6455 requires. Plain
+    /// `ws://` only: TLS is not part of this target.
+    ///
+    /// The event loop group and the random generator are effects: they come from the
+    /// ``WebSocketNIOWorld`` the application supplies at its boundary.
     ///
     /// ```swift
-    /// let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-    /// let socket = WebSocketConnection.nio(
-    ///     host: "192.168.1.20", port: 9001, path: "/mqtt", protocols: ["mqtt"],
-    ///     group: group, randomness: .system
-    /// )
+    /// let world = WebSocketNIOWorld(group: group, random: SystemRandomNumberGenerator())
+    /// let socket = WebSocketConnection
+    ///     .nio(host: "192.168.1.20", port: 9001, path: "/mqtt", protocols: ["mqtt"], maximumMessageSize: 1 << 20)
+    ///     .runReader(world)
     /// ```
     /// - Parameters:
     ///   - host: The server's host name or IP address.
@@ -69,40 +45,39 @@ public extension WebSocketConnection {
     ///   - path: The request path, e.g. `/` or `/mqtt`.
     ///   - protocols: Subprotocols offered in `Sec-WebSocket-Protocol` (e.g. `["mqtt"]`).
     ///   - maximumMessageSize: The largest message accepted, in bytes.
-    ///   - group: The event loop group the channel runs on.
-    ///   - randomness: The handshake and masking key source.
-    /// - Returns: A lazy publisher of the open connection.
-    static func nio( // swiftlint:disable:this function_parameter_count
+    /// - Returns: The connection, waiting for its world.
+    static func nio(
         host: String,
         port: Int,
         path: String,
         protocols: [String],
-        maximumMessageSize: Int,
-        group: any EventLoopGroup,
-        randomness: WebSocketRandomness
-    ) -> Publisher<WebSocketConnection, WebSocketNIOError> {
-        .future { () async -> Result<WebSocketConnection, WebSocketNIOError> in
-            let (inbound, sink) = AsyncStream<Result<WebSocketMessage, WebSocketNIOError>>.makeStream()
-            let frames = FrameHandler(sink: sink, randomness: randomness)
-            let request = HTTPRequestHead(
-                version: .http1_1,
-                method: .GET,
-                uri: path,
-                headers: HTTPHeaders(
-                    [("Host", "\(host):\(port)"), ("Content-Length", "0")]
-                        + (protocols.isEmpty ? [] : [("Sec-WebSocket-Protocol", protocols.joined(separator: ", "))])
+        maximumMessageSize: Int
+    ) -> Reader<WebSocketNIOWorld, Publisher<WebSocketConnection, WebSocketNIOError>> {
+        Reader { world in
+            .future { () async -> Result<WebSocketConnection, WebSocketNIOError> in
+                let randomness = GeneratorBox(world.random)
+                let (inbound, sink) = AsyncStream<Result<WebSocketMessage, WebSocketNIOError>>.makeStream()
+                let frames = FrameHandler(sink: sink, randomness: randomness)
+                let request = HTTPRequestHead(
+                    version: .http1_1,
+                    method: .GET,
+                    uri: path,
+                    headers: HTTPHeaders(
+                        [("Host", "\(host):\(port)"), ("Content-Length", "0")]
+                            + (protocols.isEmpty ? [] : [("Sec-WebSocket-Protocol", protocols.joined(separator: ", "))])
+                    )
                 )
-            )
-            let upgrade = await handshake(
-                host: host,
-                port: port,
-                request: request,
-                frames: frames,
-                maximumMessageSize: maximumMessageSize,
-                group: group,
-                requestKey: randomness.requestKey()
-            )
-            return upgrade.map { channel in connection(channel, frames: frames, inbound: inbound, randomness: randomness) }
+                let upgrade = await handshake(
+                    host: host,
+                    port: port,
+                    request: request,
+                    frames: frames,
+                    maximumMessageSize: maximumMessageSize,
+                    group: world.group,
+                    requestKey: randomness.run(WebSocketKeys.requestKey())
+                )
+                return upgrade.map { channel in connection(channel, frames: frames, inbound: inbound, randomness: randomness) }
+            }
         }
     }
 }
@@ -168,7 +143,7 @@ private func connection(
     _ channel: any Channel,
     frames: FrameHandler,
     inbound: AsyncStream<Result<WebSocketMessage, WebSocketNIOError>>,
-    randomness: WebSocketRandomness
+    randomness: GeneratorBox
 ) -> WebSocketConnection {
     WebSocketConnection(
         receive: Publisher<WebSocketMessage, any Error> { continuation async throws(any Error) in
@@ -186,7 +161,7 @@ private func connection(
         },
         send: { message in
             .future { () async -> Result<Void, any Error> in
-                await write(frame(message, maskKey: randomness.maskingKey()), to: channel)
+                await write(frame(message, maskKey: randomness.maskingKey), to: channel)
                     .mapError { $0 as any Error }
             }
         },
@@ -197,7 +172,7 @@ private func connection(
             // No promises here: this runs from `deinit`, possibly after the event loop group shut down,
             // where a promise could never be completed.
             channel.writeAndFlush(
-                WebSocketFrame(fin: true, opcode: .connectionClose, maskKey: randomness.maskingKey(), data: ByteBuffer()),
+                WebSocketFrame(fin: true, opcode: .connectionClose, maskKey: randomness.maskingKey, data: ByteBuffer()),
                 promise: nil
             )
             channel.close(promise: nil)
@@ -233,10 +208,10 @@ private final class FrameHandler: ChannelInboundHandler, @unchecked Sendable {
     typealias OutboundOut = WebSocketFrame
 
     private let sink: AsyncStream<Result<WebSocketMessage, WebSocketNIOError>>.Continuation
-    private let randomness: WebSocketRandomness
+    private let randomness: GeneratorBox
     private var pongWaiters: [CheckedContinuation<Result<Void, WebSocketNIOError>, Never>] = []
 
-    init(sink: AsyncStream<Result<WebSocketMessage, WebSocketNIOError>>.Continuation, randomness: WebSocketRandomness) {
+    init(sink: AsyncStream<Result<WebSocketMessage, WebSocketNIOError>>.Continuation, randomness: GeneratorBox) {
         self.sink = sink
         self.randomness = randomness
     }
@@ -249,14 +224,14 @@ private final class FrameHandler: ChannelInboundHandler, @unchecked Sendable {
         case .text:
             sink.yield(.success(.text(String(buffer: frame.unmaskedData))))
         case .ping:
-            let pong = WebSocketFrame(fin: true, opcode: .pong, maskKey: randomness.maskingKey(), data: frame.unmaskedData)
+            let pong = WebSocketFrame(fin: true, opcode: .pong, maskKey: randomness.maskingKey, data: frame.unmaskedData)
             context.writeAndFlush(wrapOutboundOut(pong), promise: nil)
         case .pong:
             let waiters = pongWaiters
             pongWaiters = []
             waiters.forEach { $0.resume(returning: .success(())) }
         case .connectionClose:
-            let reply = WebSocketFrame(fin: true, opcode: .connectionClose, maskKey: randomness.maskingKey(), data: frame.unmaskedData)
+            let reply = WebSocketFrame(fin: true, opcode: .connectionClose, maskKey: randomness.maskingKey, data: frame.unmaskedData)
             let channel = context.channel
             context.writeAndFlush(wrapOutboundOut(reply)).whenComplete { _ in channel.close(promise: nil) }
         default:
@@ -282,7 +257,7 @@ private final class FrameHandler: ChannelInboundHandler, @unchecked Sendable {
         await withCheckedContinuation { continuation in
             channel.eventLoop.execute {
                 self.pongWaiters.append(continuation)
-                let ping = WebSocketFrame(fin: true, opcode: .ping, maskKey: self.randomness.maskingKey(), data: ByteBuffer())
+                let ping = WebSocketFrame(fin: true, opcode: .ping, maskKey: self.randomness.maskingKey, data: ByteBuffer())
                 channel.writeAndFlush(ping).whenFailure { error in
                     let waiters = self.pongWaiters
                     self.pongWaiters = []
