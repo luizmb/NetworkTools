@@ -41,6 +41,7 @@ jobs:
             --target NetworkServer \
             --target Multipeer \
             --target WebSocketClient \
+            --target WebSocketClientNIO \
             --target BonjourService \
             --target MQTT \
             --target MQTTClient \

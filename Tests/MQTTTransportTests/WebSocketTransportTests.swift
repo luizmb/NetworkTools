@@ -7,6 +7,8 @@ import ReactiveConcurrency
 import Testing
 import WebSocketClient
 
+private typealias Opened = Publisher<WebSocketConnection, Never>
+
 /// Records what the transport sends. Test-only shared state behind a lock.
 private final class SentFrames: @unchecked Sendable {
     private let lock = NSLock()
@@ -35,7 +37,7 @@ private func socket(receiving messages: [WebSocketMessage], recording sent: Sent
     @Test func binaryFramesBecomeBytes() async {
         let sent = SentFrames()
         let transport = Transport.webSocket {
-            .just(socket(receiving: [.data(Data([0x20, 0x02])), .data(Data([0x00, 0x00]))], recording: sent))
+            Opened.just(socket(receiving: [.data(Data([0x20, 0x02])), .data(Data([0x00, 0x00]))], recording: sent))
         }
         let chunks = await transport.connect()
             .flatMap(maxPublishers: 1, \.receive)
@@ -47,7 +49,7 @@ private func socket(receiving messages: [WebSocketMessage], recording sent: Sent
 
     @Test func textFramesAreRejected() async {
         let sent = SentFrames()
-        let transport = Transport.webSocket { .just(socket(receiving: [.text("hi")], recording: sent)) }
+        let transport = Transport.webSocket { Opened.just(socket(receiving: [.text("hi")], recording: sent)) }
         let chunks = await transport.connect()
             .flatMap(maxPublishers: 1, \.receive)
             .collect()
@@ -58,7 +60,7 @@ private func socket(receiving messages: [WebSocketMessage], recording sent: Sent
 
     @Test func bytesAreSentAsBinaryFrames() async {
         let sent = SentFrames()
-        let transport = Transport.webSocket { .just(socket(receiving: [], recording: sent)) }
+        let transport = Transport.webSocket { Opened.just(socket(receiving: [], recording: sent)) }
         _ = await transport.connect()
             .flatMap(maxPublishers: 1) { $0.send([0xC0, 0x00]) }
             .firstResultTask()

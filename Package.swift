@@ -31,6 +31,7 @@ let package = Package(
         .library(name: "NetworkClient", targets: ["NetworkClient"]),
         .library(name: "NetworkServer", targets: ["NetworkServer"]),
         .library(name: "WebSocketClient", targets: ["WebSocketClient"]),
+        .library(name: "WebSocketClientNIO", targets: ["WebSocketClientNIO"]),
         .library(name: "BonjourService", targets: ["BonjourService"]),
         .library(name: "MQTT", targets: ["MQTT"]),
         .library(name: "MQTTClient", targets: ["MQTTClient"]),
@@ -86,6 +87,18 @@ let package = Package(
             dependencies: [
                 "Core",
                 .product(name: "FP", package: "FP"),
+            ] + rc
+        ),
+        // SwiftNIO WebSocket client: a WebSocketConnection factory for every NIO platform.
+        .target(
+            name: "WebSocketClientNIO",
+            dependencies: [
+                "WebSocketClient",
+                .product(name: "FP", package: "FP"),
+                .product(name: "NIOCore", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
+                .product(name: "NIOPosix", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
+                .product(name: "NIOHTTP1", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
+                .product(name: "NIOWebSocket", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
             ] + rc
         ),
         .target(
@@ -167,9 +180,12 @@ let package = Package(
                 "MQTTNWConnection",
                 "MQTTWebSocket",
                 "WebSocketClient",
+                "WebSocketClientNIO",
                 .product(name: "FP", package: "FP"),
                 .product(name: "NIOCore", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
                 .product(name: "NIOPosix", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
+                .product(name: "NIOHTTP1", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
+                .product(name: "NIOWebSocket", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
             ] + rc
         ),
         .testTarget(

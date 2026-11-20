@@ -13,11 +13,24 @@ public extension Transport {
     ///
     /// The WebSocket itself comes from any `WebSocketClient` implementation; the server must be
     /// offered the `mqtt` subprotocol.
-    /// - Parameter open: Opens the WebSocket when subscribed.
+    ///
+    /// ```swift
+    /// // SwiftNIO (Apple platforms, Linux, Android):
+    /// let transport = Transport.webSocket {
+    ///     WebSocketConnection.nio(
+    ///         host: "192.168.1.20", port: 9001, path: "/mqtt", protocols: ["mqtt"],
+    ///         maximumMessageSize: 1 << 20, group: group, randomness: .system
+    ///     )
+    /// }
+    /// ```
+    /// - Parameter open: Opens the WebSocket when subscribed; its failure becomes
+    ///   ``TransportError/connectionFailed(_:)``.
     /// - Returns: The transport.
-    static func webSocket(_ open: @escaping @Sendable () -> Publisher<WebSocketConnection, Never>) -> Transport {
+    static func webSocket<Failure: Error>(_ open: @escaping @Sendable () -> Publisher<WebSocketConnection, Failure>) -> Transport {
         Transport {
-            open().setFailureType(to: TransportError.self).map(webSocketConnection)
+            open()
+                .mapError { TransportError.connectionFailed(String(describing: $0)) }
+                .map(webSocketConnection)
         }
     }
 
