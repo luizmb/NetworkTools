@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+// NetworkServer is built on swift-nio (NIOPosix), which does not support Windows.
+#if canImport(NIOHTTP1)
 // swiftlint:disable file_length
 import Core
 import Foundation
@@ -504,3 +506,4 @@ struct NIOServerTests {
     }
     #endif
 }
+#endif
