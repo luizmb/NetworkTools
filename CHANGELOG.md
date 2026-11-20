@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `WebSocketClientNIO`: a swift-nio `WebSocketConnection` factory (HTTP/1.1 upgrade, fragment reassembly, automatic
+  pong, masked frames, injected `WebSocketRandomness`) so WebSockets and MQTT over WebSocket work on Linux and Android.
+  `Transport.webSocket` accepts a WebSocket publisher with any failure type.
 - Android support for every swift-nio target (`NetworkServer`, `MQTTNIO`); CI now builds and tests on an Android
   emulator, and runs the test suite on Windows too.
 - `Core`: binary codec building blocks. `ByteParser` (FP's `StatefulTResult` over `ArraySlice<UInt8>`) with
