@@ -35,6 +35,7 @@ let package = Package(
         .library(name: "BonjourService", targets: ["BonjourService"]),
         .library(name: "MQTT", targets: ["MQTT"]),
         .library(name: "MQTTClient", targets: ["MQTTClient"]),
+        .library(name: "MQTTBroker", targets: ["MQTTBroker"]),
         .library(name: "MQTTNWConnection", targets: ["MQTTNWConnection"]),
         .library(name: "MQTTNIO", targets: ["MQTTNIO"]),
         .library(name: "MQTTWebSocket", targets: ["MQTTWebSocket"]),
@@ -122,6 +123,13 @@ let package = Package(
                 .product(name: "FP", package: "FP"),
             ] + rc
         ),
+        .target(
+            name: "MQTTBroker",
+            dependencies: [
+                "MQTT",
+                .product(name: "FP", package: "FP"),
+            ] + rc
+        ),
         // Network.framework transport: Apple platforms only (sources are `#if canImport(Network)`).
         .target(
             name: "MQTTNWConnection",
@@ -138,6 +146,8 @@ let package = Package(
                 .product(name: "FP", package: "FP"),
                 .product(name: "NIOCore", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
                 .product(name: "NIOPosix", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
+                .product(name: "NIOHTTP1", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
+                .product(name: "NIOWebSocket", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
             ] + rc
         ),
         .target(
@@ -164,6 +174,14 @@ let package = Package(
             ] + rc
         ),
         .testTarget(
+            name: "MQTTBrokerTests",
+            dependencies: [
+                "MQTT",
+                "MQTTBroker",
+                .product(name: "FP", package: "FP"),
+            ] + rc
+        ),
+        .testTarget(
             name: "MQTTClientTests",
             dependencies: [
                 "MQTT",
@@ -175,6 +193,7 @@ let package = Package(
             name: "MQTTTransportTests",
             dependencies: [
                 "MQTT",
+                "MQTTBroker",
                 "MQTTClient",
                 "MQTTNIO",
                 "MQTTNWConnection",

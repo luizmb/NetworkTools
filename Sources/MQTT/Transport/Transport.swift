@@ -49,6 +49,24 @@ public struct Listener: Sendable {
     public static let none = Listener { .empty() }
 }
 
+/// A listener bound to a local port: binding is an effect of its own (it can fail, and the port
+/// may be chosen by the system), so transports return this from a publisher.
+public struct BoundListener: Sendable {
+    /// The local port actually bound (useful when asking for port 0).
+    public let port: Int
+    /// Accepts connections on that port.
+    public let listener: Listener
+
+    /// Creates a bound listener.
+    /// - Parameters:
+    ///   - port: The bound port.
+    ///   - listener: Accepts connections on it.
+    public init(port: Int, listener: Listener) {
+        self.port = port
+        self.listener = listener
+    }
+}
+
 /// An open, full-duplex byte connection.
 ///
 /// Bytes arrive in arbitrary chunks — ``PacketStream`` reassembles packets from them.

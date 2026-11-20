@@ -69,7 +69,12 @@ public enum ClientMachine {
             return lose(.transport(error), &state)
         case let .accepted(id):
             return [.close(id)]
-        default:
+        case .opened,
+             .openFailed,
+             .received,
+             .closed,
+             .failed,
+             .listenerFailed:
             return []
         }
     }

@@ -37,6 +37,8 @@ public enum ConnectionInput: Sendable, Hashable {
     case failed(ConnectionID, TransportError)
     /// The clock ticked: the current monotonic time, as elapsed time since an arbitrary origin.
     case tick(Duration)
+    /// The listener failed and accepts no more connections.
+    case listenerFailed(TransportError)
 }
 
 /// What a machine asks the runtime to do.
@@ -160,7 +162,7 @@ private struct Run<State: Sendable, Input: Sendable, Event: Sendable, Failure: E
             .compactMap { numbered in
                 numbered.connection.map { Signal.attach(.accepted(numbered.number), $0, announce: .accepted(.accepted(numbered.number))) }
             }
-            .tryCatch { _ in Publisher<Signal, Never>.empty() }
+            .tryCatch { Publisher<Signal, Never>.just(.input(lift(.listenerFailed($0)))) }
         let received = DeferredStream { linkStream }.eraseToPublisher()
             .flatMap { id, connection in
                 connection.receive
