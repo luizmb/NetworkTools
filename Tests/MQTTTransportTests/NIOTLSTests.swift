@@ -12,25 +12,26 @@ import NIOSSL
 import ReactiveConcurrency
 import Testing
 
-// A throwaway self-signed certificate for `localhost`, generated for these tests only.
+// A throwaway self-signed certificate for `localhost`, generated for these tests only. Valid from 2020 to
+// 2100, so an emulator or CI machine with a skewed clock still accepts it.
 private let certificatePEM = """
 -----BEGIN CERTIFICATE-----
-MIIBdDCCARqgAwIBAgIUfElbt0B8+5YE+YbYeCHcjoyPiw8wCgYIKoZIzj0EAwIw
-FDESMBAGA1UEAwwJbG9jYWxob3N0MCAXDTI2MTEyMDEzMzUyOFoYDzIxMjYxMDI3
-MTMzNTI4WjAUMRIwEAYDVQQDDAlsb2NhbGhvc3QwWTATBgcqhkjOPQIBBggqhkjO
-PQMBBwNCAAQQvmfV+p7roD/NJG6Ga/X5lIjvdo4n+ImRsBQf2TU9bl1MxTTCDUA0
-JSrv7Gm6q0/RkD+EhRUR6illfEJzN/Dho0gwRjAdBgNVHQ4EFgQUCEXWHnsBwd3V
-CMtyEI3Sv5WhDOswDwYDVR0TAQH/BAUwAwEB/zAUBgNVHREEDTALgglsb2NhbGhv
-c3QwCgYIKoZIzj0EAwIDSAAwRQIhANEedYiP2NV5RjnbgaZD1NLaIT5FTtj2x5Ka
-d/N8fy1PAiBe32bNQT3DXIzL/Vyi2rIxooBdwYt8C7YrDPBhR2SrDA==
+MIIBdDCCARqgAwIBAgIUFkP41NDx1JcmWurL6Arq0BwBqKkwCgYIKoZIzj0EAwIw
+FDESMBAGA1UEAwwJbG9jYWxob3N0MCAXDTIwMDEwMTAwMDAwMFoYDzIxMDAwMTAx
+MDAwMDAwWjAUMRIwEAYDVQQDDAlsb2NhbGhvc3QwWTATBgcqhkjOPQIBBggqhkjO
+PQMBBwNCAASnfb2UwdP98Gn0e5D5dVPXbz3YHkXx5AM6BhgbB40GzUwMBNcb2gtZ
+aVpegkpN7P7K1I5ycYNmLJJq/8WEHVANo0gwRjAdBgNVHQ4EFgQUpwdbleEkTDZV
+ERw5/bklwVrJntUwDwYDVR0TAQH/BAUwAwEB/zAUBgNVHREEDTALgglsb2NhbGhv
+c3QwCgYIKoZIzj0EAwIDSAAwRQIgI820a0iZG8WQToIcnFlxRTeuvyqyAAM23Ktb
+NmCynScCIQCfAjaP0HYbdDEyRxZA8jsD5+FTk0fOesN2zXkzczsBDQ==
 -----END CERTIFICATE-----
 """
 
 private let privateKeyPEM = """
 -----BEGIN PRIVATE KEY-----
-MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgHXG43YVFJsh3NoJv
-AjMOHkxg8kMEygoze49PDN4reoehRANCAAQQvmfV+p7roD/NJG6Ga/X5lIjvdo4n
-+ImRsBQf2TU9bl1MxTTCDUA0JSrv7Gm6q0/RkD+EhRUR6illfEJzN/Dh
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgqJlBF3dMzbxoK+6A
+LBCqy2zt8zaz4vqO68zKRBakL2GhRANCAASnfb2UwdP98Gn0e5D5dVPXbz3YHkXx
+5AM6BhgbB40GzUwMBNcb2gtZaVpegkpN7P7K1I5ycYNmLJJq/8WEHVAN
 -----END PRIVATE KEY-----
 """
 
