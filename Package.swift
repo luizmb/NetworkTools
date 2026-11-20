@@ -36,6 +36,7 @@ let package = Package(
         .library(name: "MQTT", targets: ["MQTT"]),
         .library(name: "MQTTClient", targets: ["MQTTClient"]),
         .library(name: "MQTTBroker", targets: ["MQTTBroker"]),
+        .library(name: "MQTTBridge", targets: ["MQTTBridge"]),
         .library(name: "MQTTNWConnection", targets: ["MQTTNWConnection"]),
         .library(name: "MQTTNIO", targets: ["MQTTNIO"]),
         .library(name: "MQTTWebSocket", targets: ["MQTTWebSocket"]),
@@ -130,6 +131,14 @@ let package = Package(
                 .product(name: "FP", package: "FP"),
             ] + rc
         ),
+        .target(
+            name: "MQTTBridge",
+            dependencies: [
+                "MQTT",
+                "MQTTClient",
+                .product(name: "FP", package: "FP"),
+            ] + rc
+        ),
         // Network.framework transport: Apple platforms only (sources are `#if canImport(Network)`).
         .target(
             name: "MQTTNWConnection",
@@ -182,6 +191,15 @@ let package = Package(
             ] + rc
         ),
         .testTarget(
+            name: "MQTTBridgeTests",
+            dependencies: [
+                "MQTT",
+                "MQTTBridge",
+                "MQTTClient",
+                .product(name: "FP", package: "FP"),
+            ] + rc
+        ),
+        .testTarget(
             name: "MQTTClientTests",
             dependencies: [
                 "MQTT",
@@ -193,6 +211,7 @@ let package = Package(
             name: "MQTTTransportTests",
             dependencies: [
                 "MQTT",
+                "MQTTBridge",
                 "MQTTBroker",
                 "MQTTClient",
                 "MQTTNIO",
