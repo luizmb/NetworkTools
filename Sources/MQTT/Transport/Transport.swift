@@ -24,6 +24,31 @@ public struct Transport: Sendable {
     }
 }
 
+public extension Transport {
+    /// A transport that never connects, for runs that only accept connections (a broker).
+    static let unavailable = Transport { .fail(.connectionFailed("this runtime does not open connections")) }
+}
+
+/// A source of incoming byte connections: the server-side counterpart of ``Transport``,
+/// implemented by the transport targets (e.g. a TCP listener).
+///
+/// Subscribing to ``accept`` starts listening and emits every accepted connection; cancelling
+/// the subscription stops listening. Accepted connections follow the same contract as
+/// ``TransportConnection``.
+public struct Listener: Sendable {
+    /// Starts listening and emits accepted connections.
+    public let accept: @Sendable () -> Publisher<TransportConnection, TransportError>
+
+    /// Creates a listener from its accept effect.
+    /// - Parameter accept: Starts listening when subscribed.
+    public init(accept: @escaping @Sendable () -> Publisher<TransportConnection, TransportError>) {
+        self.accept = accept
+    }
+
+    /// A listener that never accepts anything, for runs that only open connections (a client).
+    public static let none = Listener { .empty() }
+}
+
 /// An open, full-duplex byte connection.
 ///
 /// Bytes arrive in arbitrary chunks — ``PacketStream`` reassembles packets from them.
