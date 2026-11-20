@@ -35,6 +35,8 @@ public enum MQTTDecodingError: Error, Sendable, Hashable {
     case invalidSubscriptionOptions(UInt8)
     /// A SUBSCRIBE or UNSUBSCRIBE without any topic filter.
     case emptyTopicList(PacketType)
+    /// A property list that breaks the MQTT 5 rules for its packet.
+    case invalidProperty(PropertyViolation)
 }
 
 /// Why a ``Packet`` could not be encoded.
@@ -47,6 +49,8 @@ public enum MQTTEncodingError: Error, Sendable, Hashable {
     case nullCharacter(String)
     /// A SUBSCRIBE or UNSUBSCRIBE without any topic filter.
     case emptyTopicList(PacketType)
+    /// A property list that breaks the MQTT 5 rules for its packet.
+    case invalidProperty(PropertyViolation)
 }
 
 public extension MQTTDecodingError {

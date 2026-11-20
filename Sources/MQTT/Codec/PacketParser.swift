@@ -57,8 +57,9 @@ enum Parsers {
         case .unsubAck: unsubAck(version).map(Packet.unsubAck)
         case .pingReq: MQTTParser<Packet>.pure(.pingReq)
         case .pingResp: MQTTParser<Packet>.pure(.pingResp)
-        case .disconnect: reasonAndProperties(version, default: .normalDisconnection).map(Disconnect.init).map(Packet.disconnect)
-        case .auth: reasonAndProperties(version, default: .success).map(Auth.init).map(Packet.auth)
+        case .disconnect:
+            reasonAndProperties(version, default: .normalDisconnection, in: .disconnect).map(Disconnect.init).map(Packet.disconnect)
+        case .auth: reasonAndProperties(version, default: .success, in: .auth).map(Auth.init).map(Packet.auth)
         }
     }
 
@@ -78,7 +79,7 @@ enum Parsers {
 
     private static func connectRest(version: ProtocolVersion, flags: ConnectFlags) -> MQTTParser<Connect> {
         Read.uint16 >>- { keepAlive in
-            Read.properties(version) >>- { properties in
+            Read.properties(version, in: .connect) >>- { properties in
                 Read.string >>- { clientIdentifier in
                     ByteParsers.when(flags.will != nil, will(version, flags: flags)) >>- { will in
                         ByteParsers.when(flags.userName, Read.string) >>- { userName in
@@ -102,7 +103,7 @@ enum Parsers {
     }
 
     private static func will(_ version: ProtocolVersion, flags: ConnectFlags) -> MQTTParser<Will> {
-        Read.properties(version) >>- { properties in
+        Read.properties(version, in: .will) >>- { properties in
             MQTTParser<Will>.liftA2 { topic, payload in
                 Will(
                     topic: topic,
@@ -130,7 +131,7 @@ enum Parsers {
         return flags >>- { ackFlags in
             MQTTParser<ConnAck>.liftA2 { reasonCode, properties in
                 ConnAck(sessionPresent: ackFlags & 1 == 1, reasonCode: reasonCode, properties: properties)
-            }(reason, Read.properties(version))
+            }(reason, Read.properties(version, in: .connAck))
         }
     }
 
@@ -156,7 +157,7 @@ enum Parsers {
                         duplicate: duplicate,
                         properties: properties
                     )
-                }(Read.properties(version), MQTTParser<[UInt8]>.rest)
+                }(Read.properties(version, in: .publish), MQTTParser<[UInt8]>.rest)
             }
         }
     }
@@ -174,14 +175,15 @@ enum Parsers {
     static func acknowledgement(_ version: ProtocolVersion) -> MQTTParser<Acknowledgement> {
         MQTTParser<Acknowledgement>.liftA2 { identifier, tail in
             Acknowledgement(packetIdentifier: identifier, reasonCode: tail.reason, properties: tail.properties)
-        }(Read.packetIdentifier, reasonAndProperties(version, default: .success))
+        }(Read.packetIdentifier, reasonAndProperties(version, default: .success, in: .acknowledgement))
     }
 
     /// The optional reason code + properties tail: absent means the default reason, a lone byte
     /// means a reason without properties. MQTT 3.1.1 has neither.
     static func reasonAndProperties(
         _ version: ProtocolVersion,
-        default defaultReason: ReasonCode
+        default defaultReason: ReasonCode,
+        in context: PropertyContext
     ) -> MQTTParser<(reason: ReasonCode, properties: [Property])> {
         switch version {
         case .v3_1_1:
@@ -194,7 +196,7 @@ enum Parsers {
                         MQTTParser<Bool>.isAtEnd >>- { noProperties in
                             noProperties
                                 ? .pure((reason: reason, properties: []))
-                                : Read.properties(version).map { (reason: reason, properties: $0) }
+                                : Read.properties(version, in: context).map { (reason: reason, properties: $0) }
                         }
                     }
             }
@@ -208,7 +210,7 @@ enum Parsers {
             MQTTParser<Subscribe>.liftA2 { properties, subscriptions in
                 Subscribe(packetIdentifier: identifier, subscriptions: subscriptions, properties: properties)
             }(
-                Read.properties(version),
+                Read.properties(version, in: .subscribe),
                 ByteParsers.manyUntilEnd(subscription(version), errors: Read.errors)
                     .ensure({ !$0.isEmpty }, else: const(.emptyTopicList(.subscribe)))
             )
@@ -226,7 +228,7 @@ enum Parsers {
         Read.packetIdentifier >>- { identifier in
             MQTTParser<SubAck>.liftA2 { properties, codes in
                 SubAck(packetIdentifier: identifier, reasonCodes: codes, properties: properties)
-            }(Read.properties(version), ByteParsers.manyUntilEnd(Read.reasonCode, errors: Read.errors))
+            }(Read.properties(version, in: .subAck), ByteParsers.manyUntilEnd(Read.reasonCode, errors: Read.errors))
         }
     }
 
@@ -235,7 +237,7 @@ enum Parsers {
             MQTTParser<Unsubscribe>.liftA2 { properties, filters in
                 Unsubscribe(packetIdentifier: identifier, filters: filters, properties: properties)
             }(
-                Read.properties(version),
+                Read.properties(version, in: .unsubscribe),
                 ByteParsers.manyUntilEnd(Read.topicFilter, errors: Read.errors)
                     .ensure({ !$0.isEmpty }, else: const(.emptyTopicList(.unsubscribe)))
             )
@@ -246,7 +248,10 @@ enum Parsers {
         Read.packetIdentifier >>- { identifier in
             MQTTParser<UnsubAck>.liftA2 { properties, codes in
                 UnsubAck(packetIdentifier: identifier, reasonCodes: codes, properties: properties)
-            }(Read.properties(version), version == .v5 ? ByteParsers.manyUntilEnd(Read.reasonCode, errors: Read.errors) : .pure([]))
+            }(
+                Read.properties(version, in: .unsubAck),
+                version == .v5 ? ByteParsers.manyUntilEnd(Read.reasonCode, errors: Read.errors) : .pure([])
+            )
         }
     }
 }

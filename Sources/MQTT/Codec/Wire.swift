@@ -43,10 +43,13 @@ enum Wire {
 
     /// The property list: Variable Byte Integer length, then the properties. MQTT 3.1.1 writes
     /// nothing and rejects a non-empty list.
-    static func properties(_ version: ProtocolVersion) -> MQTTEncoder<[Property]> {
+    static func properties(_ version: ProtocolVersion, in context: PropertyContext) -> MQTTEncoder<[Property]> {
         switch version {
-        case .v3_1_1: require(\.isEmpty, .unsupported(.properties, in: version))
-        case .v5: ByteEncoders.prefixed(by: variableLength, ByteEncoders.many(property))
+        case .v3_1_1:
+            require(\.isEmpty, .unsupported(.properties, in: version))
+        case .v5:
+            Convert { PropertyRules.validate($0, in: context).mapError(MQTTEncodingError.invalidProperty) }
+                .flatMap { valid in ByteEncoders.prefixed(by: variableLength, ByteEncoders.many(property)).contramap(const(valid)) }
         }
     }
 
@@ -98,7 +101,8 @@ enum Wire {
     /// properties and writes nothing.
     static func reasonAndProperties(
         _ version: ProtocolVersion,
-        default defaultReason: ReasonCode
+        default defaultReason: ReasonCode,
+        in context: PropertyContext
     ) -> MQTTEncoder<(reason: ReasonCode, properties: [Property])> {
         switch version {
         case .v3_1_1:
@@ -111,7 +115,7 @@ enum Wire {
             Convert { tail in
                 tail.properties.isEmpty
                     ? (tail.reason == defaultReason ? .success([]) : reasonCode.run(tail.reason))
-                    : (reasonCode.contramap(\.reason) <> properties(version).contramap(\.properties)).run(tail)
+                    : (reasonCode.contramap(\.reason) <> properties(version, in: context).contramap(\.properties)).run(tail)
             }
         }
     }

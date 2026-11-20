@@ -58,7 +58,7 @@ enum Encoders {
             <> Wire.byte.contramap(const(version.rawValue))
             <> Wire.byte.contramap(connectFlags)
             <> Wire.uint16.contramap(\.keepAlive)
-            <> Wire.properties(version).contramap(\.properties)
+            <> Wire.properties(version, in: .connect).contramap(\.properties)
             <> Wire.string.contramap(\.clientIdentifier)
             <> ByteEncoders.optional(will(version)).contramap(\.will)
             <> ByteEncoders.optional(Wire.string).contramap(\.userName)
@@ -67,7 +67,7 @@ enum Encoders {
     }
 
     static func will(_ version: ProtocolVersion) -> MQTTEncoder<Will> {
-        Wire.properties(version).contramap(\.properties)
+        Wire.properties(version, in: .will).contramap(\.properties)
             <> Wire.topicName(version).contramap(\.topic)
             <> Wire.binary.contramap(\.payload)
     }
@@ -86,7 +86,7 @@ enum Encoders {
             .connAck,
             Wire.byte.contramap { $0.sessionPresent ? 1 : 0 }
                 <> code.contramap(\.reasonCode)
-                <> Wire.properties(version).contramap(\.properties)
+                <> Wire.properties(version, in: .connAck).contramap(\.properties)
         )
     }
 
@@ -96,7 +96,7 @@ enum Encoders {
             flags: { ($0.duplicate ? 0b1000 : 0) | $0.delivery.qos.rawValue << 1 | ($0.retain ? 1 : 0) },
             Wire.topicName(version).contramap(\.topic)
                 <> ByteEncoders.optional(Wire.packetIdentifier).contramap(\.delivery.packetIdentifier)
-                <> Wire.properties(version).contramap(\.properties)
+                <> Wire.properties(version, in: .publish).contramap(\.properties)
                 <> MQTTEncoder<[UInt8]>.raw.contramap(\.payload)
         )
     }
@@ -105,7 +105,7 @@ enum Encoders {
         Wire.framed(
             type,
             Wire.packetIdentifier.contramap(\.packetIdentifier)
-                <> Wire.reasonAndProperties(version, default: .success)
+                <> Wire.reasonAndProperties(version, default: .success, in: .acknowledgement)
                 .contramap { (reason: $0.reasonCode, properties: $0.properties) }
         )
     }
@@ -115,7 +115,7 @@ enum Encoders {
             .subscribe,
             Wire.require({ !$0.subscriptions.isEmpty }, .emptyTopicList(.subscribe))
                 <> Wire.packetIdentifier.contramap(\.packetIdentifier)
-                <> Wire.properties(version).contramap(\.properties)
+                <> Wire.properties(version, in: .subscribe).contramap(\.properties)
                 <> ByteEncoders.many(subscription(version)).contramap(\.subscriptions)
         )
     }
@@ -134,7 +134,7 @@ enum Encoders {
         return Wire.framed(
             .subAck,
             Wire.packetIdentifier.contramap(\.packetIdentifier)
-                <> Wire.properties(version).contramap(\.properties)
+                <> Wire.properties(version, in: .subAck).contramap(\.properties)
                 <> ByteEncoders.many(code).contramap(\.reasonCodes)
         )
     }
@@ -144,7 +144,7 @@ enum Encoders {
             .unsubscribe,
             Wire.require({ !$0.filters.isEmpty }, .emptyTopicList(.unsubscribe))
                 <> Wire.packetIdentifier.contramap(\.packetIdentifier)
-                <> Wire.properties(version).contramap(\.properties)
+                <> Wire.properties(version, in: .unsubscribe).contramap(\.properties)
                 <> ByteEncoders.many(Wire.string.contramap(\TopicFilter.rawValue)).contramap(\.filters)
         )
     }
@@ -162,7 +162,7 @@ enum Encoders {
         return Wire.framed(
             .unsubAck,
             Wire.packetIdentifier.contramap(\.packetIdentifier)
-                <> Wire.properties(version).contramap(\.properties)
+                <> Wire.properties(version, in: .unsubAck).contramap(\.properties)
                 <> codes.contramap(\.reasonCodes)
         )
     }
@@ -170,7 +170,7 @@ enum Encoders {
     static func disconnect(_ version: ProtocolVersion) -> MQTTEncoder<Disconnect> {
         Wire.framed(
             .disconnect,
-            Wire.reasonAndProperties(version, default: .normalDisconnection)
+            Wire.reasonAndProperties(version, default: .normalDisconnection, in: .disconnect)
                 .contramap { (reason: $0.reasonCode, properties: $0.properties) }
         )
     }
@@ -179,7 +179,7 @@ enum Encoders {
         Wire.require(const(version == .v5), .unsupported(.authPacket, in: version))
             <> Wire.framed(
                 .auth,
-                Wire.reasonAndProperties(version, default: .success)
+                Wire.reasonAndProperties(version, default: .success, in: .auth)
                     .contramap { (reason: $0.reasonCode, properties: $0.properties) }
             )
     }
