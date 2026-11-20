@@ -45,6 +45,9 @@ public enum ConnectionInput: Sendable, Hashable {
 public enum RuntimeCommand<Event: Sendable, Failure: Error>: Sendable {
     /// Open a new outgoing connection with this identifier.
     case open(ConnectionID)
+    /// Open a new outgoing connection to the server an MQTT 5 Server Reference names, through the
+    /// world's `RuntimeWorld/redirect` (the connection fails when the world has no transport for it).
+    case redirect(ConnectionID, to: String)
     /// Encode `packet` for `version` and write it to a connection.
     case send(ConnectionID, Packet, ProtocolVersion)
     /// Close a connection.
@@ -210,7 +213,10 @@ private struct Run<State: Sendable, Input: Sendable, Event: Sendable, Failure: E
     private func effect(_ command: Command, connections: [ConnectionID: TransportConnection]) -> Publisher<Performed, Failure> {
         switch command {
         case let .open(id):
-            open(id)
+            open(id, through: world.transport)
+        case let .redirect(id, reference):
+            world.redirect(reference).map { open(id, through: $0) }
+                ?? open(id, through: Transport { .fail(.connectionFailed("no transport for server reference \(reference)")) })
         case let .send(id, packet, version):
             send(packet, version: version, on: id, connections: connections)
         case let .close(id):
@@ -224,10 +230,10 @@ private struct Run<State: Sendable, Input: Sendable, Event: Sendable, Failure: E
         }
     }
 
-    private func open(_ id: ConnectionID) -> Publisher<Performed, Failure> {
+    private func open(_ id: ConnectionID, through transport: Transport) -> Publisher<Performed, Failure> {
         let feedback = feedback
         let lift = lift
-        return world.transport.connect()
+        return transport.connect()
             .map { Signal.attach(id, $0, announce: .opened(id)) }
             .tryCatch { Publisher<Signal, Never>.just(.input(lift(.openFailed(id, $0)))) }
             .map { signal in

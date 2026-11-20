@@ -197,4 +197,25 @@ private func world(_ transport: Transport) -> ClientWorld {
         #expect(received.filter { $0 == .connected(accepted) }.count == 2)
         #expect(received.last.map { if case .subscribed = $0 { true } else { false } } == true)
     }
+
+    @Test func followsARedirectThroughTheWorld() async {
+        let moved = ConnAck(sessionPresent: false, reasonCode: .serverMoved, properties: [.serverReference("elsewhere")])
+        let original = FakeBroker { packet in packet.type == .connect ? [.connAck(moved)] : [] }
+        let elsewhere = FakeBroker(reply: printerLikeBroker)
+        let world = ClientWorld(
+            transport: original.transport,
+            clock: const(.empty()),
+            redirect: { reference in reference == "elsewhere" ? elsewhere.transport : nil }
+        )
+        let result = await MQTTClient.session(options(), requests: [ClientRequest.disconnect(.normal)].publisher)
+            .runReader(world)
+            .collect()
+            .firstResultTask()
+            .run()
+        #expect(result == .success([
+            .redirected(to: "elsewhere", permanent: true),
+            .connected(ConnAck(sessionPresent: false, reasonCode: .success, properties: [])),
+            .disconnected(.normal, byServer: false),
+        ]))
+    }
 }

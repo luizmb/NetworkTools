@@ -158,6 +158,8 @@ public enum ClientEvent: Sendable, Hashable {
     case authenticationChallenge(Auth)
     /// The connection was lost; the client reconnects after the given delay.
     case connectionLost(ClientError, retryingIn: Duration)
+    /// The server redirected the client (MQTT 5 Server Reference); it reconnects there now.
+    case redirected(to: String, permanent: Bool)
     /// The server sent DISCONNECT, or the application asked to disconnect.
     case disconnected(Disconnect, byServer: Bool)
 }

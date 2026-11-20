@@ -56,6 +56,9 @@ extension ClientMachine {
     private static func disconnected(_ disconnect: Disconnect, _ state: inout ClientState) -> [ClientCommand] {
         let event = ClientCommand.emit(.disconnected(disconnect, byServer: true))
         let error = ClientError.disconnectedByServer(disconnect)
+        if let redirect = redirection(disconnect.reasonCode, disconnect.properties) {
+            return [event] + follow(redirect, otherwise: error, &state)
+        }
         let retry = isRetryable(error) && state.options.reconnect.delay(beforeAttempt: state.failedAttempts + 1) != nil
         return [event] + (retry ? lose(error, &state) : end(&state, (state.connection.map { [.close($0)] } ?? []) + [.finish]))
     }
@@ -64,12 +67,15 @@ extension ClientMachine {
 
     private static func accepted(_ ack: ConnAck, _ state: inout ClientState) -> [ClientCommand] {
         guard !ack.reasonCode.isFailure else {
-            return lose(.connectionRefused(ack), &state)
+            return redirection(ack.reasonCode, ack.properties)
+                .map { follow($0, otherwise: .connectionRefused(ack), &state) }
+                ?? lose(.connectionRefused(ack), &state)
         }
         guard case let .awaitingConnAck(id, _) = state.phase else { return [] }
         let resumed = state.hasConnected || !state.options.cleanStart
         state.phase = .connected(id)
         state.failedAttempts = 0
+        state.redirectsFollowed = 0
         state.link.server = state.options.version == .v5 ? ServerLimits.from(ack.properties) : .defaults
         state.link.pingSentAt = nil
         state.clientIdentifier = state.link.server.assignedClientIdentifier ?? state.clientIdentifier
