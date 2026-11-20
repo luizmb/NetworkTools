@@ -194,8 +194,13 @@ private func connection(
             await frames.ping(on: channel).mapError { $0 as any Error }
         },
         cancel: {
-            channel.writeAndFlush(WebSocketFrame(fin: true, opcode: .connectionClose, maskKey: randomness.maskingKey(), data: ByteBuffer()))
-                .whenComplete { _ in channel.close(promise: nil) }
+            // No promises here: this runs from `deinit`, possibly after the event loop group shut down,
+            // where a promise could never be completed.
+            channel.writeAndFlush(
+                WebSocketFrame(fin: true, opcode: .connectionClose, maskKey: randomness.maskingKey(), data: ByteBuffer()),
+                promise: nil
+            )
+            channel.close(promise: nil)
         }
     )
 }
