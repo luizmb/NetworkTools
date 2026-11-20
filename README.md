@@ -733,7 +733,7 @@ let bridge = MQTTBridge.run(rules: [rule], local: localOptions, remote: remoteOp
 |---|---|---|
 | Network.framework | `Transport.nwConnection(host:port:parameters:queue:)` | `Listener.nwListener(port:parameters:queue:)` |
 | SwiftNIO TCP | `Transport.nio(host:port:group:)` | `Listener.nio(host:port:group:)` |
-| WebSocket | `Transport.webSocket(url:session:)`, `Transport.webSocket { WebSocketConnection.nio(…) }` | `Listener.nioWebSocket(host:port:path:maximumMessageSize:group:)` |
+| WebSocket | `Transport.webSocket(url:session:)`, `Transport.webSocket { WebSocketConnection.nio(…).runReader(world) }` | `Listener.nioWebSocket(host:port:path:maximumMessageSize:group:)` |
 
 `Transport` and `Listener` are plain structs of effects, so tests use in-memory ones.
 

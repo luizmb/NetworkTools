@@ -81,16 +81,11 @@ private func roundTrip(bound: BoundListener, transport: Transport) async -> Stri
                 .run()?
                 .get()
         )
+        let world = WebSocketNIOWorld(group: group, random: SplitMix64(seed: 7))
         let transport = Transport.webSocket {
-            WebSocketConnection.nio(
-                host: "127.0.0.1",
-                port: bound.port,
-                path: "/mqtt",
-                protocols: ["mqtt"],
-                maximumMessageSize: 1 << 16,
-                group: group,
-                randomness: .system
-            )
+            WebSocketConnection
+                .nio(host: "127.0.0.1", port: bound.port, path: "/mqtt", protocols: ["mqtt"], maximumMessageSize: 1 << 16)
+                .runReader(world)
         }
         #expect(await roundTrip(bound: bound, transport: transport) == "hi")
         try await group.shutdownGracefully()
