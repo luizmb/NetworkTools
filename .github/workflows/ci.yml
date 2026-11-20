@@ -112,7 +112,9 @@ jobs:
   # supports Android, so every NIO-backed target (NetworkServer, MQTTNIO, …) is exercised here.
   test-android:
     name: Build & Test (Android)
-    runs-on: ubuntu-latest
+    # Pinned: the action downloads a host Swift toolchain per Ubuntu release, and swift.org ships
+    # none for ubuntu-latest (26.04) yet.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - name: Build & Test on Android
