@@ -9,6 +9,10 @@ extension ClientMachine {
     /// Handles a request: performed now when connected and nothing is waiting ahead of it,
     /// queued otherwise (DISCONNECT always goes straight through).
     static func perform(_ request: ClientRequest, _ state: inout ClientState) -> [ClientCommand] {
+        // Extended authentication happens before CONNACK: AUTH replies cannot wait for it.
+        if case .authenticate = request, case .awaitingConnAck = state.phase {
+            return performNow(request, &state)
+        }
         guard case .connected = state.phase else {
             state.queued.append(request)
             return []

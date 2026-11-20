@@ -180,4 +180,14 @@ import Testing
         let (_, closed) = run([request(.disconnect(.normal))], from: connected())
         #expect(run([tick(1_000), .connection(.closed(c1)), rx(.pingResp)], from: closed).0.isEmpty)
     }
+
+    @Test func authenticationRepliesAreNotQueuedBeforeConnAck() {
+        let challenge = Auth(reasonCode: .continueAuthentication, properties: [.authenticationMethod("TOY")])
+        let reply = Auth(reasonCode: .continueAuthentication, properties: [.authenticationMethod("TOY"), .authenticationData([1])])
+        let (commands, _) = run(
+            [.start, .connection(.opened(c1)), rx(.auth(challenge)), request(.authenticate(reply))],
+            from: .initial(options())
+        )
+        #expect(commands.suffix(2) == [.emit(.authenticationChallenge(challenge)), .send(c1, .auth(reply), .v5)])
+    }
 }
