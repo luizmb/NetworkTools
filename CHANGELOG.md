@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Android support for every swift-nio target (`NetworkServer`, `MQTTNIO`); CI now builds and tests on an Android
+  emulator, and runs the test suite on Windows too.
 - `Core`: binary codec building blocks. `ByteParser` (FP's `StatefulTResult` over `ArraySlice<UInt8>`) with
   integer, variable-length integer, UTF-8, `isolate`, repetition and backtracking (`<|>`) combinators;
   `ByteEncoder` (`Convert<A, [UInt8], E>`), now a `Monoid` under `<>` thanks to a new

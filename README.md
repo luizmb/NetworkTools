@@ -28,26 +28,26 @@ A suite of Swift packages for HTML templating, HTTP client networking, and HTTP 
 
 ## Platform Support
 
-Not every product is available on every platform. `Core` and `HTMLTemplating` are pure
-Swift + `FP` and run everywhere; the others depend on platform-specific technologies.
+What **works** on each platform. Every ✅ is built and tested in CI on that platform (macOS, Linux,
+Android on an emulator, Windows); ❌ means the product does nothing there.
 
-| Product | Apple (macOS/iOS/tvOS/watchOS/visionOS) | Linux | Windows | Android | Notes |
+| Product | Apple | Linux | Android | Windows | Notes |
 |---|:---:|:---:|:---:|:---:|---|
 | **Core** | ✅ | ✅ | ✅ | ✅ | Pure `FP` + Foundation |
 | **HTMLTemplating** | ✅ | ✅ | ✅ | ✅ | Pure `FP` + Foundation |
-| **NetworkClient** | ✅ | ✅ | ⚠️ | ⚠️ | `URLSession` / `FoundationNetworking` where available |
-| **WebSocketClient** | ✅ | ⚠️ | ⚠️ | ⚠️ | Connection factory needs `URLSessionWebSocketTask` (`canImport(Darwin)`) |
-| **NetworkServer** | ✅ | ✅ | ❌ | ⚠️ | swift-nio `NIOPosix` (Posix-only; gated out of Windows in `Package.swift`) |
-| **Multipeer** | ✅ | ❌ | ❌ | ❌ | `MultipeerConnectivity` — Apple frameworks only |
-| **BonjourService** | ✅ | ❌ | ❌ | ❌ | `MultipeerConnectivity` / `Network` — Apple frameworks only |
-| **MQTT** / **MQTTClient** | ✅ | ✅ | ✅ | ✅ | Pure `FP` + ReactiveConcurrency; no transport inside |
-| **MQTTNWConnection** | ✅ | ❌ | ❌ | ❌ | `Network.framework` — Apple frameworks only |
-| **MQTTNIO** | ✅ | ✅ | ❌ | ⚠️ | swift-nio `NIOPosix`, same gating as NetworkServer |
-| **MQTTWebSocket** | ✅ | ⚠️ | ⚠️ | ⚠️ | Any `WebSocketClient` connection; the `URLSession` factory is Darwin-only |
+| **NetworkClient** | ✅ | ✅ | ✅ | ✅ | `URLSession` (`FoundationNetworking` off Apple) |
+| **NetworkServer** | ✅ | ✅ | ✅ | ❌ | swift-nio; `NIOPosix` has no Windows support |
+| **WebSocketClient** | ✅ | ❌ | ❌ | ❌ | Opens connections with `URLSessionWebSocketTask` (Darwin) |
+| **Multipeer** | ✅ | ❌ | ❌ | ❌ | `MultipeerConnectivity` |
+| **BonjourService** | ✅ | ❌ | ❌ | ❌ | `Network` / `NetService` |
+| **MQTT** | ✅ | ✅ | ✅ | ✅ | Packet model, codec, topic matching — pure |
+| **MQTTClient** | ✅ | ✅ | ✅ | ❌ | Connecting needs a transport below; none runs on Windows yet |
+| **MQTTNWConnection** | ✅ | ❌ | ❌ | ❌ | `Network.framework` |
+| **MQTTNIO** | ✅ | ✅ | ✅ | ❌ | swift-nio TCP |
+| **MQTTWebSocket** | ✅ | ❌ | ❌ | ❌ | Runs on whatever `WebSocketClient` can open |
 
-On non-Apple platforms the Apple-only modules compile to empty (`#if canImport(...)` gated), so
-depending on them is safe — they simply expose no API there. CI builds macOS, Linux, and Windows;
-Android is expected to behave like Linux for the portable products but is not yet exercised in CI.
+Products marked ❌ still compile on that platform (their sources are `#if canImport(...)` gated), so
+a cross-platform package can depend on them without conditional dependencies.
 
 ---
 
@@ -622,7 +622,7 @@ MQTT 3.1.1 and 5.0, split by responsibility:
 | `MQTT` | Role-neutral core: every packet type, every v5 property and reason code, a codec in both directions, topic matching, `PacketStream`, and the `Transport` witness. Pure — no sockets, no clocks. |
 | `MQTTClient` | The client protocol as a pure state machine, plus the session interpreter. |
 | `MQTTNWConnection` | `Transport` over Network.framework (Apple only). |
-| `MQTTNIO` | `Transport` over SwiftNIO TCP (Apple + Linux). |
+| `MQTTNIO` | `Transport` over SwiftNIO TCP (Apple, Linux, Android). |
 | `MQTTWebSocket` | `Transport` over `WebSocketClient` (binary frames, `mqtt` subprotocol). |
 
 A broker (`MQTTBroker`) and a bridge (`MQTTBridge`) will sit next to `MQTTClient`, on the same core.
