@@ -41,7 +41,6 @@ private func options(_ name: String) -> ClientOptions {
                 .runReader(BrokerWorld(listener: bound.listener, clock: bridgeTicks))
                 .sink(receiveCompletion: { _ in }, receiveValue: { _ in })
         }
-        defer { brokers.forEach { $0.cancel() } }
 
         let localWorld = ClientWorld(transport: .nio(host: "127.0.0.1", port: local.port, group: group), clock: bridgeTicks)
         let remoteWorld = ClientWorld(transport: .nio(host: "127.0.0.1", port: remote.port, group: group), clock: bridgeTicks)
@@ -77,6 +76,7 @@ private func options(_ name: String) -> ClientOptions {
             .firstResultTask()
             .run()
         #expect(received == .success("home/printer/status=printing"))
+        brokers.forEach { $0.cancel() }
         try await group.shutdownGracefully()
     }
 }
