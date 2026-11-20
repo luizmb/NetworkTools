@@ -107,6 +107,7 @@ bytes announce, so a broker can read the first packet before it knows the sessio
 - ``TransportError``
 - ``Listener``
 - ``BoundListener``
+- ``InMemoryLink``
 
 ### Runtime
 - ``ConnectionRuntime``

@@ -24,7 +24,7 @@ events out, the world injected through `Reader`:
 
 ```swift
 let world = ClientWorld(
-    transport: .nwConnection(host: "192.168.1.20", port: 1883, parameters: .tcp, queue: queue),
+    transport: Transport.nwConnection(host: "192.168.1.20", port: 1883, parameters: .tcp).runReader(NWWorld(queue: queue)),
     clock: { .monotonicTicks(every: .milliseconds(250), clock: ContinuousClock()) }
 )
 

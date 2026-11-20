@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- TLS for `Transport.nio` and `Listener.nio` (swift-nio-ssl `TLSConfiguration`). New dependency: swift-nio-ssl.
+- `InMemoryLink` (a transport and listener joined in memory) and `Listener.merge`, so clients and bridges can run in the
+  same process as an `MQTTBroker`.
+- MQTT 5 enhanced authentication: `BrokerPolicy.challenge` drives AUTH exchanges at CONNECT and for re-authentication;
+  the client sends AUTH replies before CONNACK.
+- The client follows server redirects (*Use another server* / *Server moved* with a Server Reference) through
+  `ClientWorld.redirect`.
+- **Breaking:** transports and listeners are built from `Reader`s over their worlds — `NIOWorld` (event loop group) for
+  `Transport.nio`, `Listener.nio` and `Listener.nioWebSocket`; `NWWorld` (dispatch queue) for `Transport.nwConnection`
+  and `Listener.nwListener`.
 - `MQTTClient` is complete: reconnects with exponential backoff (`ReconnectPolicy`), connect timeout, session
   resumption (unacknowledged PUBLISH/PUBREL resent in order; subscriptions renewed when the server lost the session),
   idle-only keep-alive honouring Server Keep Alive, the server's Receive Maximum / Maximum Packet Size / Maximum QoS /

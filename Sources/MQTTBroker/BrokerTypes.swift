@@ -74,7 +74,7 @@ public struct BrokerPolicy: Sendable {
     /// One step of MQTT 5 enhanced authentication (CONNECT or AUTH carrying an Authentication
     /// Method): given the client identifier, the method, the Authentication Data the client sent and
     /// how many challenges were already sent in this exchange, decide what happens next. Refusing
-    /// with ``ReasonCode/badAuthenticationMethod`` declares a method unsupported.
+    /// with `ReasonCode/badAuthenticationMethod` declares a method unsupported.
     public let challenge: @Sendable (_ clientIdentifier: String, _ method: String, _ data: [UInt8]?, _ round: Int) -> AuthenticationStep
 
     /// Creates a policy.
