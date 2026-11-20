@@ -61,8 +61,8 @@ public struct BrokerOptions: Sendable, Hashable {
 
 /// The broker's authentication and authorization decisions: pure functions, injected.
 public struct BrokerPolicy: Sendable {
-    /// Decides whether a CONNECT is accepted: ``ReasonCode/success`` or a CONNACK failure code
-    /// (e.g. ``ReasonCode/badUserNameOrPassword``, ``ReasonCode/notAuthorized``).
+    /// Decides whether a CONNECT is accepted: `ReasonCode/success` or a CONNACK failure code
+    /// (e.g. `ReasonCode/badUserNameOrPassword`, `ReasonCode/notAuthorized`).
     public let authenticate: @Sendable (Connect) -> ReasonCode
     /// Whether a client may publish to a topic.
     public let mayPublish: @Sendable (_ clientIdentifier: String, TopicName) -> Bool

@@ -22,8 +22,8 @@ public struct BridgeWorld: Sendable {
 /// An MQTT bridge: a client session to each of two brokers, forwarding messages between them by
 /// ``BridgeRule``s.
 ///
-/// Each side is an ordinary ``MQTTClient`` session, so it reconnects, resumes and re-subscribes
-/// according to its own ``ClientOptions``. Use ``ReconnectPolicy`` on both sides for a long-lived
+/// Each side is an ordinary `MQTTClient` session, so it reconnects, resumes and re-subscribes
+/// according to its own `ClientOptions`. Use `ReconnectPolicy` on both sides for a long-lived
 /// bridge. Either broker can be any MQTT broker — including an `MQTTBroker` on loopback.
 ///
 /// ```swift

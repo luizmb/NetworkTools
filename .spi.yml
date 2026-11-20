@@ -13,6 +13,8 @@ builder:
         - BonjourService
         - MQTT
         - MQTTClient
+        - MQTTBroker
+        - MQTTBridge
         - MQTTNWConnection
         - MQTTNIO
         - MQTTWebSocket
