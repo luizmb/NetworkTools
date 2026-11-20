@@ -15,23 +15,24 @@ public extension Listener {
     /// becomes ready; cancelling it cancels the `NWListener`.
     /// - Parameters:
     ///   - port: The port to listen on (`0` lets the system choose).
-    ///   - parameters: The listener parameters, e.g. `.tcp`.
-    ///   - queue: The queue Network.framework calls back on.
-    /// - Returns: A lazy publisher of the bound listener.
-    static func nwListener(port: UInt16, parameters: NWParameters, queue: DispatchQueue) -> Publisher<BoundListener, TransportError> {
-        .future { () async -> Result<BoundListener, TransportError> in
-            guard let endpointPort = NWEndpoint.Port(rawValue: port) else {
-                return .failure(.connectionFailed("invalid port \(port)"))
-            }
-            let created: NWListener
-            do {
-                created = try NWListener(using: parameters, on: endpointPort)
-            } catch {
-                return .failure(.connectionFailed(String(describing: error)))
-            }
-            let box = ListenerBox(created)
-            return await box.start(on: queue).map { bound in
-                BoundListener(port: Int(bound), listener: Listener { box.accept })
+    ///   - parameters: The listener parameters, e.g. `.tcp` or `.tls`.
+    /// - Returns: A lazy publisher of the bound listener, waiting for its world.
+    static func nwListener(port: UInt16, parameters: NWParameters) -> Reader<NWWorld, Publisher<BoundListener, TransportError>> {
+        Reader { world in
+            .future { () async -> Result<BoundListener, TransportError> in
+                guard let endpointPort = NWEndpoint.Port(rawValue: port) else {
+                    return .failure(.connectionFailed("invalid port \(port)"))
+                }
+                let created: NWListener
+                do {
+                    created = try NWListener(using: parameters, on: endpointPort)
+                } catch {
+                    return .failure(.connectionFailed(String(describing: error)))
+                }
+                let box = ListenerBox(created)
+                return await box.start(on: world.queue).map { bound in
+                    BoundListener(port: Int(bound), listener: Listener { box.accept })
+                }
             }
         }
     }

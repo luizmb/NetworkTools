@@ -6,28 +6,36 @@ import MQTT
 import NIOCore
 import NIOHTTP1
 import NIOPosix
+import NIOSSL
 import NIOWebSocket
 import ReactiveConcurrency
 
 public extension Listener {
-    /// Binds a SwiftNIO TCP listener (Apple platforms, Linux, Android).
+    /// Binds a SwiftNIO TCP listener, optionally TLS (Apple platforms, Linux, Android).
     ///
     /// The publisher binds when subscribed and emits the bound port with the listener. Subscribing to
     /// the listener's `accept` emits every accepted connection; cancelling it closes the socket.
     ///
     /// ```swift
-    /// let bound = Listener.nio(host: "0.0.0.0", port: 1883, group: group)
+    /// let bound = Listener.nio(host: "0.0.0.0", port: 1883, tls: nil).runReader(NIOWorld(group: group))
     /// ```
     /// - Parameters:
     ///   - host: The address to bind (`0.0.0.0` for every interface).
     ///   - port: The port to bind (`0` lets the system choose).
-    ///   - group: The event loop group the channels run on.
-    /// - Returns: A lazy publisher of the bound listener.
-    static func nio(host: String, port: Int, group: any EventLoopGroup) -> Publisher<BoundListener, TransportError> {
-        bind(host: host, port: port, group: group) { channel, accepted in
-            let (inbound, sink) = AsyncStream<Result<[UInt8], TransportError>>.makeStream()
-            try channel.pipeline.syncOperations.addHandler(InboundBytes(sink))
-            accepted.yield(transportConnection(channel, inbound: inbound))
+    ///   - tls: The server TLS configuration (certificate chain and key), or `nil` for plain TCP.
+    /// - Returns: A lazy publisher of the bound listener, waiting for its world.
+    static func nio(host: String, port: Int, tls: TLSConfiguration?) -> Reader<NIOWorld, Publisher<BoundListener, TransportError>> {
+        Reader { world in
+            serverContext(tls).flatMap(maxPublishers: 1) { context in
+                bind(host: host, port: port, group: world.group) { channel, accepted in
+                    let (inbound, sink) = AsyncStream<Result<[UInt8], TransportError>>.makeStream()
+                    if let context {
+                        try channel.pipeline.syncOperations.addHandler(NIOSSLServerHandler(context: context))
+                    }
+                    try channel.pipeline.syncOperations.addHandler(InboundBytes(sink))
+                    accepted.yield(transportConnection(channel, inbound: inbound))
+                }
+            }
         }
     }
 
@@ -38,45 +46,61 @@ public extension Listener {
     ///   - port: The port to bind (`0` lets the system choose).
     ///   - path: The request path to accept, e.g. `/mqtt`.
     ///   - maximumMessageSize: The largest WebSocket message accepted, in bytes.
-    ///   - group: The event loop group the channels run on.
-    /// - Returns: A lazy publisher of the bound listener.
+    /// - Returns: A lazy publisher of the bound listener, waiting for its world.
     static func nioWebSocket(
         host: String,
         port: Int,
         path: String,
-        maximumMessageSize: Int,
-        group: any EventLoopGroup
-    ) -> Publisher<BoundListener, TransportError> {
-        bind(host: host, port: port, group: group) { channel, accepted in
-            let upgrader = NIOWebSocketServerUpgrader(
-                maxFrameSize: maximumMessageSize,
-                shouldUpgrade: { channel, head in
-                    let offersMQTT = head.headers["Sec-WebSocket-Protocol"]
-                        .flatMap { $0.split(separator: ",") }
-                        .contains { $0.trimmingCharacters(in: .whitespaces) == "mqtt" }
-                    let accepted = head.uri.split(separator: "?").first.map(String.init) == path && offersMQTT
-                    return channel.eventLoop.makeSucceededFuture(accepted ? HTTPHeaders([("Sec-WebSocket-Protocol", "mqtt")]) : nil)
-                },
-                upgradePipelineHandler: { channel, _ in
-                    channel.eventLoop.makeCompletedFuture {
-                        let (inbound, sink) = AsyncStream<Result<[UInt8], TransportError>>.makeStream()
-                        try channel.pipeline.syncOperations.addHandlers([
-                            NIOWebSocketFrameAggregator(
-                                minNonFinalFragmentSize: 0,
-                                maxAccumulatedFrameCount: .max,
-                                maxAccumulatedFrameSize: maximumMessageSize
-                            ),
-                            WebSocketBytes(),
-                            InboundBytes(sink),
-                        ])
-                        accepted.yield(transportConnection(channel, inbound: inbound))
-                    }
+        maximumMessageSize: Int
+    ) -> Reader<NIOWorld, Publisher<BoundListener, TransportError>> {
+        Reader { world in bindWebSocket(host: host, port: port, path: path, maximumMessageSize: maximumMessageSize, group: world.group) }
+    }
+}
+
+private func serverContext(_ tls: TLSConfiguration?) -> Publisher<NIOSSLContext?, TransportError> {
+    do {
+        return try .just(tls.map(NIOSSLContext.init(configuration:)))
+    } catch {
+        return .fail(.connectionFailed(String(describing: error)))
+    }
+}
+
+private func bindWebSocket(
+    host: String,
+    port: Int,
+    path: String,
+    maximumMessageSize: Int,
+    group: any EventLoopGroup
+) -> Publisher<BoundListener, TransportError> {
+    bind(host: host, port: port, group: group) { channel, accepted in
+        let upgrader = NIOWebSocketServerUpgrader(
+            maxFrameSize: maximumMessageSize,
+            shouldUpgrade: { channel, head in
+                let offersMQTT = head.headers["Sec-WebSocket-Protocol"]
+                    .flatMap { $0.split(separator: ",") }
+                    .contains { $0.trimmingCharacters(in: .whitespaces) == "mqtt" }
+                let accepted = head.uri.split(separator: "?").first.map(String.init) == path && offersMQTT
+                return channel.eventLoop.makeSucceededFuture(accepted ? HTTPHeaders([("Sec-WebSocket-Protocol", "mqtt")]) : nil)
+            },
+            upgradePipelineHandler: { channel, _ in
+                channel.eventLoop.makeCompletedFuture {
+                    let (inbound, sink) = AsyncStream<Result<[UInt8], TransportError>>.makeStream()
+                    try channel.pipeline.syncOperations.addHandlers([
+                        NIOWebSocketFrameAggregator(
+                            minNonFinalFragmentSize: 0,
+                            maxAccumulatedFrameCount: .max,
+                            maxAccumulatedFrameSize: maximumMessageSize
+                        ),
+                        WebSocketBytes(),
+                        InboundBytes(sink),
+                    ])
+                    accepted.yield(transportConnection(channel, inbound: inbound))
                 }
-            )
-            try channel.pipeline.syncOperations.configureHTTPServerPipeline(
-                withServerUpgrade: (upgraders: [upgrader], completionHandler: { _ in })
-            )
-        }
+            }
+        )
+        try channel.pipeline.syncOperations.configureHTTPServerPipeline(
+            withServerUpgrade: (upgraders: [upgrader], completionHandler: { _ in })
+        )
     }
 }
 

@@ -7,6 +7,19 @@ import MQTT
 @preconcurrency import Network
 import ReactiveConcurrency
 
+/// The effects Network.framework transports and listeners need, supplied at the application's
+/// boundary through `Reader`.
+public struct NWWorld: Sendable {
+    /// The queue Network.framework calls back on.
+    public let queue: DispatchQueue
+
+    /// Creates a world.
+    /// - Parameter queue: The queue Network.framework calls back on.
+    public init(queue: DispatchQueue) {
+        self.queue = queue
+    }
+}
+
 public extension Transport {
     /// A transport over Apple's Network.framework.
     ///
@@ -16,27 +29,24 @@ public extension Transport {
     /// of waiting forever.
     ///
     /// ```swift
-    /// let transport = Transport.nwConnection(
-    ///     host: "192.168.1.20",
-    ///     port: 1883,
-    ///     parameters: .tcp,
-    ///     queue: DispatchQueue(label: "mqtt")
-    /// )
+    /// let transport = Transport.nwConnection(host: "192.168.1.20", port: 1883, parameters: .tcp)
+    ///     .runReader(NWWorld(queue: DispatchQueue(label: "mqtt")))
     /// ```
     /// - Parameters:
     ///   - host: The broker's host name or IP address.
     ///   - port: The broker's TCP port (1883 for plain MQTT, 8883 for TLS).
     ///   - parameters: The connection parameters, e.g. `.tcp` or `.tls`.
-    ///   - queue: The queue Network.framework calls back on.
-    /// - Returns: The transport.
-    static func nwConnection(host: String, port: UInt16, parameters: NWParameters, queue: DispatchQueue) -> Transport {
-        Transport {
-            .future { () async -> Result<TransportConnection, TransportError> in
-                guard let endpointPort = NWEndpoint.Port(rawValue: port) else {
-                    return .failure(.connectionFailed("invalid port \(port)"))
+    /// - Returns: The transport, waiting for its world.
+    static func nwConnection(host: String, port: UInt16, parameters: NWParameters) -> Reader<NWWorld, Transport> {
+        Reader { world in
+            Transport {
+                .future { () async -> Result<TransportConnection, TransportError> in
+                    guard let endpointPort = NWEndpoint.Port(rawValue: port) else {
+                        return .failure(.connectionFailed("invalid port \(port)"))
+                    }
+                    let connection = ConnectionBox(NWConnection(host: NWEndpoint.Host(host), port: endpointPort, using: parameters))
+                    return await connection.start(on: world.queue).map { connection.transportConnection }
                 }
-                let connection = ConnectionBox(NWConnection(host: NWEndpoint.Host(host), port: endpointPort, using: parameters))
-                return await connection.start(on: queue).map { connection.transportConnection }
             }
         }
     }
