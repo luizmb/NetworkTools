@@ -12,6 +12,10 @@ let rcFull: [Target.Dependency] = rc + [
     .product(name: "ReactiveConcurrencyOperators", package: "ReactiveConcurrency"),
 ]
 
+// Where swift-nio's `NIOPosix` runs: every Posix platform (Apple, Linux, Android). Windows is the
+// only exclusion, so NIO-backed targets compile to empty there (sources are `#if canImport(NIOPosix)`).
+let nioPlatforms: [Platform] = [.macOS, .iOS, .tvOS, .watchOS, .visionOS, .linux, .android]
+
 let package = Package(
     name: "NetworkTools",
     platforms: [
@@ -66,17 +70,15 @@ let package = Package(
                 .product(name: "FP", package: "FP"),
             ] + rcFull
         ),
-        // NetworkServer is built on swift-nio (NIOPosix), which is Posix-only and does not
-        // support Windows. The NIO dependencies are gated to non-Windows platforms; see the
-        // platform-support matrix in README.md.
+        // NetworkServer is built on swift-nio (NIOPosix): Posix-only, so gated out of Windows (see nioPlatforms).
         .target(
             name: "NetworkServer",
             dependencies: [
                 "Core",
                 .product(name: "FP", package: "FP"),
-                .product(name: "NIOCore", package: "swift-nio", condition: .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .visionOS, .linux])),
-                .product(name: "NIOPosix", package: "swift-nio", condition: .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .visionOS, .linux])),
-                .product(name: "NIOHTTP1", package: "swift-nio", condition: .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .visionOS, .linux])),
+                .product(name: "NIOCore", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
+                .product(name: "NIOPosix", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
+                .product(name: "NIOHTTP1", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
             ] + rcFull
         ),
         .target(
@@ -115,14 +117,14 @@ let package = Package(
                 .product(name: "FP", package: "FP"),
             ] + rc
         ),
-        // SwiftNIO transport: same platform gating as NetworkServer (NIOPosix has no Windows support).
+        // SwiftNIO transport: same gating as NetworkServer (see nioPlatforms).
         .target(
             name: "MQTTNIO",
             dependencies: [
                 "MQTT",
                 .product(name: "FP", package: "FP"),
-                .product(name: "NIOCore", package: "swift-nio", condition: .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .visionOS, .linux])),
-                .product(name: "NIOPosix", package: "swift-nio", condition: .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .visionOS, .linux])),
+                .product(name: "NIOCore", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
+                .product(name: "NIOPosix", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
             ] + rc
         ),
         .target(
@@ -166,8 +168,8 @@ let package = Package(
                 "MQTTWebSocket",
                 "WebSocketClient",
                 .product(name: "FP", package: "FP"),
-                .product(name: "NIOCore", package: "swift-nio", condition: .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .visionOS, .linux])),
-                .product(name: "NIOPosix", package: "swift-nio", condition: .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .visionOS, .linux])),
+                .product(name: "NIOCore", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
+                .product(name: "NIOPosix", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
             ] + rc
         ),
         .testTarget(
@@ -198,7 +200,7 @@ let package = Package(
                 "Core",
                 "NetworkServer",
                 .product(name: "FP", package: "FP"),
-                .product(name: "NIOHTTP1", package: "swift-nio", condition: .when(platforms: [.macOS, .iOS, .tvOS, .watchOS, .visionOS, .linux])),
+                .product(name: "NIOHTTP1", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
             ] + rcFull
         ),
     ]
