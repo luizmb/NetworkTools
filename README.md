@@ -58,7 +58,7 @@ a cross-platform package can depend on them without conditional dependencies.
 
 ```swift
 // Package.swift
-.package(url: "https://github.com/luizmb/NetworkTools.git", from: "0.9.0")
+.package(url: "https://github.com/luizmb/NetworkTools.git", from: "0.10.0")
 ```
 
 Add individual products to your targets as needed:
