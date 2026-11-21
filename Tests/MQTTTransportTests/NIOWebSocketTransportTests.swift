@@ -76,7 +76,7 @@ private func startWebSocketServer(
 
 private func open(port: Int, group: any EventLoopGroup) -> Publisher<WebSocketConnection, WebSocketNIOError> {
     WebSocketConnection
-        .nio(host: "127.0.0.1", port: port, path: "/mqtt", protocols: ["mqtt"], maximumMessageSize: 1 << 16)
+        .nio(host: "127.0.0.1", port: port, path: "/mqtt", protocols: ["mqtt"], maximumMessageSize: 1 << 16, tls: nil)
         .runReader(WebSocketNIOWorld(group: group, random: SplitMix64(seed: 42)))
 }
 

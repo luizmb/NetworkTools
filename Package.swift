@@ -102,6 +102,7 @@ let package = Package(
                 .product(name: "NIOPosix", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
                 .product(name: "NIOHTTP1", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
                 .product(name: "NIOWebSocket", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
+                .product(name: "NIOSSL", package: "swift-nio-ssl", condition: .when(platforms: nioPlatforms)),
             ] + rc
         ),
         .target(

@@ -15,9 +15,9 @@ func bindNIO(tls: TLSConfiguration? = nil, group: any EventLoopGroup) async thro
     return try #require(try await bound.firstResultTask().run()?.get())
 }
 
-/// Binds a SwiftNIO MQTT-over-WebSocket listener on a free loopback port, path `/mqtt`.
-func bindNIOWebSocket(group: any EventLoopGroup) async throws -> BoundListener {
-    let bound = Listener.nioWebSocket(host: "127.0.0.1", port: 0, path: "/mqtt", maximumMessageSize: 1 << 16)
+/// Binds a SwiftNIO MQTT-over-WebSocket listener (optionally TLS) on a free loopback port, path `/mqtt`.
+func bindNIOWebSocket(tls: TLSConfiguration? = nil, group: any EventLoopGroup) async throws -> BoundListener {
+    let bound = Listener.nioWebSocket(host: "127.0.0.1", port: 0, path: "/mqtt", maximumMessageSize: 1 << 16, tls: tls)
         .runReader(NIOWorld(group: group))
     return try #require(try await bound.firstResultTask().run()?.get())
 }

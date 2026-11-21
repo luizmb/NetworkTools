@@ -19,7 +19,7 @@ public extension Transport {
     /// let world = WebSocketNIOWorld(group: group, random: SystemRandomNumberGenerator())
     /// let transport = Transport.webSocket {
     ///     WebSocketConnection
-    ///         .nio(host: "192.168.1.20", port: 9001, path: "/mqtt", protocols: ["mqtt"], maximumMessageSize: 1 << 20)
+    ///         .nio(host: "192.168.1.20", port: 9001, path: "/mqtt", protocols: ["mqtt"], maximumMessageSize: 1 << 20, tls: nil)
     ///         .runReader(world)
     /// }
     /// ```

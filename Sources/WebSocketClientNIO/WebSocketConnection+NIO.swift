@@ -6,13 +6,14 @@ import FP
 import NIOCore
 import NIOHTTP1
 import NIOPosix
+import NIOSSL
 import NIOWebSocket
 import ReactiveConcurrency
 import WebSocketClient
 
 /// Why a SwiftNIO WebSocket could not be opened or used.
 public enum WebSocketNIOError: Error, Sendable, Hashable {
-    /// The TCP connection could not be opened.
+    /// The TCP connection (or the TLS handshake) could not be completed.
     case connectionFailed(String)
     /// The server did not accept the WebSocket upgrade.
     case upgradeRejected
@@ -27,8 +28,8 @@ public extension WebSocketConnection {
     ///
     /// Each subscription performs a new HTTP/1.1 upgrade handshake and emits the open connection
     /// once the server has switched protocols. Fragmented messages are reassembled, pings are
-    /// answered automatically, and every outgoing frame is masked as RFC 6455 requires. Plain
-    /// `ws://` only: TLS is not part of this target.
+    /// answered automatically, and every outgoing frame is masked as RFC 6455 requires. With a TLS
+    /// configuration the connection is `wss://` (swift-nio-ssl); without one, plain `ws://`.
     ///
     /// The event loop group and the random generator are effects: they come from the
     /// ``WebSocketNIOWorld`` the application supplies at its boundary.
@@ -36,25 +37,37 @@ public extension WebSocketConnection {
     /// ```swift
     /// let world = WebSocketNIOWorld(group: group, random: SystemRandomNumberGenerator())
     /// let socket = WebSocketConnection
-    ///     .nio(host: "192.168.1.20", port: 9001, path: "/mqtt", protocols: ["mqtt"], maximumMessageSize: 1 << 20)
+    ///     .nio(host: "192.168.1.20", port: 9001, path: "/mqtt", protocols: ["mqtt"], maximumMessageSize: 1 << 20, tls: nil)
+    ///     .runReader(world)
+    /// let secure = WebSocketConnection
+    ///     .nio(host: "broker.example.com", port: 443, path: "/mqtt", protocols: ["mqtt"], maximumMessageSize: 1 << 20,
+    ///          tls: .makeClientConfiguration())
     ///     .runReader(world)
     /// ```
     /// - Parameters:
-    ///   - host: The server's host name or IP address.
+    ///   - host: The server's host name or IP address (also the TLS server name).
     ///   - port: The server's TCP port.
     ///   - path: The request path, e.g. `/` or `/mqtt`.
     ///   - protocols: Subprotocols offered in `Sec-WebSocket-Protocol` (e.g. `["mqtt"]`).
     ///   - maximumMessageSize: The largest message accepted, in bytes.
+    ///   - tls: The TLS configuration for `wss://`, or `nil` for plain `ws://`.
     /// - Returns: The connection, waiting for its world.
     static func nio(
         host: String,
         port: Int,
         path: String,
         protocols: [String],
-        maximumMessageSize: Int
+        maximumMessageSize: Int,
+        tls: TLSConfiguration?
     ) -> Reader<WebSocketNIOWorld, Publisher<WebSocketConnection, WebSocketNIOError>> {
         Reader { world in
             .future { () async -> Result<WebSocketConnection, WebSocketNIOError> in
+                let context: NIOSSLContext?
+                do {
+                    context = try tls.map(NIOSSLContext.init(configuration:))
+                } catch {
+                    return .failure(.connectionFailed(String(describing: error)))
+                }
                 let randomness = GeneratorBox(world.random)
                 let (inbound, sink) = AsyncStream<Result<WebSocketMessage, WebSocketNIOError>>.makeStream()
                 let frames = FrameHandler(sink: sink, randomness: randomness)
@@ -70,6 +83,7 @@ public extension WebSocketConnection {
                 let upgrade = await handshake(
                     host: host,
                     port: port,
+                    tls: context,
                     request: request,
                     frames: frames,
                     maximumMessageSize: maximumMessageSize,
@@ -88,6 +102,7 @@ public extension WebSocketConnection {
 private func handshake(
     host: String,
     port: Int,
+    tls: NIOSSLContext?,
     request: HTTPRequestHead,
     frames: FrameHandler,
     maximumMessageSize: Int,
@@ -98,6 +113,11 @@ private func handshake(
     do {
         negotiation = try await ClientBootstrap(group: group).connect(host: host, port: port) { channel in
             channel.eventLoop.makeCompletedFuture {
+                if let tls {
+                    try channel.pipeline.syncOperations.addHandler(
+                        NIOSSLClientHandler(context: tls, serverHostname: host.isIPAddress ? nil : host)
+                    )
+                }
                 let upgrader = NIOTypedWebSocketClientUpgrader<(any Channel)?>(
                     requestKey: requestKey,
                     maxFrameSize: maximumMessageSize,
@@ -134,6 +154,13 @@ private func handshake(
         return try await negotiation.get().map(Result.success) ?? .failure(.upgradeRejected)
     } catch {
         return .failure(.connectionFailed(String(describing: error)))
+    }
+}
+
+private extension String {
+    /// IP literals are not valid TLS server names (SNI).
+    var isIPAddress: Bool {
+        (try? SocketAddress(ipAddress: self, port: 0)) != nil
     }
 }
 

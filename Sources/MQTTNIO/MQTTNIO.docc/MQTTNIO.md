@@ -15,7 +15,7 @@ let plain = Transport.nio(host: "192.168.1.20", port: 1883, tls: nil).runReader(
 let secure = Transport.nio(host: "broker.example.com", port: 8883, tls: .makeClientConfiguration()).runReader(world)
 
 let tcp = Listener.nio(host: "0.0.0.0", port: 1883, tls: nil).runReader(world)
-let webSocket = Listener.nioWebSocket(host: "0.0.0.0", port: 9001, path: "/mqtt", maximumMessageSize: 1 << 20).runReader(world)
+let webSocket = Listener.nioWebSocket(host: "0.0.0.0", port: 9001, path: "/mqtt", maximumMessageSize: 1 << 20, tls: nil).runReader(world)
 ```
 
 Inbound bytes are buffered from the moment a channel is active, and cancelling a connection's

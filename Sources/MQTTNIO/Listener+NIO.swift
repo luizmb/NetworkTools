@@ -40,20 +40,31 @@ public extension Listener {
     }
 
     /// Binds a SwiftNIO MQTT-over-WebSocket listener: HTTP/1.1 upgrade on `path` offering the `mqtt`
-    /// subprotocol, then MQTT bytes in binary frames.
+    /// subprotocol, then MQTT bytes in binary frames; over TLS (`wss://`) when given a configuration.
+    ///
+    /// ```swift
+    /// let bound = Listener.nioWebSocket(host: "0.0.0.0", port: 9001, path: "/mqtt", maximumMessageSize: 1 << 20, tls: nil)
+    ///     .runReader(NIOWorld(group: group))
+    /// ```
     /// - Parameters:
     ///   - host: The address to bind.
     ///   - port: The port to bind (`0` lets the system choose).
     ///   - path: The request path to accept, e.g. `/mqtt`.
     ///   - maximumMessageSize: The largest WebSocket message accepted, in bytes.
+    ///   - tls: The server TLS configuration (certificate chain and key), or `nil` for plain `ws://`.
     /// - Returns: A lazy publisher of the bound listener, waiting for its world.
     static func nioWebSocket(
         host: String,
         port: Int,
         path: String,
-        maximumMessageSize: Int
+        maximumMessageSize: Int,
+        tls: TLSConfiguration?
     ) -> Reader<NIOWorld, Publisher<BoundListener, TransportError>> {
-        Reader { world in bindWebSocket(host: host, port: port, path: path, maximumMessageSize: maximumMessageSize, group: world.group) }
+        Reader { world in
+            serverContext(tls).flatMap(maxPublishers: 1) { context in
+                bindWebSocket(host: host, port: port, path: path, maximumMessageSize: maximumMessageSize, tls: context, group: world.group)
+            }
+        }
     }
 }
 
@@ -70,6 +81,7 @@ private func bindWebSocket(
     port: Int,
     path: String,
     maximumMessageSize: Int,
+    tls: NIOSSLContext?,
     group: any EventLoopGroup
 ) -> Publisher<BoundListener, TransportError> {
     bind(host: host, port: port, group: group) { channel, accepted in
@@ -98,6 +110,9 @@ private func bindWebSocket(
                 }
             }
         )
+        if let tls {
+            try channel.pipeline.syncOperations.addHandler(NIOSSLServerHandler(context: tls))
+        }
         try channel.pipeline.syncOperations.configureHTTPServerPipeline(
             withServerUpgrade: (upgraders: [upgrader], completionHandler: { _ in })
         )
