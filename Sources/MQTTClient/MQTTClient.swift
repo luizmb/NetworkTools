@@ -12,18 +12,27 @@ public struct ClientWorld: Sendable {
     /// `.monotonicTicks(every: .milliseconds(250), clock: ContinuousClock())`. Tests pass a
     /// hand-driven publisher.
     public let clock: @Sendable () -> Publisher<Duration, Never>
+    /// The transport to the server an MQTT 5 Server Reference names, when the server redirects the
+    /// client ("Use another server" / "Server moved"); `nil` to not follow it.
+    public let redirect: @Sendable (_ serverReference: String) -> Transport?
 
     /// Creates a world.
     /// - Parameters:
     ///   - transport: Opens connections.
     ///   - clock: A periodic monotonic clock.
-    public init(transport: Transport, clock: @escaping @Sendable () -> Publisher<Duration, Never>) {
+    ///   - redirect: Transports for server references; by default redirects are not followed.
+    public init(
+        transport: Transport,
+        clock: @escaping @Sendable () -> Publisher<Duration, Never>,
+        redirect: @escaping @Sendable (_ serverReference: String) -> Transport? = { _ in nil }
+    ) {
         self.transport = transport
         self.clock = clock
+        self.redirect = redirect
     }
 
     var runtime: RuntimeWorld {
-        RuntimeWorld(transport: transport, listener: .none, clock: clock)
+        RuntimeWorld(transport: transport, listener: .none, clock: clock, redirect: redirect)
     }
 }
 
@@ -31,7 +40,7 @@ public struct ClientWorld: Sendable {
 ///
 /// ```swift
 /// let world = ClientWorld(
-///     transport: .nwConnection(host: "192.168.1.20", port: 1883, parameters: .tcp, queue: queue),
+///     transport: Transport.nwConnection(host: "192.168.1.20", port: 1883, parameters: .tcp).runReader(NWWorld(queue: queue)),
 ///     clock: { .monotonicTicks(every: .milliseconds(250), clock: ContinuousClock()) }
 /// )
 /// let events: Publisher<ClientEvent, ClientError> =

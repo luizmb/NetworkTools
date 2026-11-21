@@ -103,7 +103,7 @@ func lastPayload(_ events: [ClientEvent]) -> [UInt8] {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         let server = try await startBroker(group)
         let port = try #require(server.localAddress?.port)
-        let received = try await subscribeAndReceive(over: .nio(host: "127.0.0.1", port: port, group: group))
+        let received = try await subscribeAndReceive(over: nioTransport(port: port, group: group))
         #expect(received.count == 3)
         #expect(lastPayload(received) == Array("hello".utf8))
 
@@ -113,7 +113,7 @@ func lastPayload(_ events: [ClientEvent]) -> [UInt8] {
 
     @Test func refusedConnectionIsTyped() async throws {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-        let result = await Transport.nio(host: "127.0.0.1", port: 1, group: group).connect().firstResultTask().run()
+        let result = await nioTransport(port: 1, group: group).connect().firstResultTask().run()
         guard case .failure(.connectionFailed) = result else {
             Issue.record("expected connectionFailed, got \(String(describing: result))")
             return

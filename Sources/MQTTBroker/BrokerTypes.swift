@@ -2,6 +2,9 @@
 
 import MQTT
 
+// Authentication Data may be absent or present-and-empty: these are different on the wire, so `[UInt8]?` is intended.
+// swiftlint:disable discouraged_optional_collection
+
 /// How a broker behaves. MQTT 5 clients are told these limits in CONNACK.
 public struct BrokerOptions: Sendable, Hashable {
     /// The largest packet accepted from a client, in bytes.
@@ -68,16 +71,29 @@ public struct BrokerPolicy: Sendable {
     public let mayPublish: @Sendable (_ clientIdentifier: String, TopicName) -> Bool
     /// Whether a client may subscribe to a filter.
     public let maySubscribe: @Sendable (_ clientIdentifier: String, TopicFilter) -> Bool
+    /// One step of MQTT 5 enhanced authentication (CONNECT or AUTH carrying an Authentication
+    /// Method): given the client identifier, the method, the Authentication Data the client sent and
+    /// how many challenges were already sent in this exchange, decide what happens next. Refusing
+    /// with `ReasonCode/badAuthenticationMethod` declares a method unsupported.
+    public let challenge: @Sendable (_ clientIdentifier: String, _ method: String, _ data: [UInt8]?, _ round: Int) -> AuthenticationStep
 
     /// Creates a policy.
+    /// - Parameters:
+    ///   - authenticate: Decides whether a CONNECT is accepted.
+    ///   - mayPublish: Whether a client may publish to a topic.
+    ///   - maySubscribe: Whether a client may subscribe to a filter.
+    ///   - challenge: Enhanced authentication steps; the default supports no method.
     public init(
         authenticate: @escaping @Sendable (Connect) -> ReasonCode,
         mayPublish: @escaping @Sendable (_ clientIdentifier: String, TopicName) -> Bool,
-        maySubscribe: @escaping @Sendable (_ clientIdentifier: String, TopicFilter) -> Bool
+        maySubscribe: @escaping @Sendable (_ clientIdentifier: String, TopicFilter) -> Bool,
+        challenge: @escaping @Sendable (_ clientIdentifier: String, _ method: String, _ data: [UInt8]?, _ round: Int) -> AuthenticationStep
+            = { _, _, _, _ in .refuse(.badAuthenticationMethod) }
     ) {
         self.authenticate = authenticate
         self.mayPublish = mayPublish
         self.maySubscribe = maySubscribe
+        self.challenge = challenge
     }
 
     /// Accepts every client and allows everything except publishing to `$`-topics.
@@ -86,6 +102,16 @@ public struct BrokerPolicy: Sendable {
         mayPublish: { _, topic in !topic.rawValue.hasPrefix("$") },
         maySubscribe: { _, _ in true }
     )
+}
+
+/// The broker's decision at one step of MQTT 5 enhanced authentication.
+public enum AuthenticationStep: Sendable, Hashable {
+    /// Authenticated; the optional data goes back in CONNACK (or the final AUTH of a re-authentication).
+    case accept(data: [UInt8]?)
+    /// Send this challenge data to the client and wait for its answer.
+    case `continue`(data: [UInt8])
+    /// Refuse with this reason code.
+    case refuse(ReasonCode)
 }
 
 /// What the broker reports, for logging and monitoring.
@@ -124,3 +150,5 @@ public enum BrokerInput: Sendable, Hashable {
 
 /// What the broker asks the runtime to do.
 public typealias BrokerCommand = RuntimeCommand<BrokerEvent, BrokerError>
+
+// swiftlint:enable discouraged_optional_collection

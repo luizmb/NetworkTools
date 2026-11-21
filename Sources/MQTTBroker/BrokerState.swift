@@ -20,6 +20,8 @@ public struct BrokerState: Sendable, Hashable {
         public enum Phase: Sendable, Hashable {
             /// Accepted, waiting for CONNECT.
             case awaitingConnect(since: Duration)
+            /// CONNECT received; an enhanced authentication exchange is in progress (`round` challenges sent).
+            case authenticating(Connect, method: String, round: Int, since: Duration)
             /// CONNECT accepted for this client.
             case connected(clientIdentifier: String)
         }
@@ -40,6 +42,10 @@ public struct BrokerState: Sendable, Hashable {
         public var clientMaximumPacketSize: Int?
         /// Topic aliases the client defined for its publishes.
         public var inboundAliases: [UInt16: TopicName]
+        /// The enhanced authentication method the client connected with, if any.
+        public var authenticationMethod: String?
+        /// Challenges sent in an ongoing re-authentication, if one is in progress.
+        public var reauthenticationRound: Int?
     }
 
     /// One outgoing QoS 1/2 message waiting for acknowledgement.
@@ -136,7 +142,9 @@ public struct BrokerState: Sendable, Hashable {
             keepAlive: 0,
             clientReceiveMaximum: 65_535,
             clientMaximumPacketSize: nil,
-            inboundAliases: [:]
+            inboundAliases: [:],
+            authenticationMethod: nil,
+            reauthenticationRound: nil
         )
     }
 

@@ -690,7 +690,7 @@ let options = ClientOptions(
     reconnect: .exponentialBackoff(initial: .seconds(1), maximum: .seconds(30), attempts: nil)
 )
 let world = ClientWorld(
-    transport: .nwConnection(host: "192.168.1.20", port: 1883, parameters: .tcp, queue: queue),
+    transport: Transport.nwConnection(host: "192.168.1.20", port: 1883, parameters: .tcp).runReader(NWWorld(queue: queue)),
     clock: { .monotonicTicks(every: .milliseconds(250), clock: ContinuousClock()) }
 )
 
@@ -707,7 +707,8 @@ Nothing runs until `events` is subscribed; cancelling it closes the connection. 
 let clock: @Sendable () -> Publisher<Duration, Never> = { .monotonicTicks(every: .milliseconds(250), clock: ContinuousClock()) }
 
 // Bind (an effect that reports the port), then serve on the bound listener.
-let broker: Publisher<BrokerEvent, BrokerError> = Listener.nio(host: "0.0.0.0", port: 1883, group: group)
+let broker: Publisher<BrokerEvent, BrokerError> = Listener.nio(host: "0.0.0.0", port: 1883, tls: nil)
+    .runReader(NIOWorld(group: group))
     .mapError(BrokerError.listener)
     .flatMap(maxPublishers: 1) { bound in
         MQTTBroker.serve(BrokerOptions(), policy: .open, publications: .empty())
@@ -715,7 +716,24 @@ let broker: Publisher<BrokerEvent, BrokerError> = Listener.nio(host: "0.0.0.0", 
     }
 ```
 
-Listeners: `Listener.nio(host:port:group:)`, `Listener.nioWebSocket(host:port:path:maximumMessageSize:group:)` and `Listener.nwListener(port:parameters:queue:)`. Each binds when subscribed and reports the port actually bound.
+Listeners: `Listener.nio(host:port:tls:)`, `Listener.nioWebSocket(host:port:path:maximumMessageSize:)` and `Listener.nwListener(port:parameters:)`. Each binds when subscribed and reports the port actually bound. `Listener.merge` accepts from several at once.
+
+**Enhanced authentication (MQTT 5 AUTH).** `BrokerPolicy.challenge` is a pure function deciding each step of an exchange — accept (with data), continue (with a challenge), or refuse — for CONNECT and for re-authentication:
+
+```swift
+let policy = BrokerPolicy(
+    authenticate: { _ in .success },
+    mayPublish: { _, _ in true },
+    maySubscribe: { _, _ in true },
+    challenge: { client, method, data, round in
+        switch (method, round) {
+        case ("SCRAM-SHA-256", 0): .continue(data: serverFirstMessage(client, data))
+        case ("SCRAM-SHA-256", 1): verify(client, data) ? .accept(data: serverFinal) : .refuse(.notAuthorized)
+        default: .refuse(.badAuthenticationMethod)
+        }
+    }
+)
+```
 
 ### Bridge
 
@@ -729,11 +747,24 @@ let bridge = MQTTBridge.run(rules: [rule], local: localOptions, remote: remoteOp
 
 ### Transports and listeners
 
-| | Opens connections | Accepts connections |
-|---|---|---|
-| Network.framework | `Transport.nwConnection(host:port:parameters:queue:)` | `Listener.nwListener(port:parameters:queue:)` |
-| SwiftNIO TCP | `Transport.nio(host:port:group:)` | `Listener.nio(host:port:group:)` |
-| WebSocket | `Transport.webSocket(url:session:)`, `Transport.webSocket { WebSocketConnection.nio(…).runReader(world) }` | `Listener.nioWebSocket(host:port:path:maximumMessageSize:group:)` |
+Each is built from a `Reader` over its world, so the effects (event loop group, dispatch queue, random generator) are supplied at the application's boundary:
+
+| | Opens connections | Accepts connections | World |
+|---|---|---|---|
+| Network.framework | `Transport.nwConnection(host:port:parameters:)` (TLS with `.tls`) | `Listener.nwListener(port:parameters:)` | `NWWorld(queue:)` |
+| SwiftNIO TCP | `Transport.nio(host:port:tls:)` | `Listener.nio(host:port:tls:)` | `NIOWorld(group:)` |
+| WebSocket | `Transport.webSocket(url:session:)`, `Transport.webSocket { WebSocketConnection.nio(…).runReader(world) }` | `Listener.nioWebSocket(host:port:path:maximumMessageSize:)` | `WebSocketNIOWorld` / `NIOWorld` |
+| In process | `InMemoryLink.make().transport` | `InMemoryLink.make().listener` | — |
+
+TLS on SwiftNIO uses swift-nio-ssl's `TLSConfiguration`:
+
+```swift
+let secure = Transport.nio(host: "broker.example.com", port: 8883, tls: .makeClientConfiguration()).runReader(NIOWorld(group: group))
+```
+
+`InMemoryLink` joins a transport and a listener without a socket: run a client or a bridge in the same process as an `MQTTBroker` by merging `link.listener` into the broker's listeners.
+
+**Redirects.** When a server answers with *Use another server* or *Server moved* and a Server Reference, the client reconnects there through `ClientWorld.redirect`, which maps the reference to a transport (`nil` declines). *Moved* is remembered for later reconnects; *use another server* applies to the next connection.
 
 `Transport` and `Listener` are plain structs of effects, so tests use in-memory ones.
 

@@ -9,7 +9,8 @@ transition function: inputs (accepted connections, received bytes, closes, clock
 application publications) in, `RuntimeCommand`s out. It never touches a socket or a clock, so
 every behaviour is tested by feeding inputs and comparing commands.
 
-It implements the server side of the protocol: authentication and per-topic authorization
+It implements the server side of the protocol: authentication (including MQTT 5 enhanced
+authentication, step by step through ``BrokerPolicy/challenge``) and per-topic authorization
 through the policy, assigned client identifiers, session takeover, clean and persistent
 sessions with Session Expiry, wills with Will Delay, QoS 0/1/2 in both directions with session
 resumption, retained messages with Retain Handling and Retain As Published, No Local,
@@ -35,6 +36,7 @@ Subscribing starts the broker; cancelling stops it and closes every connection.
 - ``BrokerWorld``
 - ``BrokerOptions``
 - ``BrokerPolicy``
+- ``AuthenticationStep``
 - ``BrokerEvent``
 - ``BrokerError``
 

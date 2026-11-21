@@ -45,6 +45,7 @@ let package = Package(
         .package(url: "https://github.com/luizmb/FP.git", from: "3.0.0"),
         .package(url: "https://github.com/luizmb/ReactiveConcurrency.git", from: "2.0.0"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
+        .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.0"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.4.0"),
     ],
     targets: [
@@ -157,6 +158,7 @@ let package = Package(
                 .product(name: "NIOPosix", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
                 .product(name: "NIOHTTP1", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
                 .product(name: "NIOWebSocket", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
+                .product(name: "NIOSSL", package: "swift-nio-ssl", condition: .when(platforms: nioPlatforms)),
             ] + rc
         ),
         .target(
@@ -224,6 +226,7 @@ let package = Package(
                 .product(name: "NIOPosix", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
                 .product(name: "NIOHTTP1", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
                 .product(name: "NIOWebSocket", package: "swift-nio", condition: .when(platforms: nioPlatforms)),
+                .product(name: "NIOSSL", package: "swift-nio-ssl", condition: .when(platforms: nioPlatforms)),
             ] + rc
         ),
         .testTarget(

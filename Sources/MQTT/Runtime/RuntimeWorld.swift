@@ -11,16 +11,26 @@ public struct RuntimeWorld: Sendable {
     /// A periodic monotonic clock: emits the current time as elapsed time since an arbitrary
     /// origin, at the resolution the machine needs (e.g. every 250 ms).
     public let clock: @Sendable () -> Publisher<Duration, Never>
+    /// The transport to the server an MQTT 5 Server Reference names (e.g. `"other.example.com:1883"`),
+    /// or `nil` to not follow redirects to it.
+    public let redirect: @Sendable (_ serverReference: String) -> Transport?
 
     /// Creates a world.
     /// - Parameters:
     ///   - transport: Opens outgoing connections.
     ///   - listener: Accepts incoming connections.
     ///   - clock: A periodic monotonic clock.
-    public init(transport: Transport, listener: Listener, clock: @escaping @Sendable () -> Publisher<Duration, Never>) {
+    ///   - redirect: Transports for server references; by default redirects are not followed.
+    public init(
+        transport: Transport,
+        listener: Listener,
+        clock: @escaping @Sendable () -> Publisher<Duration, Never>,
+        redirect: @escaping @Sendable (_ serverReference: String) -> Transport? = { _ in nil }
+    ) {
         self.transport = transport
         self.listener = listener
         self.clock = clock
+        self.redirect = redirect
     }
 }
 

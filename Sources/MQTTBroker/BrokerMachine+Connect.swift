@@ -3,6 +3,9 @@
 import FP
 import MQTT
 
+// Authentication Data may be absent or present-and-empty: these are different on the wire, so `[UInt8]?` is intended.
+// swiftlint:disable discouraged_optional_collection
+
 // MARK: - CONNECT
 
 extension BrokerMachine {
@@ -10,16 +13,127 @@ extension BrokerMachine {
         let version = connect.protocolVersion
         state.links[id]?.version = version
         state.links[id]?.stream.version = version
-        let usesEnhancedAuth = connect.properties.contains { if case .authenticationMethod = $0 { true } else { false } }
         let anonymous = connect.clientIdentifier.isEmpty
-        let refusal: ReasonCode? = usesEnhancedAuth ? .badAuthenticationMethod
-            : anonymous && version == .v3_1_1 && !connect.cleanStart ? .clientIdentifierNotValid
+        let refusal: ReasonCode? = anonymous && version == .v3_1_1 && !connect.cleanStart ? .clientIdentifierNotValid
             : connect.will.map { $0.qos > state.options.maximumQoS } == true ? .qosNotSupported
             : connect.will.map { $0.retain && !state.options.retainAvailable } == true ? .retainNotSupported
             : Optional(policy.authenticate(connect)).flatMap { $0.isFailure ? $0 : nil }
         if let refusal {
             return refuse(id, refusal, version: version, &state)
         }
+        guard let method = authenticationMethod(connect.properties) else {
+            return admit(connect, on: id, authentication: [], &state)
+        }
+        return authenticationStep(
+            policy.challenge(connect.clientIdentifier, method, authenticationData(connect.properties), 0),
+            connect: connect,
+            method: method,
+            round: 0,
+            on: id,
+            &state
+        )
+    }
+
+    /// The client answered a challenge during CONNECT.
+    static func continueAuthentication( // swiftlint:disable:this function_parameter_count
+        _ auth: Auth,
+        connect: Connect,
+        method: String,
+        round: Int,
+        on id: ConnectionID,
+        _ policy: BrokerPolicy,
+        _ state: inout BrokerState
+    ) -> [BrokerCommand] {
+        guard auth.reasonCode == .continueAuthentication, authenticationMethod(auth.properties) == method else {
+            return refuse(id, .protocolError, version: .v5, &state)
+        }
+        return authenticationStep(
+            policy.challenge(connect.clientIdentifier, method, authenticationData(auth.properties), round),
+            connect: connect,
+            method: method,
+            round: round,
+            on: id,
+            &state
+        )
+    }
+
+    private static func authenticationStep(
+        _ step: AuthenticationStep,
+        connect: Connect,
+        method: String,
+        round: Int,
+        on id: ConnectionID,
+        _ state: inout BrokerState
+    ) -> [BrokerCommand] {
+        let since = state.now
+        switch step {
+        case let .accept(data):
+            state.links[id]?.authenticationMethod = method
+            return admit(connect, on: id, authentication: authenticationProperties(method, data), &state)
+        case let .continue(data):
+            state.links[id]?.phase = .authenticating(connect, method: method, round: round + 1, since: since)
+            let challenge = Auth(reasonCode: .continueAuthentication, properties: authenticationProperties(method, data))
+            return send(.auth(challenge), on: id, state)
+        case let .refuse(reason):
+            return refuse(id, reason, version: .v5, &state)
+        }
+    }
+
+    /// Re-authentication of a connected client (AUTH with Re-authenticate, then Continue steps).
+    static func reauthenticate(
+        _ auth: Auth,
+        client: String,
+        on id: ConnectionID,
+        _ policy: BrokerPolicy,
+        _ state: inout BrokerState
+    ) -> [BrokerCommand] {
+        let round = state.links[id]?.reauthenticationRound
+        let expected: ReasonCode = round == nil ? .reAuthenticate : .continueAuthentication
+        guard let method = state.links[id]?.authenticationMethod,
+              auth.reasonCode == expected,
+              authenticationMethod(auth.properties) == method else {
+            return disconnect(id, .protocolError, &state)
+        }
+        switch policy.challenge(client, method, authenticationData(auth.properties), round ?? 0) {
+        case let .accept(data):
+            state.links[id]?.reauthenticationRound = nil
+            return send(.auth(Auth(reasonCode: .success, properties: authenticationProperties(method, data))), on: id, state)
+        case let .continue(data):
+            state.links[id]?.reauthenticationRound = (round ?? 0) + 1
+            let challenge = Auth(reasonCode: .continueAuthentication, properties: authenticationProperties(method, data))
+            return send(.auth(challenge), on: id, state)
+        case let .refuse(reason):
+            return disconnect(id, reason, &state)
+        }
+    }
+
+    private static func authenticationMethod(_ properties: [Property]) -> String? {
+        properties.lazy.compactMap { property -> String? in
+            guard case let .authenticationMethod(method) = property else { return nil }
+            return method
+        }.first
+    }
+
+    private static func authenticationData(_ properties: [Property]) -> [UInt8]? {
+        properties.lazy.compactMap { property -> [UInt8]? in
+            guard case let .authenticationData(data) = property else { return nil }
+            return data
+        }.first
+    }
+
+    private static func authenticationProperties(_ method: String, _ data: [UInt8]?) -> [Property] {
+        [.authenticationMethod(method)] + (data.map { [.authenticationData($0)] } ?? [])
+    }
+
+    /// Accepts an authenticated CONNECT: session takeover, session creation or resumption, CONNACK.
+    private static func admit(
+        _ connect: Connect,
+        on id: ConnectionID,
+        authentication: [Property],
+        _ state: inout BrokerState
+    ) -> [BrokerCommand] {
+        let version = connect.protocolVersion
+        let anonymous = connect.clientIdentifier.isEmpty
         let client = anonymous ? assignIdentifier(&state) : connect.clientIdentifier
         let takeover = takeOver(client, by: id, &state)
         let existing = connect.cleanStart ? nil : state.sessions[client]
@@ -37,11 +151,8 @@ extension BrokerMachine {
         session.disconnectedAt = nil
         state.sessions[client] = session
         configure(id, connect, client: client, &state)
-        let ack = ConnAck(
-            sessionPresent: existing != nil,
-            reasonCode: .success,
-            properties: version == .v5 ? connAckProperties(connect, assigned: anonymous ? client : nil, state) : []
-        )
+        let properties = version == .v5 ? connAckProperties(connect, assigned: anonymous ? client : nil, state) + authentication : []
+        let ack = ConnAck(sessionPresent: existing != nil, reasonCode: .success, properties: properties)
         return takeover
             + send(.connAck(ack), on: id, state)
             + [.emit(.clientConnected(clientIdentifier: client, id, resumed: existing != nil))]
@@ -138,3 +249,5 @@ extension BrokerMachine {
         return resent + drain(client, &state)
     }
 }
+
+// swiftlint:enable discouraged_optional_collection

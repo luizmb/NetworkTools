@@ -74,7 +74,7 @@ public enum BrokerMachine {
         }
     }
 
-    private static func handle(
+    private static func handle( // swiftlint:disable:this cyclomatic_complexity
         _ packet: Packet,
         on id: ConnectionID,
         _ policy: BrokerPolicy,
@@ -84,6 +84,10 @@ public enum BrokerMachine {
         case let (.awaitingConnect?, .connect(connect)):
             self.connect(connect, on: id, policy, &state)
         case (.awaitingConnect?, _):
+            close(id, &state)
+        case let (.authenticating(connect, method, round, _)?, .auth(auth)):
+            continueAuthentication(auth, connect: connect, method: method, round: round, on: id, policy, &state)
+        case (.authenticating?, _):
             close(id, &state)
         case let (.connected(client)?, .publish(publish)):
             inbound(publish, from: client, on: id, policy, &state)
@@ -102,8 +106,8 @@ public enum BrokerMachine {
             send(.pingResp, on: id, state)
         case let (.connected(client)?, .disconnect(disconnect)):
             goodbye(disconnect, client: client, on: id, &state)
-        case (.connected?, .auth):
-            disconnect(id, .badAuthenticationMethod, &state)
+        case let (.connected(client)?, .auth(auth)):
+            reauthenticate(auth, client: client, on: id, policy, &state)
         default:
             disconnect(id, .protocolError, &state)
         }
@@ -186,7 +190,8 @@ public enum BrokerMachine {
         let now = state.now
         let stale = state.links.compactMap { id, link -> (ConnectionID, ReasonCode?)? in
             switch link.phase {
-            case let .awaitingConnect(since) where now - since >= state.options.connectTimeout:
+            case let .awaitingConnect(since) where now - since >= state.options.connectTimeout,
+                 let .authenticating(_, _, _, since) where now - since >= state.options.connectTimeout:
                 (id, nil)
             case .connected where link.keepAlive > 0 && now - link.lastReceived > .milliseconds(Int(link.keepAlive) * 1_500):
                 (id, .keepAliveTimeout)

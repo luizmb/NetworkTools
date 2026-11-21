@@ -13,12 +13,8 @@ import Testing
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         let server = try await startBroker(group)
         let port = try #require(server.localAddress?.port.flatMap(UInt16.init(exactly:)))
-        let transport = Transport.nwConnection(
-            host: "127.0.0.1",
-            port: port,
-            parameters: .tcp,
-            queue: DispatchQueue(label: "mqtt-nw-test")
-        )
+        let transport = Transport.nwConnection(host: "127.0.0.1", port: port, parameters: .tcp)
+            .runReader(NWWorld(queue: DispatchQueue(label: "mqtt-nw-test")))
 
         let received = try await subscribeAndReceive(over: transport)
         #expect(received.count == 3)
@@ -29,7 +25,8 @@ import Testing
     }
 
     @Test func refusedConnectionIsTyped() async {
-        let transport = Transport.nwConnection(host: "127.0.0.1", port: 1, parameters: .tcp, queue: DispatchQueue(label: "mqtt-nw-refused"))
+        let transport = Transport.nwConnection(host: "127.0.0.1", port: 1, parameters: .tcp)
+            .runReader(NWWorld(queue: DispatchQueue(label: "mqtt-nw-refused")))
         let result = await transport.connect().firstResultTask().run()
         guard case .failure(.connectionFailed) = result else {
             Issue.record("expected connectionFailed, got \(String(describing: result))")

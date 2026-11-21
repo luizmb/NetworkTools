@@ -34,16 +34,22 @@ private func options(_ name: String) -> ClientOptions {
 @Suite struct BridgeEndToEndTests {
     @Test func forwardsFromTheLocalBrokerToTheRemoteOne() async throws {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-        let local = try #require(try await Listener.nio(host: "127.0.0.1", port: 0, group: group).firstResultTask().run()?.get())
-        let remote = try #require(try await Listener.nio(host: "127.0.0.1", port: 0, group: group).firstResultTask().run()?.get())
+        let local = try await bindNIO(group: group)
+        let remote = try await bindNIO(group: group)
         let brokers = [local, remote].map { bound in
             MQTTBroker.serve(BrokerOptions(), policy: .open, publications: .empty())
                 .runReader(BrokerWorld(listener: bound.listener, clock: bridgeTicks))
                 .sink(receiveCompletion: { _ in }, receiveValue: { _ in })
         }
 
-        let localWorld = ClientWorld(transport: .nio(host: "127.0.0.1", port: local.port, group: group), clock: bridgeTicks)
-        let remoteWorld = ClientWorld(transport: .nio(host: "127.0.0.1", port: remote.port, group: group), clock: bridgeTicks)
+        let localWorld = ClientWorld(
+            transport: nioTransport(port: local.port, group: group),
+            clock: bridgeTicks
+        )
+        let remoteWorld = ClientWorld(
+            transport: nioTransport(port: remote.port, group: group),
+            clock: bridgeTicks
+        )
         let rule = BridgeRule(
             filter: try #require(TopicFilter(rawValue: "printer/#")),
             direction: .outbound,

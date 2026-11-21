@@ -67,20 +67,18 @@ private func roundTrip(bound: BoundListener, transport: Transport) async -> Stri
 @Suite struct BrokerEndToEndTests {
     @Test func brokerOverNIOTCP() async throws {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-        let bound = try #require(try await Listener.nio(host: "127.0.0.1", port: 0, group: group).firstResultTask().run()?.get())
-        let payload = await roundTrip(bound: bound, transport: .nio(host: "127.0.0.1", port: bound.port, group: group))
+        let bound = try await bindNIO(group: group)
+        let payload = await roundTrip(
+            bound: bound,
+            transport: nioTransport(port: bound.port, group: group)
+        )
         #expect(payload == "hi")
         try await group.shutdownGracefully()
     }
 
     @Test func brokerOverNIOWebSocket() async throws {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-        let bound = try #require(
-            try await Listener.nioWebSocket(host: "127.0.0.1", port: 0, path: "/mqtt", maximumMessageSize: 1 << 16, group: group)
-                .firstResultTask()
-                .run()?
-                .get()
-        )
+        let bound = try await bindNIOWebSocket(group: group)
         let world = WebSocketNIOWorld(group: group, random: SplitMix64(seed: 7))
         let transport = Transport.webSocket {
             WebSocketConnection
@@ -94,8 +92,10 @@ private func roundTrip(bound: BoundListener, transport: Transport) async -> Stri
     #if canImport(Network)
     @Test func brokerOverNetworkFramework() async throws {
         let queue = DispatchQueue(label: "nw-broker-test")
-        let bound = try #require(try await Listener.nwListener(port: 0, parameters: .tcp, queue: queue).firstResultTask().run()?.get())
-        let transport = Transport.nwConnection(host: "127.0.0.1", port: UInt16(bound.port), parameters: .tcp, queue: queue)
+        let world = NWWorld(queue: queue)
+        let listening = Listener.nwListener(port: 0, parameters: .tcp).runReader(world)
+        let bound = try #require(try await listening.firstResultTask().run()?.get())
+        let transport = Transport.nwConnection(host: "127.0.0.1", port: UInt16(bound.port), parameters: .tcp).runReader(world)
         #expect(await roundTrip(bound: bound, transport: transport) == "hi")
     }
     #endif

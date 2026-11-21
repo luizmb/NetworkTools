@@ -99,6 +99,21 @@ public struct ClientState: Sendable, Hashable {
     public internal(set) var subscriptions: [Subscription]
     /// The current connection's state.
     public internal(set) var link: Link
+    /// Where the server redirected the client, if it did.
+    public internal(set) var redirect: Redirect?
+    /// Redirects followed since the last accepted CONNACK (to stop redirect loops).
+    public internal(set) var redirectsFollowed: Int
+
+    /// A server redirect (MQTT 5 Server Reference).
+    public struct Redirect: Sendable, Hashable {
+        /// The Server Reference.
+        public var server: String
+        /// `true` for "Server moved" (every later connection), `false` for "Use another server" (the next one).
+        public var permanent: Bool
+    }
+
+    /// How many redirects are followed in a row before giving up.
+    static let maximumRedirects = 5
 
     /// The state of a client that has not started.
     /// - Parameter options: How to connect.
@@ -117,7 +132,9 @@ public struct ClientState: Sendable, Hashable {
             receivedQoS2: [],
             nextIdentifier: .first,
             subscriptions: [],
-            link: freshLink(options)
+            link: freshLink(options),
+            redirect: nil,
+            redirectsFollowed: 0
         )
     }
 

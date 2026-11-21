@@ -84,7 +84,34 @@ public enum ClientMachine {
         state.nextConnection += 1
         state.phase = .connecting(id, since: state.now)
         state.link = ClientState.freshLink(state.options)
-        return [.open(id)]
+        guard let redirect = state.redirect else { return [.open(id)] }
+        if !redirect.permanent { state.redirect = nil }
+        return [.redirect(id, to: redirect.server)]
+    }
+
+    /// The redirect a CONNACK or DISCONNECT asks for: "Use another server" or "Server moved" with
+    /// a Server Reference.
+    static func redirection(_ reason: ReasonCode, _ properties: [Property]) -> ClientState.Redirect? {
+        let reference = properties.lazy.compactMap { property -> String? in
+            guard case let .serverReference(value) = property else { return nil }
+            return value
+        }.first
+        return switch (reason, reference) {
+        case let (.useAnotherServer, .some(server)): ClientState.Redirect(server: server, permanent: false)
+        case let (.serverMoved, .some(server)): ClientState.Redirect(server: server, permanent: true)
+        default: nil
+        }
+    }
+
+    /// Follows a redirect now, unless too many happened in a row (then fails with `error`).
+    static func follow(_ redirect: ClientState.Redirect, otherwise error: ClientError, _ state: inout ClientState) -> [ClientCommand] {
+        let close = state.connection.map { [ClientCommand.close($0)] } ?? []
+        guard state.redirectsFollowed < ClientState.maximumRedirects else {
+            return end(&state, close + [.fail(error)])
+        }
+        state.redirectsFollowed += 1
+        state.redirect = redirect
+        return close + [.emit(.redirected(to: redirect.server, permanent: redirect.permanent))] + open(&state)
     }
 
     private static func handshake(_ id: ConnectionID, _ state: inout ClientState) -> [ClientCommand] {
