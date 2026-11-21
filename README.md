@@ -22,7 +22,7 @@ A suite of Swift packages for HTML templating, HTTP client networking, and HTTP 
 - [NetworkServer](#networkserver) — embedded NIO-backed HTTP server with a typed functional routing DSL
 - [WebSocketClient](#websocketclient) — full-duplex WebSocket client exposing a `WebSocketConnection` with `Publisher`-based receive/send; `WebSocketClientNIO` opens one over swift-nio
 - [BonjourService](#bonjourservice) — Bonjour discovery and advertising exposed as `Publisher` streams
-- [MQTT](#mqtt) — MQTT 3.1.1 and 5 packet model and codec, a pure client state machine (`MQTTClient`), and one target per transport (`MQTTNWConnection`, `MQTTNIO`, `MQTTWebSocket`)
+- [MQTT](#mqtt) — MQTT 3.1.1 and 5: packet model and codec, client (`MQTTClient`), broker (`MQTTBroker`) and bridge (`MQTTBridge`) as pure state machines, and one target per transport (`MQTTNWConnection`, `MQTTNIO`, `MQTTWebSocket`)
 
 ---
 
@@ -43,8 +43,10 @@ Android on an emulator, Windows); ❌ means the product does nothing there.
 | **BonjourService** | ✅ | ❌ | ❌ | ❌ | `Network` / `NetService` |
 | **MQTT** | ✅ | ✅ | ✅ | ✅ | Packet model, codec, topic matching — pure |
 | **MQTTClient** | ✅ | ✅ | ✅ | ❌ | Connecting needs a transport below; none runs on Windows yet |
-| **MQTTNWConnection** | ✅ | ❌ | ❌ | ❌ | `Network.framework` |
-| **MQTTNIO** | ✅ | ✅ | ✅ | ❌ | swift-nio TCP |
+| **MQTTBroker** | ✅ | ✅ | ✅ | ❌ | Accepting needs a listener below; none runs on Windows yet |
+| **MQTTBridge** | ✅ | ✅ | ✅ | ❌ | Two client sessions |
+| **MQTTNWConnection** | ✅ | ❌ | ❌ | ❌ | `Network.framework` client and listener |
+| **MQTTNIO** | ✅ | ✅ | ✅ | ❌ | swift-nio TCP client and listener, WebSocket listener |
 | **MQTTWebSocket** | ✅ | ✅ | ✅ | ❌ | URLSession on Apple, `WebSocketClientNIO` everywhere it runs |
 
 Products marked ❌ still compile on that platform (their sources are `#if canImport(...)` gated), so
@@ -71,6 +73,8 @@ Add individual products to your targets as needed:
 .product(name: "BonjourService",  package: "NetworkTools"),
 .product(name: "MQTT",            package: "NetworkTools"),
 .product(name: "MQTTClient",      package: "NetworkTools"),
+.product(name: "MQTTBroker",      package: "NetworkTools"),
+.product(name: "MQTTBridge",      package: "NetworkTools"),
 .product(name: "MQTTNWConnection", package: "NetworkTools"),
 .product(name: "MQTTNIO",         package: "NetworkTools"),
 .product(name: "MQTTWebSocket",   package: "NetworkTools"),
@@ -633,17 +637,19 @@ let preferred = [IP("192.168.1.1")!, IP("::1")!].preferredAddress // -> .ipv6(::
 
 ## MQTT
 
-MQTT 3.1.1 and 5.0, split by responsibility:
+MQTT 3.1.1 and 5.0 — client, broker and bridge — split by responsibility:
 
 | Target | What it holds |
 |---|---|
-| `MQTT` | Role-neutral core: every packet type, every v5 property and reason code, a codec in both directions, topic matching, `PacketStream`, and the `Transport` witness. Pure — no sockets, no clocks. |
-| `MQTTClient` | The client protocol as a pure state machine, plus the session interpreter. |
-| `MQTTNWConnection` | `Transport` over Network.framework (Apple only). |
-| `MQTTNIO` | `Transport` over SwiftNIO TCP (Apple, Linux, Android). |
+| `MQTT` | Role-neutral core: every packet type, every v5 property and reason code (with the per-packet property rules), a codec in both directions, topic matching, `PacketStream`, the `Transport` / `Listener` witnesses, and `ConnectionRuntime`, the effect interpreter every role shares. Pure — no sockets, no clocks. |
+| `MQTTClient` | The client protocol as a pure state machine, plus its session. |
+| `MQTTBroker` | The broker protocol as a pure state machine, plus its server. |
+| `MQTTBridge` | Forwarding between two brokers through two client sessions. |
+| `MQTTNWConnection` | `Transport` and `Listener` over Network.framework (Apple). |
+| `MQTTNIO` | `Transport` and `Listener` over SwiftNIO TCP, plus a SwiftNIO MQTT-over-WebSocket `Listener` (Apple, Linux, Android). |
 | `MQTTWebSocket` | `Transport` over `WebSocketClient` (binary frames, `mqtt` subprotocol). |
 
-A broker (`MQTTBroker`) and a bridge (`MQTTBridge`) will sit next to `MQTTClient`, on the same core.
+Every role is a pure `step: (Input) -> Stateful<State, [RuntimeCommand]>`. Time is an input (clock ticks), so keep-alive, timeouts, reconnect backoff, will delays and session expiry are pure comparisons, and everything is tested by feeding inputs and comparing commands. `ConnectionRuntime` performs the commands; open connections live in its fold, never in global state.
 
 ### Packets and codec
 
@@ -664,40 +670,72 @@ publish.encode(for: .v3_1_1)    // .failure(.unsupported(.properties, in: .v3_1_
 Packet.decode(bytes, for: .v5)  // Result<Packet, MQTTDecodingError>
 ```
 
-`PacketStream.feed(chunk)` is a `Stateful<PacketStream, Result<[Packet], PacketStreamError>>` step that reassembles packets from whatever chunks a transport delivers.
+MQTT 5 property lists are checked against the rules of their packet (allowed properties, duplicates, value ranges) in both directions. `PacketStream.feed(chunk)` is a `Stateful` step that reassembles packets from whatever chunks a transport delivers.
 
 ### Client
 
-The whole client protocol — handshake, keep-alive, QoS 0/1/2 in both directions, packet identifiers, requests queued before CONNACK, protocol violations — is one pure function, tested by feeding inputs and comparing outputs:
+`ClientMachine.step` covers what MQTT 3.1.1 and 5.0 require of a client: the handshake, keep-alive (pinging only when idle, honouring Server Keep Alive), QoS 0/1/2 both ways, **reconnecting with backoff**, **session resumption** (unacknowledged PUBLISH and PUBREL resent in order; subscriptions renewed when the server lost the session), the server's Receive Maximum, Maximum Packet Size, Maximum QoS and feature flags (requests it cannot accept are rejected with a typed reason), topic aliases in both directions, and protocol violations.
 
 ```swift
-ClientMachine.step(_ input: ClientInput) -> Stateful<ClientState, [ClientOutput]>
-```
-
-`MQTTClient.session` runs it: requests in, events out, the world injected through `Reader`:
-
-```swift
+let options = ClientOptions(
+    version: .v5,
+    clientIdentifier: "ipad",
+    cleanStart: true,
+    keepAlive: 30,
+    will: nil,
+    userName: "elegoo",
+    password: Array(accessCode.utf8),
+    properties: [],
+    maximumPacketSize: 1 << 20,
+    reconnect: .exponentialBackoff(initial: .seconds(1), maximum: .seconds(30), attempts: nil)
+)
 let world = ClientWorld(
     transport: .nwConnection(host: "192.168.1.20", port: 1883, parameters: .tcp, queue: queue),
-    keepAliveTimer: { seconds in
-        Publisher<ContinuousClock.Instant, Never>.timer(every: .seconds(Int(seconds)), clock: clock).map(ignore)
-    }
+    clock: { .monotonicTicks(every: .milliseconds(250), clock: ContinuousClock()) }
 )
 
 let events: Publisher<ClientEvent, ClientError> = MQTTClient.session(options, requests: requests).runReader(world)
 ```
 
-Nothing runs until `events` is subscribed; cancelling it closes the connection. The session finishes after a DISCONNECT and fails with a typed `ClientError` otherwise.
+Nothing runs until `events` is subscribed; cancelling it closes the connection. Requests made while disconnected are queued.
 
-### Transports
+### Broker
 
-| | |
-|---|---|
-| `Transport.nwConnection(host:port:parameters:queue:)` | Network.framework |
-| `Transport.nio(host:port:group:)` | SwiftNIO; the event loop group is injected |
-| `Transport.webSocket(url:session:)` / `Transport.webSocket(_:)` | MQTT over WebSocket — URLSession, or any `WebSocketConnection` publisher such as `WebSocketConnection.nio(…)` |
+`BrokerMachine.step(policy)` is the server side: authentication and per-topic authorization through an injected `BrokerPolicy`, assigned client identifiers, session takeover, clean and persistent sessions with expiry, wills (with delay), QoS 0/1/2 both ways with session resumption, retained messages (Retain Handling, Retain As Published), No Local, Subscription Identifiers, shared subscriptions (round robin), overlapping subscriptions delivered once at the highest QoS, client topic aliases, Receive Maximum and Maximum Packet Size on both sides, Maximum QoS, Message Expiry, and keep-alive at 1.5×.
 
-`Transport` is a plain struct of effects, so tests use an in-memory one.
+```swift
+let clock: @Sendable () -> Publisher<Duration, Never> = { .monotonicTicks(every: .milliseconds(250), clock: ContinuousClock()) }
+
+// Bind (an effect that reports the port), then serve on the bound listener.
+let broker: Publisher<BrokerEvent, BrokerError> = Listener.nio(host: "0.0.0.0", port: 1883, group: group)
+    .mapError(BrokerError.listener)
+    .flatMap(maxPublishers: 1) { bound in
+        MQTTBroker.serve(BrokerOptions(), policy: .open, publications: .empty())
+            .runReader(BrokerWorld(listener: bound.listener, clock: clock))
+    }
+```
+
+Listeners: `Listener.nio(host:port:group:)`, `Listener.nioWebSocket(host:port:path:maximumMessageSize:group:)` and `Listener.nwListener(port:parameters:queue:)`. Each binds when subscribed and reports the port actually bound.
+
+### Bridge
+
+`MQTTBridge.run(rules:local:remote:)` connects to two brokers (any brokers) and forwards messages by mosquitto-style rules — filter, direction, QoS, local and remote prefixes. Loops are prevented with No Local on MQTT 5 and by dropping its own echoes on 3.1.1; each side reconnects by its own `ClientOptions`.
+
+```swift
+let rule = BridgeRule(filter: printerTopics, direction: .outbound, qos: .atLeastOnce, localPrefix: "", remotePrefix: "home/")
+let bridge = MQTTBridge.run(rules: [rule], local: localOptions, remote: remoteOptions)
+    .runReader(BridgeWorld(local: localWorld, remote: remoteWorld))
+```
+
+### Transports and listeners
+
+| | Opens connections | Accepts connections |
+|---|---|---|
+| Network.framework | `Transport.nwConnection(host:port:parameters:queue:)` | `Listener.nwListener(port:parameters:queue:)` |
+| SwiftNIO TCP | `Transport.nio(host:port:group:)` | `Listener.nio(host:port:group:)` |
+| WebSocket | `Transport.webSocket(url:session:)`, `Transport.webSocket { WebSocketConnection.nio(…).runReader(world) }` | `Listener.nioWebSocket(host:port:path:maximumMessageSize:group:)` |
+
+`Transport` and `Listener` are plain structs of effects, so tests use in-memory ones.
 
 ## Design principles
 

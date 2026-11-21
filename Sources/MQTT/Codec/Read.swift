@@ -45,12 +45,13 @@ enum Read {
 
     /// The property list (MQTT 5): Variable Byte Integer length, then the properties.
     /// MQTT 3.1.1 has no property list and reads nothing.
-    static func properties(_ version: ProtocolVersion) -> MQTTParser<[Property]> {
+    static func properties(_ version: ProtocolVersion, in context: PropertyContext) -> MQTTParser<[Property]> {
         switch version {
         case .v3_1_1: .pure([])
         case .v5:
             variableByteInteger >>- { length in
                 ByteParsers.isolate(Int(length), ByteParsers.manyUntilEnd(property, errors: errors), errors: errors)
+                    .refine { PropertyRules.validate($0, in: context).mapError(MQTTDecodingError.invalidProperty) }
             }
         }
     }

@@ -46,7 +46,7 @@ public extension Transport {
 ///
 /// `@unchecked Sendable`: `NWConnection` is documented as thread-safe but not annotated
 /// `Sendable`; the only mutable state (`resolved`) is guarded by `lock`.
-private final class ConnectionBox: @unchecked Sendable {
+final class ConnectionBox: @unchecked Sendable {
     let connection: NWConnection
     private let lock = NSLock()
     private var resolved = false
@@ -57,33 +57,38 @@ private final class ConnectionBox: @unchecked Sendable {
 
     func start(on queue: DispatchQueue) async -> Result<Void, TransportError> {
         await withCheckedContinuation { (continuation: CheckedContinuation<Result<Void, TransportError>, Never>) in
-            connection.stateUpdateHandler = { [self] state in
-                switch state {
-                case .ready:
-                    resolve(continuation, .success(()))
-                case let .failed(error),
-                     let .waiting(error):
-                    connection.cancel()
-                    resolve(continuation, .failure(.connectionFailed(String(describing: error))))
-                case .cancelled:
-                    resolve(continuation, .failure(.connectionFailed("cancelled")))
-                case .setup,
-                     .preparing:
-                    break
-                @unknown default:
-                    break
-                }
-            }
-            connection.start(queue: queue)
+            begin(on: queue) { continuation.resume(returning: $0) }
         }
     }
 
-    private func resolve(_ continuation: CheckedContinuation<Result<Void, TransportError>, Never>, _ result: Result<Void, TransportError>) {
+    /// Starts the connection and calls `completion` once, when it is ready or has failed.
+    func begin(on queue: DispatchQueue, _ completion: @escaping @Sendable (Result<Void, TransportError>) -> Void) {
+        connection.stateUpdateHandler = { [self] state in
+            switch state {
+            case .ready:
+                resolve(completion, .success(()))
+            case let .failed(error),
+                 let .waiting(error):
+                connection.cancel()
+                resolve(completion, .failure(.connectionFailed(String(describing: error))))
+            case .cancelled:
+                resolve(completion, .failure(.connectionFailed("cancelled")))
+            case .setup,
+                 .preparing:
+                break
+            @unknown default:
+                break
+            }
+        }
+        connection.start(queue: queue)
+    }
+
+    private func resolve(_ completion: @Sendable (Result<Void, TransportError>) -> Void, _ result: Result<Void, TransportError>) {
         let first = lock.withLock {
             defer { resolved = true }
             return !resolved
         }
-        if first { continuation.resume(returning: result) }
+        if first { completion(result) }
     }
 
     var transportConnection: TransportConnection {

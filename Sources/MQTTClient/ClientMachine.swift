@@ -3,275 +3,207 @@
 import FP
 import MQTT
 
-/// Something that happens to a client session.
+/// Something that happens to a client.
 public enum ClientInput: Sendable, Hashable {
-    /// The transport is open: send CONNECT.
+    /// Start: open the first connection.
     case start
-    /// Bytes arrived from the server.
-    case received([UInt8])
     /// The application asked for something.
     case request(ClientRequest)
-    /// A keep-alive interval elapsed.
-    case keepAliveTick
-    /// The transport's inbound side finished.
-    case transportClosed
-    /// The transport broke.
-    case transportFailed(TransportError)
+    /// Something happened to a connection, or the clock ticked.
+    case connection(ConnectionInput)
 }
 
-/// Something the session wants done. The machine only describes effects; the interpreter in
-/// ``MQTTClient`` performs them in order.
-public enum ClientOutput: Sendable, Hashable {
-    /// Encode and send a packet.
-    case send(Packet)
-    /// Tell the application something.
-    case event(ClientEvent)
-    /// End the session with a failure (the transport is closed first).
-    case fail(ClientError)
-    /// End the session normally (the transport is closed).
-    case close
-}
+/// What the client asks the runtime to do.
+public typealias ClientCommand = RuntimeCommand<ClientEvent, ClientError>
 
-/// The client protocol as a pure state machine.
+/// The MQTT client protocol as a pure state machine.
 ///
-/// ``step(_:)`` folds one ``ClientInput`` into the ``ClientState`` and returns the outputs it
-/// causes. It never touches a socket, a clock or a random number generator, so every
-/// behaviour — handshake, keep-alive, QoS 1 and 2 in both directions, packet identifiers,
-/// protocol violations — is tested by feeding inputs and comparing outputs.
+/// ``step(_:)`` folds one ``ClientInput`` into the ``ClientState`` and returns the commands it
+/// causes. It never touches a socket or a clock: time arrives as `.connection(.tick(now))`, and
+/// every timer — keep-alive, connect timeout, reconnect backoff — is a comparison against it.
+/// Everything is therefore tested by feeding inputs and comparing commands.
+///
+/// It covers the client side of MQTT 3.1.1 and 5.0: the handshake, keep-alive (pinging only when
+/// idle, honouring Server Keep Alive), QoS 0/1/2 in both directions, session resumption (resending
+/// unacknowledged PUBLISH and PUBREL in order), automatic re-subscription when the server lost the
+/// session, reconnecting with backoff, the server's Receive Maximum, Maximum Packet Size,
+/// Maximum QoS and feature flags, topic aliases in both directions, this client's own Receive
+/// Maximum and Topic Alias Maximum, and protocol violations.
 public enum ClientMachine {
     /// One transition of the client protocol.
     /// - Parameter input: What happened.
-    /// - Returns: A state step producing the outputs, in order.
-    public static func step(_ input: ClientInput) -> Stateful<ClientState, [ClientOutput]> {
+    /// - Returns: A state step producing the commands, in order.
+    public static func step(_ input: ClientInput) -> Stateful<ClientState, [ClientCommand]> {
         Stateful { state in
             state.phase == .closed ? [] : transition(input, &state)
         }
     }
 
-    private static func transition(_ input: ClientInput, _ state: inout ClientState) -> [ClientOutput] {
+    private static func transition(_ input: ClientInput, _ state: inout ClientState) -> [ClientCommand] {
         switch input {
         case .start:
-            start(&state)
-        case let .received(bytes):
-            receive(bytes, &state)
+            state.phase == .idle ? open(&state) : []
         case let .request(request):
             perform(request, &state)
-        case .keepAliveTick:
+        case let .connection(event):
+            connection(event, &state)
+        }
+    }
+
+    // MARK: - Connections
+
+    private static func connection(_ event: ConnectionInput, _ state: inout ClientState) -> [ClientCommand] {
+        switch event {
+        case let .tick(now):
+            state.now = now
+            return timers(&state)
+        case let .opened(id) where state.isOpening(id):
+            return handshake(id, &state)
+        case let .openFailed(id, error) where state.connection == id:
+            return lose(.transport(error), &state)
+        case let .received(id, bytes) where state.connection == id:
+            return receive(bytes, &state)
+        case let .closed(id) where state.connection == id:
+            return lose(.connectionClosed, &state)
+        case let .failed(id, error) where state.connection == id:
+            return lose(.transport(error), &state)
+        case let .accepted(id):
+            return [.close(id)]
+        case .opened,
+             .openFailed,
+             .received,
+             .closed,
+             .failed,
+             .listenerFailed:
+            return []
+        }
+    }
+
+    static func open(_ state: inout ClientState) -> [ClientCommand] {
+        let id = ConnectionID.outgoing(state.nextConnection)
+        state.nextConnection += 1
+        state.phase = .connecting(id, since: state.now)
+        state.link = ClientState.freshLink(state.options)
+        return [.open(id)]
+    }
+
+    private static func handshake(_ id: ConnectionID, _ state: inout ClientState) -> [ClientCommand] {
+        state.phase = .awaitingConnAck(id, since: state.now)
+        let connect = Packet.connect(connectPacket(state))
+        switch connect.encode(for: state.options.version) {
+        case .success:
+            return send(connect, &state)
+        case let .failure(error):
+            return end(&state, [.close(id), .fail(.encoding(error))])
+        }
+    }
+
+    private static func connectPacket(_ state: ClientState) -> Connect {
+        let options = state.options
+        let announcesSize = options.properties.contains { if case .maximumPacketSize = $0 { true } else { false } }
+        let properties = options.version == .v5 && !announcesSize
+            ? options.properties + [.maximumPacketSize(UInt32(clamping: options.maximumPacketSize))]
+            : options.properties
+        return Connect(
+            protocolVersion: options.version,
+            clientIdentifier: state.clientIdentifier,
+            cleanStart: options.cleanStart,
+            keepAlive: options.keepAlive,
+            will: options.will,
+            userName: options.userName,
+            password: options.password,
+            properties: properties
+        )
+    }
+
+    private static func timers(_ state: inout ClientState) -> [ClientCommand] {
+        switch state.phase {
+        case let .connecting(_, since),
+             let .awaitingConnAck(_, since):
+            state.now - since >= state.options.connectTimeout ? lose(.connectTimeout, &state) : []
+        case .connected:
             keepAlive(&state)
-        case .transportClosed:
-            end(&state, [.fail(.connectionClosed)])
-        case let .transportFailed(error):
-            end(&state, [.fail(.transport(error))])
+        case let .reconnecting(at) where state.now >= at:
+            open(&state)
+        case .idle,
+             .reconnecting,
+             .closed:
+            []
         }
     }
 
-    // MARK: - Lifecycle
-
-    private static func start(_ state: inout ClientState) -> [ClientOutput] {
-        guard state.phase == .idle else { return [] }
-        state.phase = .connecting
-        return [.send(.connect(state.options.connect))]
-    }
-
-    private static func keepAlive(_ state: inout ClientState) -> [ClientOutput] {
-        switch (state.phase, state.pingOutstanding) {
-        case (.connecting, true),
-             (.connected, true):
-            return end(&state, [.fail(.keepAliveTimeout)])
-        case (.connecting, false):
-            state.pingOutstanding = true
-            return []
-        case (.connected, false):
-            state.pingOutstanding = true
-            return [.send(.pingReq)]
-        case (.idle, _),
-             (.closed, _):
+    private static func keepAlive(_ state: inout ClientState) -> [ClientCommand] {
+        let interval = Duration.seconds(Int(state.keepAlive))
+        guard state.keepAlive > 0 else { return [] }
+        switch state.link.pingSentAt {
+        case let .some(sentAt):
+            return state.now - sentAt >= interval ? lose(.keepAliveTimeout, &state) : []
+        case .none where state.now - state.link.lastSent >= interval:
+            state.link.pingSentAt = state.now
+            return send(.pingReq, &state)
+        case .none:
             return []
         }
     }
 
-    private static func end(_ state: inout ClientState, _ outputs: [ClientOutput]) -> [ClientOutput] {
-        state.phase = .closed
-        return outputs
+    /// The connection is gone: reconnect when the error and the policy allow it, fail otherwise.
+    static func lose(_ error: ClientError, _ state: inout ClientState) -> [ClientCommand] {
+        let close = state.connection.map { [ClientCommand.close($0)] } ?? []
+        guard isRetryable(error), let delay = state.options.reconnect.delay(beforeAttempt: state.failedAttempts + 1) else {
+            return end(&state, close + [.fail(error)])
+        }
+        state.failedAttempts += 1
+        state.phase = .reconnecting(at: state.now + delay)
+        state.link = ClientState.freshLink(state.options)
+        return close + [.emit(.connectionLost(error, retryingIn: delay))]
     }
 
     /// Ends the session because of the server, telling it why first when MQTT 5 allows it.
-    private static func abort(_ state: inout ClientState, _ reason: ReasonCode, _ error: ClientError) -> [ClientOutput] {
-        let notice: [ClientOutput] = state.options.version == .v5
-            ? [.send(.disconnect(Disconnect(reasonCode: reason, properties: [])))]
+    static func abort(_ reason: ReasonCode, _ error: ClientError, _ state: inout ClientState) -> [ClientCommand] {
+        let notice = state.options.version == .v5
+            ? send(.disconnect(Disconnect(reasonCode: reason, properties: [])), &state)
             : []
-        return end(&state, notice + [.fail(error)])
+        return end(&state, notice + (state.connection.map { [.close($0)] } ?? []) + [.fail(error)])
     }
 
-    // MARK: - Application requests
-
-    private static func perform(_ request: ClientRequest, _ state: inout ClientState) -> [ClientOutput] {
-        guard state.phase == .connected else {
-            state.queued.append(request)
-            return []
-        }
-        switch request {
-        case let .publish(message):
-            return publish(message, &state)
-        case let .subscribe(subscriptions, properties):
-            return withIdentifier(&state) { identifier, state in
-                state.inFlight[identifier] = .subscribing(subscriptions)
-                return [.send(.subscribe(Subscribe(packetIdentifier: identifier, subscriptions: subscriptions, properties: properties)))]
-            }
-        case let .unsubscribe(filters, properties):
-            return withIdentifier(&state) { identifier, state in
-                state.inFlight[identifier] = .unsubscribing(filters)
-                return [.send(.unsubscribe(Unsubscribe(packetIdentifier: identifier, filters: filters, properties: properties)))]
-            }
-        case let .authenticate(auth):
-            return [.send(.auth(auth))]
-        case let .disconnect(disconnect):
-            return end(&state, [.send(.disconnect(disconnect)), .event(.disconnected(disconnect, byServer: false)), .close])
-        }
+    static func end(_ state: inout ClientState, _ commands: [ClientCommand]) -> [ClientCommand] {
+        state.phase = .closed
+        return commands
     }
 
-    private static func publish(_ message: OutgoingMessage, _ state: inout ClientState) -> [ClientOutput] {
-        let make = { (delivery: Delivery) in
-            Publish(
-                topic: message.topic,
-                payload: message.payload,
-                delivery: delivery,
-                retain: message.retain,
-                duplicate: false,
-                properties: message.properties
-            )
-        }
-        guard message.qos != .atMostOnce else { return [.send(.publish(make(.atMostOnce)))] }
-        return withIdentifier(&state) { identifier, state in
-            let publish = make(.make(message.qos, identifier: identifier))
-            state.inFlight[identifier] = message.qos == .atLeastOnce ? .awaitingPubAck(publish) : .awaitingPubRec(publish)
-            return [.send(.publish(publish))]
+    static func isRetryable(_ error: ClientError) -> Bool {
+        switch error {
+        case .transport,
+             .connectionClosed,
+             .connectTimeout,
+             .keepAliveTimeout:
+            true
+        case let .connectionRefused(ack):
+            [.serverUnavailable, .serverBusy, .connectionRateExceeded, .quotaExceeded, .unspecifiedError].contains(ack.reasonCode)
+        case let .disconnectedByServer(disconnect):
+            [
+                .normalDisconnection, .unspecifiedError, .implementationSpecificError, .serverBusy, .serverShuttingDown,
+                .keepAliveTimeout, .maximumConnectTime, .messageRateTooHigh, .quotaExceeded, .administrativeAction,
+                .connectionRateExceeded,
+            ].contains(disconnect.reasonCode)
+        case .encoding,
+             .decoding,
+             .protocolViolation,
+             .packetIdentifiersExhausted:
+            false
         }
     }
 
-    /// Reserves the next free packet identifier and runs `body` with it.
-    private static func withIdentifier(
-        _ state: inout ClientState,
-        _ body: (PacketIdentifier, inout ClientState) -> [ClientOutput]
-    ) -> [ClientOutput] {
-        let candidates = Swift.sequence(first: state.nextIdentifier, next: \.next).prefix(Int(UInt16.max))
-        guard let identifier = candidates.first(where: { state.inFlight[$0] == nil }) else {
-            return end(&state, [.fail(.packetIdentifiersExhausted)])
-        }
-        state.nextIdentifier = identifier.next
-        return body(identifier, &state)
+    /// Sends a packet on the current connection, recording the time for keep-alive.
+    static func send(_ packet: Packet, _ state: inout ClientState) -> [ClientCommand] {
+        guard let id = state.connection else { return [] }
+        state.link.lastSent = state.now
+        return [.send(id, packet, state.options.version)]
     }
+}
 
-    // MARK: - Server packets
-
-    private static func receive(_ bytes: [UInt8], _ state: inout ClientState) -> [ClientOutput] {
-        let (decoded, stream) = PacketStream.feed(bytes).runStateful(state.stream)
-        state.stream = stream
-        switch decoded {
-        case let .success(packets):
-            return packets.reduce(into: [ClientOutput]()) { outputs, packet in
-                outputs += state.phase == .closed ? [] : handle(packet, &state)
-            }
-        case let .failure(error):
-            return abort(&state, .malformedPacket, .decoding(error))
-        }
-    }
-
-    private static func handle(_ packet: Packet, _ state: inout ClientState) -> [ClientOutput] {
-        switch (state.phase, packet) {
-        case let (.connecting, .connAck(ack)):
-            return connected(ack, &state)
-        case let (.connecting, .auth(auth)),
-             let (.connected, .auth(auth)):
-            return [.event(.authenticationChallenge(auth))]
-        case let (.connecting, .disconnect(disconnect)),
-             let (.connected, .disconnect(disconnect)):
-            return end(&state, [.event(.disconnected(disconnect, byServer: true)), .close])
-        case let (.connected, .publish(publish)):
-            return incoming(publish, &state)
-        case let (.connected, .pubAck(ack)):
-            return acknowledge(ack, .pubAck, &state)
-        case let (.connected, .pubRec(ack)):
-            return acknowledge(ack, .pubRec, &state)
-        case let (.connected, .pubRel(ack)):
-            return release(ack, &state)
-        case let (.connected, .pubComp(ack)):
-            return acknowledge(ack, .pubComp, &state)
-        case let (.connected, .subAck(ack)):
-            return acknowledge(ack, &state)
-        case let (.connected, .unsubAck(ack)):
-            return acknowledge(ack, &state)
-        case (.connected, .pingResp):
-            state.pingOutstanding = false
-            return []
-        default:
-            return abort(&state, .protocolError, .protocolViolation(.unexpectedPacket(packet.type)))
-        }
-    }
-
-    private static func connected(_ ack: ConnAck, _ state: inout ClientState) -> [ClientOutput] {
-        guard !ack.reasonCode.isFailure else {
-            return end(&state, [.fail(.connectionRefused(ack))])
-        }
-        state.phase = .connected
-        state.pingOutstanding = false
-        let queued = state.queued
-        state.queued = []
-        return queued.reduce(into: [.event(.connected(ack))]) { outputs, request in
-            outputs += state.phase == .closed ? [] : perform(request, &state)
-        }
-    }
-
-    private static func incoming(_ publish: Publish, _ state: inout ClientState) -> [ClientOutput] {
-        switch publish.delivery {
-        case .atMostOnce:
-            return [.event(.message(publish))]
-        case let .atLeastOnce(identifier):
-            return [.event(.message(publish)), .send(.pubAck(.success(identifier)))]
-        case let .exactlyOnce(identifier):
-            let isNew = state.receivedQoS2.insert(identifier).inserted
-            return (isNew ? [.event(.message(publish))] : []) + [.send(.pubRec(.success(identifier)))]
-        }
-    }
-
-    private static func release(_ ack: Acknowledgement, _ state: inout ClientState) -> [ClientOutput] {
-        let known = state.receivedQoS2.remove(ack.packetIdentifier) != nil
-        let reason: ReasonCode = known || state.options.version == .v3_1_1 ? .success : .packetIdentifierNotFound
-        return [.send(.pubComp(Acknowledgement(packetIdentifier: ack.packetIdentifier, reasonCode: reason, properties: [])))]
-    }
-
-    private static func acknowledge(_ ack: Acknowledgement, _ type: PacketType, _ state: inout ClientState) -> [ClientOutput] {
-        let identifier = ack.packetIdentifier
-        switch (type, state.inFlight[identifier]) {
-        case let (.pubAck, .awaitingPubAck(publish)),
-             let (.pubComp, .awaitingPubComp(publish)):
-            state.inFlight[identifier] = nil
-            return [.event(.published(publish, ack))]
-        case let (.pubRec, .awaitingPubRec(publish)) where ack.reasonCode.isFailure:
-            state.inFlight[identifier] = nil
-            return [.event(.published(publish, ack))]
-        case let (.pubRec, .awaitingPubRec(publish)),
-             let (.pubRec, .awaitingPubComp(publish)):
-            state.inFlight[identifier] = .awaitingPubComp(publish)
-            return [.send(.pubRel(.success(identifier)))]
-        default:
-            return abort(&state, .protocolError, .protocolViolation(.unknownPacketIdentifier(type, identifier)))
-        }
-    }
-
-    private static func acknowledge(_ ack: SubAck, _ state: inout ClientState) -> [ClientOutput] {
-        guard case let .subscribing(subscriptions) = state.inFlight[ack.packetIdentifier] else {
-            return abort(&state, .protocolError, .protocolViolation(.unknownPacketIdentifier(.subAck, ack.packetIdentifier)))
-        }
-        state.inFlight[ack.packetIdentifier] = nil
-        return [.event(.subscribed(subscriptions, ack))]
-    }
-
-    private static func acknowledge(_ ack: UnsubAck, _ state: inout ClientState) -> [ClientOutput] {
-        guard case let .unsubscribing(filters) = state.inFlight[ack.packetIdentifier] else {
-            return abort(&state, .protocolError, .protocolViolation(.unknownPacketIdentifier(.unsubAck, ack.packetIdentifier)))
-        }
-        state.inFlight[ack.packetIdentifier] = nil
-        return [.event(.unsubscribed(filters, ack))]
+extension ClientState {
+    func isOpening(_ id: ConnectionID) -> Bool {
+        if case .connecting(id, _) = phase { true } else { false }
     }
 }

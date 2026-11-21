@@ -143,7 +143,7 @@ extension ReasonCode {
     }
 
     /// The MQTT 3.1.1 CONNACK return code for this reason, when one exists.
-    var connectReturnCode: UInt8? {
+    public var connectReturnCode: UInt8? {
         ReasonCode.connectReturnCodes.firstIndex(of: self).map(UInt8.init)
     }
 

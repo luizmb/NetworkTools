@@ -50,7 +50,7 @@ private func openChannel(_ bootstrap: ClientBootstrap, host: String, port: Int) 
     }
 }
 
-private func transportConnection(_ channel: any Channel, inbound: AsyncStream<Result<[UInt8], TransportError>>) -> TransportConnection {
+func transportConnection(_ channel: any Channel, inbound: AsyncStream<Result<[UInt8], TransportError>>) -> TransportConnection {
     TransportConnection(
         receive: Publisher<[UInt8], TransportError> { continuation async throws(TransportError) in
             await withTaskCancellationHandler {
@@ -85,7 +85,7 @@ private func transportConnection(_ channel: any Channel, inbound: AsyncStream<Re
 }
 
 /// Forwards every inbound `ByteBuffer` to an `AsyncStream`, then finishes it when the channel goes inactive.
-private final class InboundBytes: ChannelInboundHandler, Sendable {
+final class InboundBytes: ChannelInboundHandler, Sendable {
     typealias InboundIn = ByteBuffer
 
     private let sink: AsyncStream<Result<[UInt8], TransportError>>.Continuation

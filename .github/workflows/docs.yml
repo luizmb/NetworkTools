@@ -45,6 +45,8 @@ jobs:
             --target BonjourService \
             --target MQTT \
             --target MQTTClient \
+            --target MQTTBroker \
+            --target MQTTBridge \
             --target MQTTNWConnection \
             --target MQTTNIO \
             --target MQTTWebSocket \

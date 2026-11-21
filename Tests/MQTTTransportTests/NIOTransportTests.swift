@@ -85,7 +85,7 @@ func subscribeAndReceive(over transport: Transport) async throws -> [ClientEvent
         loopbackOptions,
         requests: [ClientRequest.subscribe([Subscription(filter: filter, options: .qos(.atMostOnce))], properties: [])].publisher
     )
-    .runReader(ClientWorld(transport: transport, keepAliveTimer: const(.empty())))
+    .runReader(ClientWorld(transport: transport, clock: const(.empty())))
     .prefix(3)
     .collect()
     .firstResultTask()

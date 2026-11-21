@@ -16,8 +16,10 @@ side effects — only types and pure functions:
 - **No silent loss.** Encoding something the target version cannot express (properties, an
   MQTT 5-only reason code, the AUTH packet…) fails with ``MQTTEncodingError/unsupported(_:in:)``.
 - **Streaming.** ``PacketStream`` turns arbitrary byte chunks into packets as a pure `Stateful` step.
-- **Transport-agnostic.** ``Transport`` is a protocol witness — a struct of effects — implemented
-  by `MQTTNWConnection`, `MQTTNIO` and `MQTTWebSocket`, or by a test double.
+- **Transport-agnostic.** ``Transport`` and ``Listener`` are protocol witnesses — structs of
+  effects — implemented by `MQTTNWConnection`, `MQTTNIO` and `MQTTWebSocket`, or by test doubles.
+- **One runtime for every role.** ``ConnectionRuntime`` interprets the commands of a pure
+  connection machine (the client's, the broker's), keeping open connections in its fold.
 
 ```swift
 let connect = Packet.connect(Connect(
@@ -94,7 +96,21 @@ bytes announce, so a broker can read the first packet before it knows the sessio
 - ``PacketStream``
 - ``PacketStreamError``
 
+### Property Rules
+- ``PropertyRules``
+- ``PropertyContext``
+- ``PropertyViolation``
+
 ### Transport
 - ``Transport``
 - ``TransportConnection``
 - ``TransportError``
+- ``Listener``
+- ``BoundListener``
+
+### Runtime
+- ``ConnectionRuntime``
+- ``ConnectionID``
+- ``ConnectionInput``
+- ``RuntimeCommand``
+- ``RuntimeWorld``

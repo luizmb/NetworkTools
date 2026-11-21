@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `MQTTClient` is complete: reconnects with exponential backoff (`ReconnectPolicy`), connect timeout, session
+  resumption (unacknowledged PUBLISH/PUBREL resent in order; subscriptions renewed when the server lost the session),
+  idle-only keep-alive honouring Server Keep Alive, the server's Receive Maximum / Maximum Packet Size / Maximum QoS /
+  feature flags (refused requests reported as `ClientEvent.rejected`), topic aliases both ways, own Receive Maximum and
+  Topic Alias Maximum. **Breaking:** `ClientWorld` takes a `clock` (monotonic ticks) instead of `keepAliveTimer`;
+  `ClientMachine` now emits `RuntimeCommand`s.
+- `MQTTBroker`: an MQTT 3.1.1/5 broker as a pure state machine (`BrokerMachine`) with an injected `BrokerPolicy` —
+  sessions with expiry, takeover, wills with delay, QoS 0/1/2, retained messages, No Local, subscription identifiers,
+  shared subscriptions, topic aliases, flow control, message expiry.
+- `MQTTBridge`: forwarding between two brokers by mosquitto-style rules.
+- `MQTT`: `ConnectionRuntime` (the effect interpreter shared by client, broker and bridge), `Listener` /
+  `BoundListener`, `PropertyRules` (MQTT 5 property validation in the codec, both directions).
+- Listeners: `Listener.nio`, `Listener.nioWebSocket` (MQTTNIO) and `Listener.nwListener` (MQTTNWConnection).
 - `WebSocketClientNIO`: a swift-nio `WebSocketConnection` factory (HTTP/1.1 upgrade, fragment reassembly, automatic
   pong, masked frames; keys are FP `Gen` values run against the generator of a `WebSocketNIOWorld` supplied through `Reader`) so WebSockets and MQTT over WebSocket work on Linux and Android.
   `Transport.webSocket` accepts a WebSocket publisher with any failure type.
