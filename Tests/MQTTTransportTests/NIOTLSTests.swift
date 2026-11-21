@@ -6,11 +6,14 @@ import MQTT
 import MQTTBroker
 import MQTTClient
 import MQTTNIO
+import MQTTWebSocket
 import NIOCore
 import NIOPosix
 import NIOSSL
 import ReactiveConcurrency
 import Testing
+import WebSocketClient
+import WebSocketClientNIO
 
 // A throwaway self-signed certificate for `localhost`, generated for these tests only. Valid from 2020 to
 // 2100, so an emulator or CI machine with a skewed clock still accepts it.
@@ -95,6 +98,60 @@ private let tlsTicks: @Sendable () -> Publisher<Duration, Never> = {
         broker.cancel()
         try await group.shutdownGracefully()
     }
+}
+
+@Suite struct NIOSecureWebSocketTests {
+    @Test func clientAndBrokerOverSecureWebSocket() async throws {
+        let (server, client) = try tlsPair(trusting: true)
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        let bound = try await bindNIOWebSocket(tls: server, group: group)
+        let broker = MQTTBroker.serve(BrokerOptions(), policy: .open, publications: .empty())
+            .runReader(BrokerWorld(listener: bound.listener, clock: tlsTicks))
+            .sink(receiveCompletion: { _ in }, receiveValue: { _ in })
+
+        let transport = Transport.webSocket { secureWebSocket(port: bound.port, tls: client, group: group) }
+        let received = try await subscribeAndReceiveRetained(over: transport)
+        #expect(received == "secret")
+
+        broker.cancel()
+        try await group.shutdownGracefully()
+    }
+
+    @Test func untrustedCertificateFailsTheWebSocket() async throws {
+        let (server, client) = try tlsPair(trusting: false)
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        let bound = try await bindNIOWebSocket(tls: server, group: group)
+        let accepting = bound.listener.accept().sink(receiveCompletion: { _ in }, receiveValue: { _ in })
+
+        let result = await secureWebSocket(port: bound.port, tls: client, group: group).firstResultTask().run()
+        guard case .failure(.connectionFailed)? = result else {
+            Issue.record("expected the TLS handshake to fail, got \(String(describing: result))")
+            return
+        }
+        accepting.cancel()
+        try await group.shutdownGracefully()
+    }
+}
+
+/// The server configuration for the test certificate, and a client that trusts it (or nothing).
+private func tlsPair(trusting: Bool) throws -> (server: TLSConfiguration, client: TLSConfiguration) {
+    let certificate = try NIOSSLCertificate(bytes: Array(certificatePEM.utf8), format: .pem)
+    let key = try NIOSSLPrivateKey(bytes: Array(privateKeyPEM.utf8), format: .pem)
+    var client = TLSConfiguration.makeClientConfiguration()
+    client.trustRoots = .certificates(trusting ? [certificate] : [])
+    let server = TLSConfiguration.makeServerConfiguration(certificateChain: [.certificate(certificate)], privateKey: .privateKey(key))
+    return (server, client)
+}
+
+/// A `wss://` connection to `localhost` on a loopback port.
+private func secureWebSocket(
+    port: Int,
+    tls: TLSConfiguration,
+    group: any EventLoopGroup
+) -> Publisher<WebSocketConnection, WebSocketNIOError> {
+    WebSocketConnection
+        .nio(host: "localhost", port: port, path: "/mqtt", protocols: ["mqtt"], maximumMessageSize: 1 << 16, tls: tls)
+        .runReader(WebSocketNIOWorld(group: group, random: SplitMix64(seed: 3)))
 }
 
 /// Publishes a retained message and subscribes to it in one session; returns the payload received.

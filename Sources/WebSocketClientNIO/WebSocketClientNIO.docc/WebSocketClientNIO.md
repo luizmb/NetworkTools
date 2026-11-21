@@ -16,11 +16,11 @@ which, with the event loop group, the application supplies at its boundary throu
 ```swift
 let world = WebSocketNIOWorld(group: group, random: SystemRandomNumberGenerator())
 let socket: Publisher<WebSocketConnection, WebSocketNIOError> = WebSocketConnection
-    .nio(host: "192.168.1.20", port: 9001, path: "/mqtt", protocols: ["mqtt"], maximumMessageSize: 1 << 20)
+    .nio(host: "192.168.1.20", port: 9001, path: "/mqtt", protocols: ["mqtt"], maximumMessageSize: 1 << 20, tls: nil)
     .runReader(world)
 ```
 
-Plain `ws://` only; TLS (`wss://`) is not part of this target.
+Pass a swift-nio-ssl `TLSConfiguration` as `tls` for `wss://`; `nil` means plain `ws://`.
 
 ## Topics
 

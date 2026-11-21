@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `wss://` for the swift-nio WebSocket: `WebSocketConnection.nio(…, tls:)` and `Listener.nioWebSocket(…, tls:)` take a
+  swift-nio-ssl `TLSConfiguration` (`nil` for plain `ws://`).
 - TLS for `Transport.nio` and `Listener.nio` (swift-nio-ssl `TLSConfiguration`). New dependency: swift-nio-ssl.
 - `InMemoryLink` (a transport and listener joined in memory) and `Listener.merge`, so clients and bridges can run in the
   same process as an `MQTTBroker`.

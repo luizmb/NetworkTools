@@ -38,7 +38,7 @@ Android on an emulator, Windows); ❌ means the product does nothing there.
 | **NetworkClient** | ✅ | ✅ | ✅ | ✅ | `URLSession` (`FoundationNetworking` off Apple) |
 | **NetworkServer** | ✅ | ✅ | ✅ | ❌ | swift-nio; `NIOPosix` has no Windows support |
 | **WebSocketClient** | ✅ | ✅ | ✅ | ❌ | `URLSessionWebSocketTask` on Apple; anywhere else through `WebSocketClientNIO` |
-| **WebSocketClientNIO** | ✅ | ✅ | ✅ | ❌ | swift-nio WebSocket (`ws://`) |
+| **WebSocketClientNIO** | ✅ | ✅ | ✅ | ❌ | swift-nio WebSocket (`ws://` and `wss://`) |
 | **Multipeer** | ✅ | ❌ | ❌ | ❌ | `MultipeerConnectivity` |
 | **BonjourService** | ✅ | ❌ | ❌ | ❌ | `Network` / `NetService` |
 | **MQTT** | ✅ | ✅ | ✅ | ✅ | Packet model, codec, topic matching — pure |
@@ -538,7 +538,7 @@ guard case let .success(conn)? = await URLSession.shared.webSocketConnection(wit
 
 ### SwiftNIO — `WebSocketClientNIO`
 
-On Linux and Android (and on Apple platforms, if you prefer swift-nio), `WebSocketClientNIO` opens the same `WebSocketConnection` with an HTTP/1.1 upgrade over swift-nio. Fragmented messages are reassembled, pings are answered, and every client frame is masked. The random handshake and masking keys are FP `Gen` values (`WebSocketKeys`); they run against the generator in a `WebSocketNIOWorld` that the application supplies at its boundary, together with the event loop group. Plain `ws://` only.
+On Linux and Android (and on Apple platforms, if you prefer swift-nio), `WebSocketClientNIO` opens the same `WebSocketConnection` with an HTTP/1.1 upgrade over swift-nio. Fragmented messages are reassembled, pings are answered, and every client frame is masked. The random handshake and masking keys are FP `Gen` values (`WebSocketKeys`); they run against the generator in a `WebSocketNIOWorld` that the application supplies at its boundary, together with the event loop group. Pass a swift-nio-ssl `TLSConfiguration` for `wss://`, or `nil` for plain `ws://`.
 
 ```swift
 import NIOPosix
@@ -546,7 +546,7 @@ import WebSocketClientNIO
 
 let world = WebSocketNIOWorld(group: MultiThreadedEventLoopGroup(numberOfThreads: 1), random: SystemRandomNumberGenerator())
 let conn: Publisher<WebSocketConnection, WebSocketNIOError> = WebSocketConnection
-    .nio(host: "192.168.1.20", port: 9001, path: "/mqtt", protocols: ["mqtt"], maximumMessageSize: 1 << 20)
+    .nio(host: "192.168.1.20", port: 9001, path: "/mqtt", protocols: ["mqtt"], maximumMessageSize: 1 << 20, tls: nil)
     .runReader(world)
 ```
 
@@ -716,7 +716,7 @@ let broker: Publisher<BrokerEvent, BrokerError> = Listener.nio(host: "0.0.0.0", 
     }
 ```
 
-Listeners: `Listener.nio(host:port:tls:)`, `Listener.nioWebSocket(host:port:path:maximumMessageSize:)` and `Listener.nwListener(port:parameters:)`. Each binds when subscribed and reports the port actually bound. `Listener.merge` accepts from several at once.
+Listeners: `Listener.nio(host:port:tls:)`, `Listener.nioWebSocket(host:port:path:maximumMessageSize:tls:)` and `Listener.nwListener(port:parameters:)`. Each binds when subscribed and reports the port actually bound. `Listener.merge` accepts from several at once.
 
 **Enhanced authentication (MQTT 5 AUTH).** `BrokerPolicy.challenge` is a pure function deciding each step of an exchange — accept (with data), continue (with a challenge), or refuse — for CONNECT and for re-authentication:
 
@@ -753,14 +753,22 @@ Each is built from a `Reader` over its world, so the effects (event loop group, 
 |---|---|---|---|
 | Network.framework | `Transport.nwConnection(host:port:parameters:)` (TLS with `.tls`) | `Listener.nwListener(port:parameters:)` | `NWWorld(queue:)` |
 | SwiftNIO TCP | `Transport.nio(host:port:tls:)` | `Listener.nio(host:port:tls:)` | `NIOWorld(group:)` |
-| WebSocket | `Transport.webSocket(url:session:)`, `Transport.webSocket { WebSocketConnection.nio(…).runReader(world) }` | `Listener.nioWebSocket(host:port:path:maximumMessageSize:)` | `WebSocketNIOWorld` / `NIOWorld` |
+| WebSocket | `Transport.webSocket(url:session:)`, `Transport.webSocket { WebSocketConnection.nio(…).runReader(world) }` | `Listener.nioWebSocket(host:port:path:maximumMessageSize:tls:)` | `WebSocketNIOWorld` / `NIOWorld` |
 | In process | `InMemoryLink.make().transport` | `InMemoryLink.make().listener` | — |
 
 TLS on SwiftNIO uses swift-nio-ssl's `TLSConfiguration`:
 
 ```swift
 let secure = Transport.nio(host: "broker.example.com", port: 8883, tls: .makeClientConfiguration()).runReader(NIOWorld(group: group))
+let secureWebSocket = Transport.webSocket {
+    WebSocketConnection
+        .nio(host: "broker.example.com", port: 443, path: "/mqtt", protocols: ["mqtt"], maximumMessageSize: 1 << 20,
+             tls: .makeClientConfiguration())
+        .runReader(WebSocketNIOWorld(group: group, random: SystemRandomNumberGenerator()))
+}
 ```
+
+Both are tested end to end (client ↔ `MQTTBroker` over TLS and over `wss://`, plus rejection of an untrusted certificate).
 
 `InMemoryLink` joins a transport and a listener without a socket: run a client or a bridge in the same process as an `MQTTBroker` by merging `link.listener` into the broker's listeners.
 
